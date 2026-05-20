@@ -298,7 +298,7 @@ func _can_disembark() -> bool:
 	return _current_district_index >= 0 and _map.is_district(_current_district_index)
 
 func _can_repair_elevator() -> bool:
-	return _mode == TravelMode.FOOT and _current_district_index >= 0 and _map.sector_has_elevator(_current_district_index) and not _run_completed
+	return _mode == TravelMode.FOOT and _current_district_index >= 0 and _map.district_has_elevator(_current_district_index) and not _run_completed
 
 func _current_repair_cost() -> int:
 	return base_elevator_repair_cost + maxi(_current_layer - 1, 0)
@@ -382,7 +382,7 @@ func _update_prompts() -> void:
 		right_button.visible = _junction_options.has("right")
 	elif in_foot:
 		if _run_completed:
-			prompt_label.text = "已完成 3 层试作流程，可继续探索或返回车辆"
+			prompt_label.text = "已完成 %d 层试作流程，可继续探索或返回车辆" % total_layers
 		elif _can_repair_elevator():
 			prompt_label.text = "电梯楼：消耗资源修复电梯，进度满后进入上层"
 			repair_button.visible = true

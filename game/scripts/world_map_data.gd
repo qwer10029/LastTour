@@ -237,10 +237,13 @@ func sector_resource_remaining(index: int) -> int:
 		return 0
 	return int(cells[index]["resource_remaining"])
 
-func sector_has_elevator(index: int) -> bool:
+func district_has_elevator(index: int) -> bool:
 	if not is_valid_index(index):
 		return false
 	return bool(cells[index]["has_elevator"])
+
+func sector_has_elevator(index: int) -> bool:
+	return district_has_elevator(index)
 
 func _create_empty_cell(coord: Vector2i) -> Dictionary:
 	return {
