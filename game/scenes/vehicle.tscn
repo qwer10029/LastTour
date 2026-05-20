@@ -1,0 +1,21 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/vehicle.gd" id="1_vehicle"]
+
+[sub_resource type="RectangleShape2D" id="1_shape"]
+size = Vector2(72, 28)
+
+[node name="Vehicle" type="CharacterBody2D"]
+script = ExtResource("1_vehicle")
+road_y = 448.0
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+scale = Vector2(1.0, 1.0)
+
+[node name="Camera2D" type="Camera2D" parent="."]
+current = false
+position_smoothing_enabled = true
+position_smoothing_speed = 6.0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("1_shape")

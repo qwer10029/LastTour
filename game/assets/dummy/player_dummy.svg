@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <rect x="1" y="1" width="30" height="30" rx="4" fill="#f3f6fb" stroke="#1f2a44" stroke-width="2"/>
+  <rect x="5" y="5" width="22" height="18" rx="2" fill="#2f6bff" opacity="0.18" stroke="#2f6bff" stroke-width="1.5" stroke-dasharray="2 1"/>
+  <circle cx="16" cy="13" r="5" fill="#2f6bff"/>
+  <path d="M11 26c1.5-4 3.8-6 5-6s3.5 2 5 6" fill="#2f6bff"/>
+  <text x="16" y="29" font-size="4" text-anchor="middle" fill="#1f2a44" font-family="monospace">PLAYER</text>
+</svg>

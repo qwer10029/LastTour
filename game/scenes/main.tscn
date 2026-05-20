@@ -1,0 +1,135 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
+[ext_resource type="PackedScene" path="res://scenes/player.tscn" id="2_player"]
+[ext_resource type="PackedScene" path="res://scenes/resource_pickup.tscn" id="3_resource"]
+[ext_resource type="PackedScene" path="res://scenes/vehicle.tscn" id="4_vehicle"]
+[ext_resource type="Script" path="res://scripts/minimap_view.gd" id="5_minimap"]
+
+[node name="Main" type="Node2D"]
+script = ExtResource("1_main")
+player_scene = ExtResource("2_player")
+resource_scene = ExtResource("3_resource")
+vehicle_scene = ExtResource("4_vehicle")
+
+[node name="HUD" type="CanvasLayer" parent="."]
+
+[node name="InfoPanel" type="Panel" parent="HUD"]
+offset_left = 16.0
+offset_top = 16.0
+offset_right = 376.0
+offset_bottom = 196.0
+
+[node name="MarginContainer" type="MarginContainer" parent="HUD/InfoPanel"]
+offset_right = 360.0
+offset_bottom = 180.0
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="VBoxContainer" type="VBoxContainer" parent="HUD/InfoPanel/MarginContainer"]
+offset_right = 336.0
+offset_bottom = 156.0
+
+[node name="ModeLabel" type="Label" parent="HUD/InfoPanel/MarginContainer/VBoxContainer"]
+text = "状态: 驾驶车辆"
+
+[node name="FuelLabel" type="Label" parent="HUD/InfoPanel/MarginContainer/VBoxContainer"]
+text = "燃料: 0 / 0"
+
+[node name="InventoryLabel" type="Label" parent="HUD/InfoPanel/MarginContainer/VBoxContainer"]
+text = "已搬运资源: 0"
+
+[node name="StatusLabel" type="Label" parent="HUD/InfoPanel/MarginContainer/VBoxContainer"]
+text = "探索: 0 / 0 | 剩余资源: 0 | 区块 1-1"
+autowrap_mode = 3
+
+[node name="MapPanel" type="Panel" parent="HUD"]
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -288.0
+offset_top = -252.0
+offset_right = -16.0
+offset_bottom = -16.0
+
+[node name="MarginContainer" type="MarginContainer" parent="HUD/MapPanel"]
+offset_right = 272.0
+offset_bottom = 236.0
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="VBoxContainer" type="VBoxContainer" parent="HUD/MapPanel/MarginContainer"]
+offset_right = 248.0
+offset_bottom = 212.0
+
+[node name="MinimapView" type="Control" parent="HUD/MapPanel/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(248, 160)
+script = ExtResource("5_minimap")
+
+[node name="MapInfoLabel" type="Label" parent="HUD/MapPanel/MarginContainer/VBoxContainer"]
+text = "迷你地图: 已探索亮起 / 未探索变黑 / 红点是当前位置"
+autowrap_mode = 3
+
+[node name="ActionPanel" type="Panel" parent="HUD"]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -310.0
+offset_top = -150.0
+offset_right = 310.0
+offset_bottom = -16.0
+
+[node name="MarginContainer" type="MarginContainer" parent="HUD/ActionPanel"]
+offset_right = 620.0
+offset_bottom = 134.0
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="VBoxContainer" type="VBoxContainer" parent="HUD/ActionPanel/MarginContainer"]
+offset_right = 596.0
+offset_bottom = 110.0
+
+[node name="PromptLabel" type="Label" parent="HUD/ActionPanel/MarginContainer/VBoxContainer"]
+text = "沿道路驾驶，遇到十字路口会切换到俯视选择"
+autowrap_mode = 3
+
+[node name="ActionButtons" type="HBoxContainer" parent="HUD/ActionPanel/MarginContainer/VBoxContainer"]
+offset_right = 596.0
+offset_bottom = 36.0
+
+[node name="DisembarkButton" type="Button" parent="HUD/ActionPanel/MarginContainer/VBoxContainer/ActionButtons"]
+text = "下车探索(E)"
+
+[node name="ReturnButton" type="Button" parent="HUD/ActionPanel/MarginContainer/VBoxContainer/ActionButtons"]
+text = "返回车辆(E)"
+
+[node name="JunctionButtons" type="GridContainer" parent="HUD/ActionPanel/MarginContainer/VBoxContainer"]
+columns = 3
+
+[node name="SpacerLeft" type="Label" parent="HUD/ActionPanel/MarginContainer/VBoxContainer/JunctionButtons"]
+text = ""
+
+[node name="UpButton" type="Button" parent="HUD/ActionPanel/MarginContainer/VBoxContainer/JunctionButtons"]
+text = "↑"
+
+[node name="SpacerRight" type="Label" parent="HUD/ActionPanel/MarginContainer/VBoxContainer/JunctionButtons"]
+text = ""
+
+[node name="LeftButton" type="Button" parent="HUD/ActionPanel/MarginContainer/VBoxContainer/JunctionButtons"]
+text = "←"
+
+[node name="DownButton" type="Button" parent="HUD/ActionPanel/MarginContainer/VBoxContainer/JunctionButtons"]
+text = "↓"
+
+[node name="RightButton" type="Button" parent="HUD/ActionPanel/MarginContainer/VBoxContainer/JunctionButtons"]
+text = "→"
