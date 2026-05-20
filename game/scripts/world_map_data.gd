@@ -55,6 +55,8 @@ func generate(new_columns: int, new_rows: int, new_cell_size: Vector2i, rng_seed
 		cells[index]["resource_spawns"] = _generate_resource_spawns(rng, int(cells[index]["resource_total"]))
 		district_indices.append(index)
 
+	_ensure_elevator_district()
+
 	if district_indices.is_empty():
 		return
 	for district_index in district_indices:
@@ -390,3 +392,13 @@ func _mark_start_node() -> void:
 		start_node_index = connected[0]
 	else:
 		start_node_index = first_district
+
+func _ensure_elevator_district() -> void:
+	if district_indices.is_empty():
+		return
+	for district_index in district_indices:
+		if bool(cells[district_index]["has_elevator"]):
+			return
+	var fallback_index := district_indices[0]
+	cells[fallback_index]["building_type"] = "elevator"
+	cells[fallback_index]["has_elevator"] = true
