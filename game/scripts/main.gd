@@ -11,6 +11,8 @@ enum TravelMode { DRIVE, JUNCTION, FOOT }
 @export var fuel_max: float = 999.0
 @export var fuel_per_pixel: float = 0.01
 @export var drive_speed: float = 160.0
+@export var total_layers: int = 3
+@export var base_elevator_repair_cost: int = 3
 
 var _map: WorldMapData = WorldMapData.new()
 var _mode: int = TravelMode.DRIVE
@@ -28,6 +30,9 @@ var _drive_travel_distance: float = 0.0
 var _current_district_index: int = -1
 var _junction_options: Dictionary = {}
 var _drive_offset: Vector2 = Vector2.ZERO
+var _current_layer: int = 1
+var _elevator_repair_progress: int = 0
+var _run_completed := false
 
 @onready var mode_label: Label = $HUD/InfoPanel/MarginContainer/VBoxContainer/ModeLabel
 @onready var fuel_label: Label = $HUD/InfoPanel/MarginContainer/VBoxContainer/FuelLabel
@@ -38,6 +43,7 @@ var _drive_offset: Vector2 = Vector2.ZERO
 @onready var prompt_label: Label = $HUD/ActionPanel/MarginContainer/VBoxContainer/PromptLabel
 @onready var disembark_button: Button = $HUD/ActionPanel/MarginContainer/VBoxContainer/ActionButtons/DisembarkButton
 @onready var return_button: Button = $HUD/ActionPanel/MarginContainer/VBoxContainer/ActionButtons/ReturnButton
+@onready var repair_button: Button = $HUD/ActionPanel/MarginContainer/VBoxContainer/ActionButtons/RepairButton
 @onready var up_button: Button = $HUD/ActionPanel/MarginContainer/VBoxContainer/JunctionButtons/UpButton
 @onready var down_button: Button = $HUD/ActionPanel/MarginContainer/VBoxContainer/JunctionButtons/DownButton
 @onready var left_button: Button = $HUD/ActionPanel/MarginContainer/VBoxContainer/JunctionButtons/LeftButton
@@ -46,7 +52,7 @@ var _drive_offset: Vector2 = Vector2.ZERO
 func _ready() -> void:
 	_ensure_input_actions()
 	_connect_buttons()
-	_map.generate(map_columns, map_rows, cell_size)
+	_generate_layer_map()
 	_fuel = fuel_max
 	_spawn_vehicle()
 	_spawn_player()
@@ -59,7 +65,7 @@ func _ready() -> void:
 	queue_redraw()
 
 func _ensure_input_actions() -> void:
-	for action_name in ["move_up", "move_down", "move_left", "move_right", "interact"]:
+	for action_name in ["move_up", "move_down", "move_left", "move_right", "interact", "repair"]:
 		if not InputMap.has_action(action_name):
 			InputMap.add_action(action_name)
 	_register_key_action("move_up", KEY_W)
@@ -72,6 +78,7 @@ func _ensure_input_actions() -> void:
 	_register_key_action("move_right", KEY_RIGHT)
 	_register_key_action("interact", KEY_E)
 	_register_key_action("interact", KEY_SPACE)
+	_register_key_action("repair", KEY_R)
 
 func _register_key_action(action_name: String, keycode: Key) -> void:
 	for event in InputMap.action_get_events(action_name):
@@ -84,6 +91,7 @@ func _register_key_action(action_name: String, keycode: Key) -> void:
 func _connect_buttons() -> void:
 	disembark_button.pressed.connect(_on_disembark_pressed)
 	return_button.pressed.connect(_on_return_pressed)
+	repair_button.pressed.connect(_on_repair_pressed)
 	up_button.pressed.connect(func(): _on_direction_pressed("up"))
 	down_button.pressed.connect(func(): _on_direction_pressed("down"))
 	left_button.pressed.connect(func(): _on_direction_pressed("left"))
@@ -105,6 +113,9 @@ func _spawn_player() -> void:
 func _spawn_resources() -> void:
 	if resource_scene == null:
 		resource_scene = load("res://scenes/resource_pickup.tscn")
+	for node in _resource_nodes:
+		if is_instance_valid(node):
+			node.queue_free()
 	_resource_nodes.clear()
 	for district_index in _map.district_indices:
 		var cell := _map.get_cell(district_index)
@@ -123,6 +134,8 @@ func _physics_process(delta: float) -> void:
 			_begin_foot_mode()
 		elif _mode == TravelMode.FOOT:
 			_return_to_vehicle()
+	if Input.is_action_just_pressed("repair"):
+		_attempt_repair_elevator()
 
 	match _mode:
 		TravelMode.DRIVE:
@@ -278,8 +291,30 @@ func _on_direction_pressed(direction: String) -> void:
 	if _junction_options.has(direction):
 		_begin_drive_segment(_current_node_index, int(_junction_options[direction]))
 
+func _on_repair_pressed() -> void:
+	_attempt_repair_elevator()
+
 func _can_disembark() -> bool:
 	return _current_district_index >= 0 and _map.is_district(_current_district_index)
+
+func _can_repair_elevator() -> bool:
+	return _mode == TravelMode.FOOT and _current_district_index >= 0 and _map.district_has_elevator(_current_district_index) and not _run_completed
+
+func _current_repair_cost() -> int:
+	return base_elevator_repair_cost + maxi(_current_layer - 1, 0)
+
+func _attempt_repair_elevator() -> void:
+	if not _can_repair_elevator():
+		return
+	if _inventory <= 0:
+		return
+	var needed := _current_repair_cost() - _elevator_repair_progress
+	if needed <= 0:
+		return
+	_inventory -= 1
+	_elevator_repair_progress += 1
+	if _elevator_repair_progress >= _current_repair_cost():
+		_advance_layer()
 
 func _on_resource_collected(pickup: Node) -> void:
 	if not is_instance_valid(pickup):
@@ -317,7 +352,9 @@ func _refresh_ui() -> void:
 	if _current_district_index >= 0 and _map.is_valid_index(_current_district_index):
 		district_text = " | %s" % _map.building_label(_current_district_index)
 	if is_instance_valid(status_label):
-		status_label.text = "探索: %d / %d | 剩余资源: %d%s" % [_map.explored_count(), _map.cells.size(), _map.total_resources_remaining(), district_text]
+		var layer_text := "第 %d / %d 层" % [_current_layer, total_layers]
+		var elevator_text := "电梯进度: %d / %d" % [_elevator_repair_progress, _current_repair_cost()]
+		status_label.text = "%s | %s | 探索: %d / %d | 剩余资源: %d%s" % [layer_text, elevator_text, _map.explored_count(), _map.cells.size(), _map.total_resources_remaining(), district_text]
 	if is_instance_valid(map_info_label):
 		map_info_label.text = "迷你地图：亮起为已探索，黑色为未探索，红点为当前位置"
 
@@ -331,6 +368,7 @@ func _update_prompts() -> void:
 	prompt_label.text = ""
 	disembark_button.visible = false
 	return_button.visible = false
+	repair_button.visible = false
 	up_button.visible = false
 	down_button.visible = false
 	left_button.visible = false
@@ -343,7 +381,13 @@ func _update_prompts() -> void:
 		left_button.visible = _junction_options.has("left")
 		right_button.visible = _junction_options.has("right")
 	elif in_foot:
-		prompt_label.text = "步行探索：收集资源后按返回车辆"
+		if _run_completed:
+			prompt_label.text = "已完成 %d 层试作流程，可继续探索或返回车辆" % total_layers
+		elif _can_repair_elevator():
+			prompt_label.text = "电梯楼：消耗资源修复电梯，进度满后进入上层"
+			repair_button.visible = true
+		else:
+			prompt_label.text = "步行探索：收集资源后按返回车辆"
 		return_button.visible = true
 	elif can_stop:
 		prompt_label.text = "建筑群：可以下车探索"
@@ -504,3 +548,25 @@ func _draw_foot_background() -> void:
 		var detail_x := rng.randf_range(rect.position.x + 20.0, rect.end.x - detail_width - 20.0)
 		var detail_y := rng.randf_range(rect.position.y + 20.0, rect.end.y - detail_height - 20.0)
 		draw_rect(Rect2(detail_x, detail_y, detail_width, detail_height), Color("#39463a"), true)
+
+func _generate_layer_map() -> void:
+	_map.generate(map_columns, map_rows, cell_size)
+	_elevator_repair_progress = 0
+	_current_district_index = -1
+
+func _advance_layer() -> void:
+	if _current_layer >= total_layers:
+		_run_completed = true
+		return
+	_current_layer += 1
+	_mode = TravelMode.DRIVE
+	_segment_target_index = -1
+	_junction_options.clear()
+	_generate_layer_map()
+	if is_instance_valid(_player):
+		_player.set_active(false)
+	if is_instance_valid(minimap_view):
+		minimap_view.set_world_map(_map)
+	_spawn_resources()
+	if _map.start_node_index >= 0:
+		_begin_drive_from(_map.start_node_index)
