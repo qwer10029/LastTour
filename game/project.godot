@@ -12,6 +12,7 @@ config_version=5
 
 config/name="终末旅行"
 run/main_scene="res://scenes/menu/main_menu.tscn"
+config/features=PackedStringArray("4.6")
 
 [autoload]
 
@@ -19,6 +20,13 @@ GameManager="*res://scripts/autoload/game_manager.gd"
 SaveManager="*res://scripts/autoload/save_manager.gd"
 config/features=PackedStringArray("4.6", "GL Compatibility")
 config/icon="res://icon.svg"
+
+[display]
+
+window/size/mode=2
+window/size/initial_position_type=0
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
 
 [physics]
 

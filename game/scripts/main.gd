@@ -88,6 +88,7 @@ func _ready() -> void:
 			_apply_save_data(save_data)
 	else:
 		_start_new_run()
+	_sync_view_cameras()
 	_refresh_ui()
 	queue_redraw()
 
@@ -104,7 +105,7 @@ func _start_new_run() -> void:
 		time_system.start_day(1)
 
 func _ensure_input_actions() -> void:
-	for action_name in ["move_up", "move_down", "move_left", "move_right", "interact", "repair", "pause"]:
+	for action_name in ["move_up", "move_down", "move_left", "move_right", "interact", "repair", "pause", "enter_defense_mode"]:
 		if not InputMap.has_action(action_name):
 			InputMap.add_action(action_name)
 	# 步行：WASD；驾车/选路：方向键（↑北 ↓南 ←西 →东）
@@ -125,6 +126,7 @@ func _ensure_input_actions() -> void:
 	_register_key_action("repair", KEY_R)
 	_register_key_action("pause", KEY_ESCAPE)
 	_register_key_action("pause", KEY_P)
+	_register_key_action("enter_defense_mode", KEY_F)
 
 func _reset_action_keys(action_name: String) -> void:
 	for event in InputMap.action_get_events(action_name):
@@ -180,6 +182,7 @@ func _spawn_resources() -> void:
 func _physics_process(delta: float) -> void:
 	if _game_paused:
 		return
+	_sync_view_cameras()
 	_update_evening_tint(delta)
 	if _is_night_phase():
 		_refresh_ui()
@@ -211,6 +214,20 @@ func _physics_process(delta: float) -> void:
 	_refresh_ui()
 	queue_redraw()
 
+func _sync_view_cameras() -> void:
+	var night_phase := _is_night_phase()
+	var use_player_camera := _mode == TravelMode.FOOT and not night_phase
+	# Keep junction map fixed on screen: disable follow camera while selecting exits.
+	var use_vehicle_camera := _mode == TravelMode.DRIVE and _segment_target_index >= 0 and not night_phase
+	if is_instance_valid(_player) and is_instance_valid(_player.camera):
+		_player.camera.enabled = use_player_camera
+		if use_player_camera:
+			_player.camera.make_current()
+	if is_instance_valid(_vehicle) and is_instance_valid(_vehicle.camera):
+		_vehicle.camera.enabled = use_vehicle_camera
+		if use_vehicle_camera:
+			_vehicle.camera.make_current()
+
 func _process_drive(delta: float) -> void:
 	if _segment_target_index < 0 or not _map.is_valid_index(_segment_target_index):
 		_update_vehicle_transform()
@@ -240,6 +257,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	if _game_paused:
+		return
+	if event.is_action_pressed("enter_defense_mode") and is_instance_valid(time_system) and time_system.phase == TimeSystem.Phase.EVENING and _mode == TravelMode.DRIVE and _segment_target_index < 0:
+		time_system.enter_night_setup(true)
+		get_viewport().set_input_as_handled()
 		return
 	if _mode != TravelMode.DRIVE:
 		return
@@ -741,7 +762,7 @@ func _restore_time_phase_after_load() -> void:
 		TimeSystem.Phase.NIGHT_SETUP:
 			_force_return_to_vehicle_for_night()
 			if is_instance_valid(night_defense):
-				night_defense.start_td_session(_inventory, GameManager.difficulty, time_system.day_index)
+				night_defense.start_td_session(_inventory, GameManager.difficulty, time_system.day_index, true)
 			time_system.pause()
 		TimeSystem.Phase.NIGHT_RESOLVE:
 			time_system.finish_night_and_advance_day()
@@ -830,14 +851,14 @@ func _on_evening_warning(remaining_sec: float) -> void:
 		evening_notice.show_evening_warning(remaining_sec)
 
 
-func _on_night_setup_started(day_index: int) -> void:
+func _on_night_setup_started(day_index: int, manual_setup: bool) -> void:
 	_force_return_to_vehicle_for_night()
 	if is_instance_valid(time_system):
 		time_system.pause()
 	if is_instance_valid(evening_notice) and evening_notice.has_method("hide_notice"):
 		evening_notice.hide_notice()
 	if is_instance_valid(night_defense):
-		night_defense.start_td_session(_inventory, GameManager.difficulty, day_index)
+		night_defense.start_td_session(_inventory, GameManager.difficulty, day_index, manual_setup)
 	_refresh_ui()
 
 
@@ -853,8 +874,6 @@ func _on_night_td_finished(result: Dictionary) -> void:
 func _apply_night_result(result: Dictionary) -> void:
 	if result.has("inventory_remaining"):
 		_inventory = int(result.get("inventory_remaining", _inventory))
-	var loss := int(result.get("inventory_loss", 0))
-	_inventory = maxi(_inventory - loss, 0)
 	_fuel = maxf(_fuel - float(result.get("fuel_loss", 0.0)), 0.0)
 
 
@@ -949,7 +968,10 @@ func _update_prompts() -> void:
 			prompt_label.text = "夜晚结算中…"
 		return
 	if is_instance_valid(time_system) and time_system.phase == TimeSystem.Phase.EVENING:
-		prompt_label.text = "傍晚提醒：请尽快返回车辆，入夜后需布置防线"
+		if _mode == TravelMode.DRIVE and _segment_target_index < 0:
+			prompt_label.text = "已回到车辆，按 F 进入布防模式"
+		else:
+			prompt_label.text = "傍晚提醒：请尽快返回车辆，随后按 F 进入布防模式"
 		if can_stop and _mode == TravelMode.DRIVE:
 			disembark_button.visible = true
 		elif in_foot:
@@ -1025,16 +1047,32 @@ func _vehicle_world_position() -> Vector2:
 		return _map.cell_center(_current_node_index)
 	return Vector2.ZERO
 
-func _world_view_transform() -> Transform2D:
+func _world_view_transform(full_map_view: bool = false) -> Transform2D:
 	var view_size := get_viewport_rect().size
 	if view_size == Vector2.ZERO:
 		view_size = Vector2(1280.0, 720.0)
 	var world_size := _map.get_world_size()
-	var focus := _vehicle_world_position()
-	var padding := 0.88
-	var scale := minf(view_size.x / maxf(world_size.x, 1.0), view_size.y / maxf(world_size.y, 1.0)) * padding
-	var origin := view_size * 0.5 - focus * scale
+	var content_rect := _full_map_content_rect(view_size) if full_map_view else _route_content_rect(view_size)
+	var scale := minf(content_rect.size.x / maxf(world_size.x, 1.0), content_rect.size.y / maxf(world_size.y, 1.0)) * 0.98
+	var origin := content_rect.position + (content_rect.size - world_size * scale) * 0.5
 	return Transform2D(Vector2(scale, 0.0), Vector2(0.0, scale), origin)
+
+func _full_map_content_rect(view_size: Vector2) -> Rect2:
+	var margin := 24.0
+	return Rect2(
+		Vector2(margin, margin),
+		Vector2(maxf(view_size.x - margin * 2.0, 1.0), maxf(view_size.y - margin * 2.0, 1.0))
+	)
+
+func _route_content_rect(view_size: Vector2) -> Rect2:
+	var left := 124.0
+	var top := 144.0
+	var right := 124.0
+	var bottom := 150.0
+	return Rect2(
+		Vector2(left, top),
+		Vector2(maxf(view_size.x - left - right, 1.0), maxf(view_size.y - top - bottom, 1.0))
+	)
 
 func _update_vehicle_transform() -> void:
 	if not is_instance_valid(_vehicle):
@@ -1154,19 +1192,24 @@ func _draw_drive_background() -> void:
 		draw_string(ThemeDB.fallback_font, Vector2(left + 16.0, top + 16.0), "东西路段：→ 前进  ← 后退", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#f0d080"))
 
 func _drive_view_anchor() -> Vector2:
-	if is_instance_valid(_vehicle):
-		return _vehicle.global_position
-	if _current_node_index >= 0:
+	if _segment_target_index >= 0 and _map.is_valid_index(_segment_from_index) and _map.is_valid_index(_segment_target_index):
+		return _map.cell_center(_segment_from_index).lerp(_map.cell_center(_segment_target_index), 0.5)
+	if _map.is_valid_index(_current_node_index):
 		return _map.cell_center(_current_node_index)
+	if _map.is_valid_index(_current_district_index):
+		return _map.cell_center(_current_district_index)
 	return Vector2.ZERO
 
 func _draw_world_map_background() -> void:
 	var view_size := get_viewport_rect().size
 	if view_size == Vector2.ZERO:
 		view_size = Vector2(1280.0, 720.0)
-	draw_rect(Rect2(Vector2.ZERO, view_size), Color("#060a10"), true)
+	draw_rect(Rect2(Vector2.ZERO, view_size), Color("#05070a"), true)
+	var backdrop := Rect2(Vector2(32.0, 32.0), view_size - Vector2(64.0, 64.0))
+	draw_rect(backdrop, Color(0.07, 0.09, 0.12, 0.92), true)
+	draw_rect(backdrop, Color("#d7f1ff"), false, 2.0)
 
-	var xform := _world_view_transform()
+	var xform := _world_view_transform(true)
 	for index in range(_map.cells.size()):
 		var cell := _map.get_cell(index)
 		if str(cell["kind"]) == "empty":
@@ -1175,22 +1218,26 @@ func _draw_world_map_background() -> void:
 		var screen_rect := xform * rect
 		var explored := bool(cell["explored"])
 		var kind := str(cell["kind"])
-		var fill := Color("#151b24")
-		if explored:
-			match kind:
-				"district":
-					fill = Color("#5f7a4c")
-				"hub":
-					fill = Color("#4f6472")
-				"junction":
-					fill = Color("#4a6278")
-				_:
-					fill = Color("#2f3a46")
+		var fill := Color("#1a2430")
+		match kind:
+			"district":
+				fill = Color("#587349") if explored else Color("#314233")
+			"hub":
+				fill = Color("#4f6673") if explored else Color("#2b3943")
+			"junction":
+				fill = Color("#465f73") if explored else Color("#273441")
+			_:
+				fill = Color("#29313c")
 		draw_rect(screen_rect, fill, true)
-		draw_rect(screen_rect, Color("#3d5168") if explored else Color("#1e2834"), false, 2.0)
+		draw_rect(screen_rect, Color("#9ec9ff") if explored else Color("#35485a"), false, 2.0)
+		if kind == "junction":
+			var junction_center := screen_rect.position + screen_rect.size * 0.5
+			draw_circle(junction_center, 10.0, Color("#f0c168") if explored else Color(0.95, 0.78, 0.43, 0.65))
+			draw_string(ThemeDB.fallback_font, junction_center + Vector2(-8, -18), "路口", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#f6e7b0"))
 
 	for index in range(_map.cells.size()):
-		if not bool(_map.get_cell(index)["explored"]):
+		var cell := _map.get_cell(index)
+		if str(cell["kind"]) == "empty":
 			continue
 		var center := xform * _map.cell_center(index)
 		for direction in _map.get_available_directions(index):
@@ -1200,13 +1247,18 @@ func _draw_world_map_background() -> void:
 			var other_center := xform * _map.cell_center(other)
 			var is_ns := direction == "up" or direction == "down"
 			var road_color := Color("#6eb5e8") if is_ns else Color("#e8c66e")
-			draw_line(center, other_center, road_color, 7.0 if is_ns else 5.0)
+			if not bool(cell["explored"]) or not bool(_map.get_cell(other)["explored"]):
+				road_color = Color(road_color.r, road_color.g, road_color.b, 0.28)
+			draw_line(center, other_center, road_color, 8.0 if is_ns else 6.0)
+			draw_line(center, other_center, Color(0.0, 0.0, 0.0, 0.18), 2.0)
 
 	if _map.is_valid_index(_current_node_index):
 		var node_center := xform * _map.cell_center(_current_node_index)
 		var node_rect := xform * _map.cell_rect(_current_node_index)
-		draw_rect(node_rect, Color("#ff5f57", 0.15), true)
-		draw_rect(node_rect, Color("#ff8b7a"), false, 3.0)
+		draw_rect(node_rect, Color("#ff5f57", 0.25), true)
+		draw_rect(node_rect, Color("#ffd2cc"), false, 4.0)
+		draw_circle(node_center, 14.0, Color("#ff8b7a"))
+		draw_string(ThemeDB.fallback_font, node_center + Vector2(-18, -22), "当前", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#ffd8d4"))
 		for direction in _exit_options.keys():
 			var tip := node_center
 			var arm := minf(node_rect.size.x, node_rect.size.y) * 0.34
@@ -1262,8 +1314,9 @@ func _draw_night_camp_background() -> void:
 		view_size = Vector2(1280.0, 720.0)
 	draw_rect(Rect2(Vector2.ZERO, view_size), Color("#050810"), true)
 	var camp_center := Vector2(view_size.x * 0.5, view_size.y * 0.62)
-	if is_instance_valid(_vehicle):
-		camp_center = _vehicle.global_position + Vector2(0.0, 40.0)
+	if _map.is_valid_index(_current_district_index):
+		var camp_rect := _map.cell_rect(_current_district_index)
+		camp_center = camp_rect.position + camp_rect.size * 0.5
 	draw_rect(Rect2(camp_center.x - 120.0, camp_center.y - 20.0, 240.0, 80.0), Color("#1a2533"), true)
 	draw_rect(Rect2(camp_center.x - 90.0, camp_center.y - 50.0, 180.0, 36.0), Color("#d89246"), true)
 	draw_circle(Vector2(camp_center.x - 140.0, camp_center.y + 10.0), 8.0, Color("#6ed08b"))

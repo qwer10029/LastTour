@@ -33,7 +33,7 @@ func show_evening_warning(remaining_sec: float) -> void:
 	if is_instance_valid(title_label):
 		title_label.text = "傍晚 · 即将入夜"
 	if is_instance_valid(body_label):
-		body_label.text = "探索阶段即将结束。请尽快返回车辆，并开始布置夜间防线。（剩余约 %.0f 秒）" % remaining_sec
+		body_label.text = "探索阶段即将结束。请尽快返回车辆，按 F 进入布防模式。（剩余约 %.0f 秒）" % remaining_sec
 
 
 func show_night_setup() -> void:
