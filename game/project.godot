@@ -10,8 +10,13 @@ config_version=5
 
 [application]
 
-config/name="move_and_collect"
-run/main_scene="res://scenes/main.tscn"
+config/name="终末旅行"
+run/main_scene="res://scenes/menu/main_menu.tscn"
+
+[autoload]
+
+GameManager="*res://scripts/autoload/game_manager.gd"
+SaveManager="*res://scripts/autoload/save_manager.gd"
 config/features=PackedStringArray("4.6", "GL Compatibility")
 config/icon="res://icon.svg"
 

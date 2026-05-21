@@ -174,6 +174,51 @@ func get_neighbor_index(index: int, direction: String) -> int:
 		return int(connections[direction])
 	return -1
 
+func direction_between(from_index: int, to_index: int) -> String:
+	if not is_valid_index(from_index) or not is_valid_index(to_index):
+		return ""
+	var delta := coord_from_index(to_index) - coord_from_index(from_index)
+	if delta == Vector2i(0, -1):
+		return "up"
+	if delta == Vector2i(0, 1):
+		return "down"
+	if delta == Vector2i(-1, 0):
+		return "left"
+	if delta == Vector2i(1, 0):
+		return "right"
+	return ""
+
+func opposite_direction(direction: String) -> String:
+	match direction:
+		"up":
+			return "down"
+		"down":
+			return "up"
+		"left":
+			return "right"
+		"right":
+			return "left"
+		_:
+			return ""
+
+func get_segment_axis(from_index: int, to_index: int) -> String:
+	if not is_valid_index(from_index) or not is_valid_index(to_index):
+		return ""
+	var delta := coord_from_index(to_index) - coord_from_index(from_index)
+	if delta.x == 0 and delta.y != 0:
+		return "ns"
+	if delta.y == 0 and delta.x != 0:
+		return "ew"
+	return ""
+
+func allowed_input_directions_for_segment(from_index: int, to_index: int) -> Array[String]:
+	var axis := get_segment_axis(from_index, to_index)
+	if axis == "ns":
+		return ["up", "down"]
+	if axis == "ew":
+		return ["left", "right"]
+	return []
+
 func connected_count(index: int) -> int:
 	return get_connected_indices(index).size()
 
@@ -391,10 +436,18 @@ func _mark_start_node() -> void:
 		return
 	var first_district := district_indices[0]
 	var connected := get_connected_indices(first_district)
-	if not connected.is_empty():
-		start_node_index = connected[0]
-	else:
+	if connected.is_empty():
 		start_node_index = first_district
+		return
+	# 优先从连接数最多的邻格出发，便于开局即进入路口选择
+	var best_index := connected[0]
+	var best_degree := -1
+	for neighbor in connected:
+		var degree := connected_count(neighbor)
+		if degree > best_degree:
+			best_degree = degree
+			best_index = neighbor
+	start_node_index = best_index
 
 func _ensure_elevator_district() -> void:
 	if district_indices.is_empty():
@@ -405,3 +458,88 @@ func _ensure_elevator_district() -> void:
 	var fallback_index := district_indices[0]
 	cells[fallback_index]["building_type"] = "elevator"
 	cells[fallback_index]["has_elevator"] = true
+
+
+func to_dictionary() -> Dictionary:
+	var serialized_cells: Array = []
+	for cell in cells:
+		serialized_cells.append(_serialize_cell(cell))
+	return {
+		"columns": columns,
+		"rows": rows,
+		"cell_size": {"x": cell_size.x, "y": cell_size.y},
+		"cells": serialized_cells,
+		"district_indices": district_indices.duplicate(),
+		"hub_indices": hub_indices.duplicate(),
+		"start_node_index": start_node_index,
+	}
+
+
+func load_from_dictionary(data: Dictionary) -> void:
+	columns = int(data.get("columns", 0))
+	rows = int(data.get("rows", 0))
+	var size_dict: Dictionary = data.get("cell_size", {})
+	cell_size = Vector2i(int(size_dict.get("x", 240)), int(size_dict.get("y", 240)))
+	cells.clear()
+	district_indices.clear()
+	hub_indices.clear()
+	for raw_cell in data.get("cells", []):
+		if raw_cell is Dictionary:
+			cells.append(_deserialize_cell(raw_cell))
+	for raw_index in data.get("district_indices", []):
+		district_indices.append(int(raw_index))
+	for raw_index in data.get("hub_indices", []):
+		hub_indices.append(int(raw_index))
+	start_node_index = int(data.get("start_node_index", -1))
+
+
+func _serialize_cell(cell: Dictionary) -> Dictionary:
+	var coord: Vector2i = cell.get("coord", Vector2i.ZERO)
+	var spawns: Array = []
+	for spawn in cell.get("resource_spawns", []):
+		if spawn is Vector2:
+			spawns.append({"x": spawn.x, "y": spawn.y})
+	var connections: Dictionary = {}
+	for direction in cell.get("connections", {}).keys():
+		connections[direction] = int(cell["connections"][direction])
+	return {
+		"coord": {"x": coord.x, "y": coord.y},
+		"kind": str(cell.get("kind", "empty")),
+		"explored": bool(cell.get("explored", false)),
+		"building_type": str(cell.get("building_type", "")),
+		"has_elevator": bool(cell.get("has_elevator", false)),
+		"resource_total": int(cell.get("resource_total", 0)),
+		"resource_remaining": int(cell.get("resource_remaining", 0)),
+		"resource_spawns": spawns,
+		"connections": connections,
+		"seed": int(cell.get("seed", 0)),
+	}
+
+
+func _deserialize_cell(data: Dictionary) -> Dictionary:
+	var coord_dict: Dictionary = data.get("coord", {})
+	var coord := Vector2i(int(coord_dict.get("x", 0)), int(coord_dict.get("y", 0)))
+	var spawns: Array[Vector2] = []
+	for spawn_data in data.get("resource_spawns", []):
+		if spawn_data is Dictionary:
+			spawns.append(Vector2(float(spawn_data.get("x", 0.0)), float(spawn_data.get("y", 0.0))))
+	var connections := {
+		"up": -1,
+		"down": -1,
+		"left": -1,
+		"right": -1,
+	}
+	for direction in data.get("connections", {}).keys():
+		connections[direction] = int(data["connections"][direction])
+	return {
+		"coord": coord,
+		"kind": str(data.get("kind", "empty")),
+		"explored": bool(data.get("explored", false)),
+		"building_type": str(data.get("building_type", "")),
+		"has_elevator": bool(data.get("has_elevator", false)),
+		"resource_total": int(data.get("resource_total", 0)),
+		"resource_remaining": int(data.get("resource_remaining", 0)),
+		"resource_spawns": spawns,
+		"connections": connections,
+		"seed": int(data.get("seed", 0)),
+	}

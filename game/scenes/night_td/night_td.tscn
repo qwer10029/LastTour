@@ -1,0 +1,170 @@
+[gd_scene load_steps=4 format=3 uid="uid://night_td_scene"]
+
+[ext_resource type="Script" path="res://scripts/night_td/night_td_controller.gd" id="1_ctrl"]
+[ext_resource type="Script" path="res://scripts/night_td/night_td_field.gd" id="2_field"]
+[ext_resource type="Script" path="res://scripts/night_td/night_td_hud.gd" id="3_hud"]
+
+[node name="NightTd" type="Node2D"]
+visible = false
+script = ExtResource("1_ctrl")
+placement_time_sec = 180.0
+
+[node name="Field" type="Node2D" parent="."]
+script = ExtResource("2_field")
+
+[node name="Hud" type="CanvasLayer" parent="."]
+layer = 10
+script = ExtResource("3_hud")
+
+[node name="TopBar" type="PanelContainer" parent="Hud"]
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 120.0
+grow_horizontal = 2
+
+[node name="Margin" type="MarginContainer" parent="Hud/TopBar"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 10
+
+[node name="VBox" type="VBoxContainer" parent="Hud/TopBar/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="PhaseLabel" type="Label" parent="Hud/TopBar/Margin/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "夜晚塔防 · 布防阶段"
+
+[node name="ResourceLabel" type="Label" parent="Hud/TopBar/Margin/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "背包资源: 0"
+
+[node name="TimerLabel" type="Label" parent="Hud/TopBar/Margin/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "布防剩余 180 秒"
+
+[node name="HintLabel" type="Label" parent="Hud/TopBar/Margin/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "点击地图放置防御设施"
+autowrap_mode = 2
+
+[node name="SidePanel" type="PanelContainer" parent="Hud"]
+anchors_preset = 11
+anchor_left = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -220.0
+offset_top = 130.0
+offset_bottom = -16.0
+grow_vertical = 2
+
+[node name="Margin" type="MarginContainer" parent="Hud/SidePanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="VBox" type="VBoxContainer" parent="Hud/SidePanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ToolsTitle" type="Label" parent="Hud/SidePanel/Margin/VBox"]
+layout_mode = 2
+text = "背包 · 布防设施"
+
+[node name="JammerBtn" type="Button" parent="Hud/SidePanel/Margin/VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+text = "干扰信标"
+
+[node name="BarrierBtn" type="Button" parent="Hud/SidePanel/Margin/VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+text = "物理路障"
+
+[node name="TrapBtn" type="Button" parent="Hud/SidePanel/Margin/VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+text = "电磁陷阱"
+
+[node name="StartWaveBtn" type="Button" parent="Hud/SidePanel/Margin/VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+text = "布防完成，开始接敌"
+
+[node name="LogLabel" type="Label" parent="Hud/SidePanel/Margin/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+text = ""
+autowrap_mode = 2
+
+[node name="ResultOverlay" type="Control" parent="Hud"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+
+[node name="Dimmer" type="ColorRect" parent="Hud/ResultOverlay"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+color = Color(0, 0, 0, 0.55)
+
+[node name="CenterContainer" type="CenterContainer" parent="Hud/ResultOverlay"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="ResultPanel" type="PanelContainer" parent="Hud/ResultOverlay/CenterContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(480, 0)
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="Hud/ResultOverlay/CenterContainer/ResultPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 20
+
+[node name="VBox" type="VBoxContainer" parent="Hud/ResultOverlay/CenterContainer/ResultPanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="ResultLabel" type="Label" parent="Hud/ResultOverlay/CenterContainer/ResultPanel/Margin/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="ContinueBtn" type="Button" parent="Hud/ResultOverlay/CenterContainer/ResultPanel/Margin/VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(320, 48)
+layout_mode = 2
+size_flags_horizontal = 4
+text = "确认结算，进入下一天"

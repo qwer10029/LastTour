@@ -1,16 +1,32 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=10 format=3]
 
 [ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
 [ext_resource type="PackedScene" path="res://scenes/player.tscn" id="2_player"]
 [ext_resource type="PackedScene" path="res://scenes/resource_pickup.tscn" id="3_resource"]
 [ext_resource type="PackedScene" path="res://scenes/vehicle.tscn" id="4_vehicle"]
 [ext_resource type="Script" path="res://scripts/minimap_view.gd" id="5_minimap"]
+[ext_resource type="Script" path="res://scripts/systems/time_system.gd" id="6_time"]
+[ext_resource type="Script" path="res://scripts/systems/night_defense_system.gd" id="7_night"]
+[ext_resource type="Script" path="res://scripts/ui/time_hud.gd" id="8_time_hud"]
+[ext_resource type="Script" path="res://scripts/ui/evening_notice.gd" id="9_evening"]
+[ext_resource type="PackedScene" uid="uid://night_td_scene" path="res://scenes/night_td/night_td.tscn" id="10_night_td"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1_main")
 player_scene = ExtResource("2_player")
 resource_scene = ExtResource("3_resource")
 vehicle_scene = ExtResource("4_vehicle")
+
+[node name="Systems" type="Node" parent="."]
+
+[node name="TimeSystem" type="Node" parent="Systems"]
+script = ExtResource("6_time")
+auto_start = false
+day_duration_sec = 90.0
+evening_warning_sec = 25.0
+
+[node name="NightDefenseSystem" type="Node" parent="Systems"]
+script = ExtResource("7_night")
 
 [node name="HUD" type="CanvasLayer" parent="."]
 
@@ -31,6 +47,101 @@ theme_override_constants/margin_bottom = 12
 [node name="VBoxContainer" type="VBoxContainer" parent="HUD/InfoPanel/MarginContainer"]
 offset_right = 336.0
 offset_bottom = 156.0
+
+[node name="TimePanel" type="Panel" parent="HUD"]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -300.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = 108.0
+grow_horizontal = 0
+
+[node name="MarginContainer" type="MarginContainer" parent="HUD/TimePanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="TimeHud" type="Control" parent="HUD/TimePanel/MarginContainer"]
+layout_mode = 2
+script = ExtResource("8_time_hud")
+
+[node name="VBox" type="VBoxContainer" parent="HUD/TimePanel/MarginContainer/TimeHud"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 4
+
+[node name="PhaseLabel" type="Label" parent="HUD/TimePanel/MarginContainer/TimeHud/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "时段: 白天"
+
+[node name="DayLabel" type="Label" parent="HUD/TimePanel/MarginContainer/TimeHud/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "第 1 天"
+
+[node name="TimerLabel" type="Label" parent="HUD/TimePanel/MarginContainer/TimeHud/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "剩余 90 秒"
+
+[node name="DayProgressBar" type="ProgressBar" parent="HUD/TimePanel/MarginContainer/TimeHud/VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 18)
+layout_mode = 2
+max_value = 100.0
+show_percentage = false
+
+[node name="EveningNotice" type="PanelContainer" parent="HUD"]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -320.0
+offset_top = 72.0
+offset_right = 320.0
+offset_bottom = 168.0
+grow_horizontal = 2
+script = ExtResource("9_evening")
+
+[node name="MarginContainer" type="MarginContainer" parent="HUD/EveningNotice"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 12
+
+[node name="VBox" type="VBoxContainer" parent="HUD/EveningNotice/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="TitleLabel" type="Label" parent="HUD/EveningNotice/MarginContainer/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "傍晚 · 即将入夜"
+horizontal_alignment = 1
+
+[node name="BodyLabel" type="Label" parent="HUD/EveningNotice/MarginContainer/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "请返回车辆并开始设防"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="NightTd" parent="." instance=ExtResource("10_night_td")]
+visible = false
 
 [node name="ModeLabel" type="Label" parent="HUD/InfoPanel/MarginContainer/VBoxContainer"]
 text = "状态: 驾驶车辆"
@@ -115,6 +226,10 @@ text = "返回车辆(E)"
 
 [node name="RepairButton" type="Button" parent="HUD/ActionPanel/MarginContainer/VBoxContainer/ActionButtons"]
 text = "修复电梯(R)"
+
+[node name="BackTrackButton" type="Button" parent="HUD/ActionPanel/MarginContainer/VBoxContainer/ActionButtons"]
+visible = false
+text = "原路返回 (E)"
 
 [node name="JunctionButtons" type="GridContainer" parent="HUD/ActionPanel/MarginContainer/VBoxContainer"]
 columns = 3
