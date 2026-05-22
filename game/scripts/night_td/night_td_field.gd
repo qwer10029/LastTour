@@ -2,20 +2,28 @@ extends Node2D
 class_name NightTdField
 
 signal cell_clicked(cell: Vector2i)
+signal cell_right_clicked(cell: Vector2i)
 
 @export var grid_cols: int = 14
 @export var grid_rows: int = 10
 @export var tile_size: int = 48
 @export var field_origin: Vector2 = Vector2(120, 70)
+@export var top_reserved_px: float = 112.0
+@export var right_reserved_px: float = 176.0
+@export var outer_margin_px: float = 24.0
 
 var vehicle_cells: Array[Vector2i] = [Vector2i(6, 7), Vector2i(7, 7), Vector2i(6, 8), Vector2i(7, 8)]
 var base_local_pos: Vector2 = Vector2.ZERO
+var _layout_tile_size: float = 48.0
 var _controller: NightTdController
+var _last_view_size: Vector2 = Vector2.ZERO
 
 
 func _ready() -> void:
 	_controller = get_parent() as NightTdController
-	base_local_pos = _cell_to_local(Vector2i(6, 8))
+	set_process_input(true)
+	_reflow_layout()
+	base_local_pos = get_vehicle_center_local()
 
 
 func bind_controller(controller: NightTdController) -> void:
@@ -23,12 +31,60 @@ func bind_controller(controller: NightTdController) -> void:
 
 
 func _process(_delta: float) -> void:
+	var view_size := get_viewport_rect().size
+	if view_size != _last_view_size:
+		_reflow_layout()
 	if get_parent() != null and get_parent().visible:
 		queue_redraw()
 
 
+func _reflow_layout() -> void:
+	var view_size := get_viewport_rect().size
+	if view_size == Vector2.ZERO:
+		view_size = Vector2(1280.0, 720.0)
+	_last_view_size = view_size
+	var play_rect := _play_area_rect(view_size)
+	var fitted_tile := floorf(minf(
+		(play_rect.size.x - outer_margin_px * 2.0) / float(grid_cols),
+		(play_rect.size.y - outer_margin_px * 2.0) / float(grid_rows)
+	))
+	_layout_tile_size = clampf(fitted_tile, 44.0, 56.0)
+	var vehicle_offset := _vehicle_center_offset()
+	var target_center := view_size * Vector2(0.5, 0.54)
+	field_origin = target_center - vehicle_offset * _layout_tile_size
+
+
+func _play_area_rect(view_size: Vector2) -> Rect2:
+	var left := outer_margin_px * 2.0
+	var top := top_reserved_px + outer_margin_px * 0.5
+	var right := right_reserved_px + outer_margin_px * 0.5
+	var bottom := outer_margin_px * 1.5
+	return Rect2(
+		Vector2(left, top),
+		Vector2(maxf(view_size.x - left - right, 1.0), maxf(view_size.y - top - bottom, 1.0))
+	)
+
+
+func _vehicle_center_offset() -> Vector2:
+	var offset := Vector2.ZERO
+	for cell in vehicle_cells:
+		offset += Vector2(float(cell.x) + 0.5, float(cell.y) + 0.5)
+	return offset / float(vehicle_cells.size())
+
+
 func _cell_to_local(cell: Vector2i) -> Vector2:
-	return field_origin + Vector2((cell.x + 0.5) * tile_size, (cell.y + 0.5) * tile_size)
+	return field_origin + Vector2((cell.x + 0.5) * _layout_tile_size, (cell.y + 0.5) * _layout_tile_size)
+
+
+func get_vehicle_center_local() -> Vector2:
+	var center := Vector2.ZERO
+	for cell in vehicle_cells:
+		center += _cell_to_local(cell)
+	return center / float(vehicle_cells.size())
+
+
+func get_vehicle_center_world() -> Vector2:
+	return to_global(get_vehicle_center_local())
 
 
 func cell_to_world(cell: Vector2i) -> Vector2:
@@ -38,13 +94,13 @@ func cell_to_world(cell: Vector2i) -> Vector2:
 func world_to_cell(world_pos: Vector2) -> Vector2i:
 	var local := to_local(world_pos) - field_origin
 	return Vector2i(
-		clampi(int(local.x / tile_size), 0, grid_cols - 1),
-		clampi(int(local.y / tile_size), 0, grid_rows - 1)
+		clampi(int(local.x / _layout_tile_size), 0, grid_cols - 1),
+		clampi(int(local.y / _layout_tile_size), 0, grid_rows - 1)
 	)
 
 
 func get_field_rect_local() -> Rect2:
-	return Rect2(field_origin, Vector2(grid_cols * tile_size, grid_rows * tile_size))
+	return Rect2(field_origin, Vector2(grid_cols * _layout_tile_size, grid_rows * _layout_tile_size))
 
 
 func is_inside_grid(cell: Vector2i) -> bool:
@@ -72,44 +128,65 @@ func can_place_tower(cell: Vector2i, occupied: Dictionary) -> bool:
 func _input(event: InputEvent) -> void:
 	if _controller != null and _controller.phase != NightTdController.Phase.PLACE:
 		return
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+	if event is InputEventMouseButton and event.pressed:
 		var cell := world_to_cell(get_global_mouse_position())
-		if is_inside_grid(cell):
+		if not is_inside_grid(cell):
+			return
+		if event.button_index == MOUSE_BUTTON_LEFT:
 			cell_clicked.emit(cell)
+		elif event.button_index == MOUSE_BUTTON_RIGHT:
+			cell_right_clicked.emit(cell)
 
 
 func _draw() -> void:
-	var grid_color := Color("#0f1a28")
-	var line_color := Color("#2a4560")
-	var spawn_color := Color(0.55, 0.22, 0.22, 0.35)
+	var grid_color := Color("#05080c")
+	var line_color := Color("#8ec7ff")
+	var spawn_color := Color(0.95, 0.2, 0.2, 0.55)
+	var buildable_color := Color(0.12, 0.45, 0.24, 0.18)
+	var buildable_border := Color(0.55, 0.95, 0.66, 0.34)
 	var field_rect := get_field_rect_local()
 	draw_rect(field_rect, grid_color, true)
-	draw_rect(field_rect, Color("#3d5a73"), false, 2.0)
+	draw_rect(field_rect, Color("#d7f1ff"), false, 4.0)
+	draw_rect(field_rect.grow(-5.0), Color(0.0, 0.0, 0.0, 0.10), false, 1.0)
+	draw_string(ThemeDB.fallback_font, field_origin + Vector2(8, -10), "布防区", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#eef8ff"))
 
 	for x in range(grid_cols + 1):
-		var px := field_origin.x + x * tile_size
-		draw_line(Vector2(px, field_origin.y), Vector2(px, field_origin.y + grid_rows * tile_size), line_color, 1.0)
+		var px := field_origin.x + x * _layout_tile_size
+		draw_line(Vector2(px, field_origin.y), Vector2(px, field_origin.y + grid_rows * _layout_tile_size), line_color, 1.5)
 	for y in range(grid_rows + 1):
-		var py := field_origin.y + y * tile_size
-		draw_line(Vector2(field_origin.x, py), Vector2(field_origin.x + grid_cols * tile_size, py), line_color, 1.0)
+		var py := field_origin.y + y * _layout_tile_size
+		draw_line(Vector2(field_origin.x, py), Vector2(field_origin.x + grid_cols * _layout_tile_size, py), line_color, 1.5)
 
 	for x in range(grid_cols):
 		for y in range(2):
-			var r := Rect2(field_origin + Vector2(x * tile_size, y * tile_size), Vector2(tile_size, tile_size))
+			var r := Rect2(field_origin + Vector2(x * _layout_tile_size, y * _layout_tile_size), Vector2(_layout_tile_size, _layout_tile_size))
 			draw_rect(r, spawn_color, true)
-			draw_string(ThemeDB.fallback_font, r.position + Vector2(8, 20), "敌", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.9, 0.5, 0.5, 0.6))
+			draw_rect(r.grow(-4.0), Color(1.0, 0.9, 0.9, 0.35), false, 1.0)
+			draw_string(ThemeDB.fallback_font, r.position + Vector2(8, 20), "敌", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#fff4f4"))
+
+	for x in range(grid_cols):
+		for y in range(grid_rows):
+			if is_vehicle_cell(Vector2i(x, y)):
+				continue
+			var build_rect := Rect2(field_origin + Vector2(x * _layout_tile_size, y * _layout_tile_size), Vector2(_layout_tile_size, _layout_tile_size))
+			var checker := 0.10 if (x + y) % 2 == 0 else 0.18
+			draw_rect(build_rect, Color(0.14, 0.52, 0.28, checker), true)
+			draw_rect(build_rect, buildable_border, false, 1.0)
+			if y == 0 or y == 1:
+				draw_rect(build_rect, Color(0.82, 0.26, 0.26, 0.08), true)
 
 	for cell in vehicle_cells:
-		var rect := Rect2(field_origin + Vector2(cell.x * tile_size, cell.y * tile_size), Vector2(tile_size, tile_size))
-		draw_rect(rect, Color("#1a2533"), true)
-		draw_rect(rect, Color("#d89246"), false, 2.0)
+		var rect := Rect2(field_origin + Vector2(cell.x * _layout_tile_size, cell.y * _layout_tile_size), Vector2(_layout_tile_size, _layout_tile_size))
+		draw_rect(rect, Color("#203144"), true)
+		draw_rect(rect, Color("#ffcc6f"), false, 3.0)
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(6, 18), "车", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#fff8e6"))
 
-	var veh_center := _cell_to_local(Vector2i(7, 7))
-	draw_rect(Rect2(veh_center.x - 30, veh_center.y - 20, 60, 36), Color("#d89246"), true)
-	draw_rect(Rect2(veh_center.x - 34, veh_center.y + 10, 68, 16), Color("#6b3f17"), true)
-	draw_string(ThemeDB.fallback_font, veh_center + Vector2(-18, -4), "车", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#fff3d6"))
-	draw_circle(base_local_pos, 9.0, Color("#ff5f57"))
-	draw_string(ThemeDB.fallback_font, base_local_pos + Vector2(-10, -28), "据点", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#ff5f57"))
+	var veh_center := get_vehicle_center_local()
+	draw_circle(veh_center, 30.0, Color(0.95, 0.74, 0.22, 0.22))
+	draw_circle(veh_center, 20.0, Color("#ffd66d"))
+	draw_circle(veh_center, 10.0, Color("#ff6b63"))
+	draw_string(ThemeDB.fallback_font, veh_center + Vector2(-18, -4), "车辆", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#fff8e6"))
+	draw_string(ThemeDB.fallback_font, veh_center + Vector2(-18, -28), "防守核心", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#ffb1a8"))
 
 	if _controller != null:
 		_draw_placed_towers()
@@ -123,7 +200,25 @@ func _draw_placed_towers() -> void:
 		var local_pos := _cell_to_local(cell)
 		var tdef: Dictionary = NightTdDefs.get_tower_def(str(tower["type"]))
 		var radius: float = float(tdef.get("radius", 12))
-		draw_circle(local_pos, radius, tdef.get("color", Color.WHITE))
-		if tower["type"] == "jammer":
-			draw_arc(local_pos, float(tdef.get("range", 100)), 0.0, TAU, 48, Color(0.43, 0.82, 0.55, 0.22), 2.0)
-		draw_rect(Rect2(local_pos.x - 14, local_pos.y - 22, 28, 4), Color("#6ed08b"), true)
+		match str(tower["type"]):
+			"jammer":
+				draw_circle(local_pos, radius, tdef.get("color", Color.WHITE))
+				draw_arc(local_pos, float(tdef.get("range", 100)), 0.0, TAU, 48, Color(0.43, 0.82, 0.55, 0.22), 2.0)
+				draw_rect(Rect2(local_pos.x - 14, local_pos.y - 22, 28, 4), Color("#6ed08b"), true)
+			"barrier":
+				var barrier_rect := Rect2(local_pos.x - 16, local_pos.y - 14, 32, 28)
+				draw_rect(barrier_rect, tdef.get("color", Color.WHITE), true)
+				draw_rect(barrier_rect, Color("#f2e2c8"), false, 2.0)
+			"trap":
+				var points := PackedVector2Array([
+					local_pos + Vector2(0, -15),
+					local_pos + Vector2(14, 12),
+					local_pos + Vector2(-14, 12),
+				])
+				draw_colored_polygon(points, tdef.get("color", Color.WHITE))
+			_:
+				draw_circle(local_pos, radius, tdef.get("color", Color.WHITE))
+
+
+func get_buildable_hint_cell(world_pos: Vector2) -> Vector2i:
+	return world_to_cell(world_pos)

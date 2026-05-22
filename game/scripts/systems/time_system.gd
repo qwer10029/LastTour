@@ -7,7 +7,7 @@ class_name TimeSystem
 signal phase_changed(old_phase: int, new_phase: int)
 signal evening_warning_triggered(remaining_sec: float)
 signal day_started(day_index: int)
-signal night_setup_started(day_index: int)
+signal night_setup_started(day_index: int, manual_setup: bool)
 signal night_resolved(day_index: int)
 
 enum Phase { DAY, EVENING, NIGHT_SETUP, NIGHT_RESOLVE }
@@ -118,10 +118,10 @@ func start_day(index: int = -1) -> void:
 	day_started.emit(day_index)
 
 
-func enter_night_setup() -> void:
+func enter_night_setup(manual_setup: bool = false) -> void:
 	_set_phase(Phase.NIGHT_SETUP)
 	elapsed_in_phase = 0.0
-	night_setup_started.emit(day_index)
+	night_setup_started.emit(day_index, manual_setup)
 
 
 func begin_night_resolve() -> void:
@@ -145,13 +145,13 @@ func _tick_day(delta: float) -> void:
 		evening_warning_triggered.emit(remaining)
 		_enter_evening()
 	elif elapsed_in_phase >= day_duration_sec:
-		enter_night_setup()
+			enter_night_setup(false)
 
 
 func _tick_evening(delta: float) -> void:
 	elapsed_in_phase += delta
 	if elapsed_in_phase >= evening_warning_sec:
-		enter_night_setup()
+		enter_night_setup(false)
 
 
 func _tick_night_resolve(delta: float) -> void:

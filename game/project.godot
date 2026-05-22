@@ -21,6 +21,13 @@ SaveManager="*res://scripts/autoload/save_manager.gd"
 config/features=PackedStringArray("4.6", "GL Compatibility")
 config/icon="res://icon.svg"
 
+[display]
+
+window/size/mode=2
+window/size/initial_position_type=0
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
 [physics]
 
 3d/physics_engine="Jolt Physics"

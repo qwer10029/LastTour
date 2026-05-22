@@ -15,11 +15,11 @@ func bind_td_controller(td: NightTdController) -> void:
 		_td.session_finished.connect(_on_td_finished)
 
 
-func start_td_session(inventory: int, difficulty: int, day_index: int) -> void:
+func start_td_session(inventory: int, difficulty: int, day_index: int, allow_placement: bool = true) -> void:
 	if _td == null:
 		return
 	_last_result = {}
-	_td.start_session(inventory, difficulty, day_index)
+	_td.start_session(inventory, difficulty, day_index, allow_placement)
 
 
 func hide_td_session() -> void:

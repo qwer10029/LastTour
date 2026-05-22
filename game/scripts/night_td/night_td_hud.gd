@@ -109,7 +109,7 @@ func set_combat_status(text: String) -> void:
 
 func set_hint(text: String) -> void:
 	if is_instance_valid(hint_label):
-		hint_label.text = text
+		hint_label.text = text + "\n右键可撤销已放置防御"
 
 
 func clear_log() -> void:

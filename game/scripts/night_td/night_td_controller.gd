@@ -13,6 +13,8 @@ enum Phase { PLACE, COMBAT, RESULT }
 @onready var hud: CanvasLayer = $Hud
 
 var phase: int = Phase.PLACE
+var _allow_placement := true
+var _starting_inventory: int = 0
 var backpack_remaining: int = 0
 var resources_spent: int = 0
 var difficulty: int = 1
@@ -29,6 +31,7 @@ var _enemies_killed: int = 0
 var _enemies_reached: int = 0
 var _combat_done := false
 var _last_result: Dictionary = {}
+var _projectiles: Array[Dictionary] = []
 
 
 func _ready() -> void:
@@ -36,6 +39,7 @@ func _ready() -> void:
 	if is_instance_valid(field):
 		field.bind_controller(self)
 		field.cell_clicked.connect(_on_cell_clicked)
+		field.cell_right_clicked.connect(_on_cell_right_clicked)
 	if is_instance_valid(hud):
 		hud.tower_selected.connect(_on_tower_selected)
 		hud.start_wave_pressed.connect(_begin_combat)
@@ -53,21 +57,26 @@ func _process(delta: float) -> void:
 			_process_place(delta)
 		Phase.COMBAT:
 			_process_combat(delta)
+		Phase.RESULT:
+			pass
 	if is_instance_valid(field):
 		field.queue_redraw()
 	queue_redraw()
 
 
-func start_session(inventory: int, diff: int, day: int) -> void:
+func start_session(inventory: int, diff: int, day: int, allow_placement: bool = true) -> void:
+	_allow_placement = allow_placement
+	_starting_inventory = maxi(inventory, 0)
 	backpack_remaining = maxi(inventory, 0)
 	resources_spent = 0
 	difficulty = diff
 	day_index = day
 	base_hp = base_max_hp
-	placement_remaining = placement_time_sec
+	placement_remaining = placement_time_sec if allow_placement else 0.0
 	_selected_tower = "jammer"
 	_towers.clear()
 	_enemies.clear()
+	_projectiles.clear()
 	_wave_queue = _build_wave_queue()
 	_spawn_timer = 0.0
 	_enemies_spawned = 0
@@ -75,15 +84,21 @@ func start_session(inventory: int, diff: int, day: int) -> void:
 	_enemies_reached = 0
 	_combat_done = false
 	_last_result = {}
-	phase = Phase.PLACE
+	phase = Phase.PLACE if allow_placement and placement_time_sec > 0.0 else Phase.COMBAT
 	visible = true
 	if is_instance_valid(hud):
 		hud.show_session_ui()
-		hud.set_place_mode(true)
-		hud.set_phase_text("夜晚塔防 · 布防阶段")
 		hud.set_resources(backpack_remaining, resources_spent)
-		hud.set_placement_timer(placement_remaining)
-		hud.set_hint("俯视图：点击地图格子放置防御。选中背包中的设施后，消耗对应资源部署。")
+		if phase == Phase.PLACE:
+			hud.set_place_mode(true)
+			hud.set_phase_text("夜晚塔防 · 布防阶段")
+			hud.set_placement_timer(placement_remaining)
+			hud.set_hint("俯视图：左键点击地图格子放置防御，右键撤销已放置设施。选中背包中的设施后，消耗对应资源部署。")
+		else:
+			hud.set_place_mode(false)
+			hud.set_combat_mode()
+			hud.set_phase_text("夜晚塔防 · 接敌中")
+			hud.set_hint("没有进入布防模式，敌人将直接来袭。")
 		hud.clear_log()
 	_update_hud_tools()
 
@@ -137,7 +152,16 @@ func _spawn_next_enemy() -> void:
 		return
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
-	var spawn_cell: Vector2i = Vector2i(rng.randi_range(1, field.grid_cols - 2), 0)
+	var spawn_cell := Vector2i.ZERO
+	match rng.randi_range(0, 3):
+		0:
+			spawn_cell = Vector2i(rng.randi_range(0, field.grid_cols - 1), 0)
+		1:
+			spawn_cell = Vector2i(rng.randi_range(0, field.grid_cols - 1), field.grid_rows - 1)
+		2:
+			spawn_cell = Vector2i(0, rng.randi_range(0, field.grid_rows - 1))
+		_:
+			spawn_cell = Vector2i(field.grid_cols - 1, rng.randi_range(0, field.grid_rows - 1))
 	var pos: Vector2 = field.cell_to_world(spawn_cell)
 	_enemies.append({
 		"type": type_id,
@@ -155,7 +179,7 @@ func _spawn_next_enemy() -> void:
 
 
 func _update_enemies(delta: float) -> void:
-	var base_pos: Vector2 = field.cell_to_world(Vector2i(6, 8))
+	var base_pos: Vector2 = field.get_vehicle_center_world()
 	var to_remove: Array[int] = []
 	for i in range(_enemies.size()):
 		var enemy: Dictionary = _enemies[i]
@@ -178,11 +202,14 @@ func _update_enemies(delta: float) -> void:
 			if tower["type"] == "trap" and tower["cell"] == field.world_to_cell(pos):
 				_trigger_trap(tower, enemy)
 		if pos.distance_to(base_pos) < 28.0:
+			var loss := maxi(int(round(float(enemy["base_damage"]) * 0.5)), 1)
+			backpack_remaining = maxi(backpack_remaining - loss, 0)
 			base_hp = maxf(base_hp - float(enemy["base_damage"]), 0.0)
 			_enemies_reached += 1
 			to_remove.append(i)
 			if is_instance_valid(hud):
-				hud.append_log("警告：敌人突破防线，车辆受损！")
+				hud.set_resources(backpack_remaining, resources_spent)
+				hud.append_log("警告：敌人突破防线，物资损耗 %d！" % loss)
 		elif float(enemy["hp"]) <= 0.0:
 			_enemies_killed += 1
 			to_remove.append(i)
@@ -203,9 +230,20 @@ func _update_towers(delta: float) -> void:
 			if target >= 0:
 				var enemy: Dictionary = _enemies[target]
 				enemy["hp"] = float(enemy["hp"]) - float(tdef.get("damage", 10))
+				_projectiles.append({
+					"from": tower["world_pos"],
+					"to": enemy["pos"],
+					"life": 0.16,
+					"color": tdef.get("color", Color.WHITE),
+				})
 				tower["cooldown"] = float(tdef.get("fire_interval", 0.8))
 				if is_instance_valid(hud) and randf() < 0.15:
 					hud.append_log("信标命中 %s" % NightTdDefs.get_enemy_def(enemy["type"]).get("name", ""))
+
+	for i in range(_projectiles.size() - 1, -1, -1):
+		_projectiles[i]["life"] = float(_projectiles[i]["life"]) - delta
+		if float(_projectiles[i]["life"]) <= 0.0:
+			_projectiles.remove_at(i)
 
 
 func _find_enemy_in_range(origin: Vector2, range_px: float) -> int:
@@ -267,6 +305,32 @@ func _on_cell_clicked(cell: Vector2i) -> void:
 		hud.append_log("已部署 %s" % tdef.get("name", ""))
 
 
+func _on_cell_right_clicked(cell: Vector2i) -> void:
+	if phase != Phase.PLACE:
+		return
+	var removed := _remove_tower_at_cell(cell)
+	if removed and is_instance_valid(hud):
+		hud.set_resources(backpack_remaining, resources_spent)
+		hud.append_log("已撤销 %s" % removed)
+	elif is_instance_valid(hud):
+		hud.append_log("该格没有可撤销的防御")
+
+
+func _remove_tower_at_cell(cell: Vector2i) -> String:
+	for tower in _towers:
+		if tower.get("removed", false):
+			continue
+		if tower["cell"] != cell:
+			continue
+		var tdef: Dictionary = NightTdDefs.get_tower_def(str(tower["type"]))
+		var refund: int = int(tdef.get("cost", 1))
+		backpack_remaining += refund
+		resources_spent = maxi(resources_spent - refund, 0)
+		tower["removed"] = true
+		return str(tdef.get("name", tower["type"]))
+	return ""
+
+
 func _on_tower_selected(type_id: String) -> void:
 	_selected_tower = type_id
 
@@ -279,7 +343,7 @@ func _begin_combat() -> void:
 	if is_instance_valid(hud):
 		hud.set_combat_mode()
 		hud.set_phase_text("夜晚塔防 · 接敌中")
-		hud.set_hint("敌人正从上方逼近车辆，设施会自动开火/阻挡。")
+		hud.set_hint("敌人正从四周逼近车辆，设施会自动开火/阻挡。")
 		hud.set_combat_status("波次 %d/%d · 场上 %d 敌" % [_enemies_spawned, _enemies_spawned + _wave_queue.size(), _enemies.size()])
 		hud.append_log("—— 夜间威胁来袭 ——")
 
@@ -305,23 +369,22 @@ func _finish_session() -> void:
 
 func _build_result() -> Dictionary:
 	var outcome: String = "success"
-	var inv_loss: int = 0
+	var inv_loss: int = maxi(_starting_inventory - backpack_remaining, 0)
 	var fuel_loss: float = 0.0
 	var msg: String = ""
 	if base_hp >= 70.0:
 		outcome = "success"
-		inv_loss = 0
 		msg = "防线稳固！车辆完好，今夜安全度过。"
 	elif base_hp >= 35.0:
 		outcome = "partial"
-		inv_loss = 1
 		fuel_loss = 8.0
 		msg = "部分敌人突破防线，损失少量物资（车辆 HP %.0f/%.0f）。" % [base_hp, base_max_hp]
 	else:
 		outcome = "fail"
-		inv_loss = 2
 		fuel_loss = 18.0
 		msg = "防线失守！车辆严重受损（HP %.0f/%.0f）。" % [base_hp, base_max_hp]
+	if inv_loss > 0:
+		msg += " 物资损耗 %d。" % inv_loss
 	return {
 		"outcome": outcome,
 		"message": msg,
@@ -383,17 +446,34 @@ func _draw() -> void:
 	for enemy in _enemies:
 		var pos: Vector2 = to_local(enemy["pos"])
 		var radius: float = float(enemy["radius"])
+		draw_circle(pos, radius * 2.0, Color(1.0, 0.95, 0.95, 0.18))
+		draw_circle(pos, radius + 3.0, Color("#ffffff"))
 		draw_circle(pos, radius, enemy.get("color", Color.WHITE))
+		draw_arc(pos, radius + 4.0, 0.0, TAU, 24, Color("#ffe5e5"), 2.5)
+		draw_string(ThemeDB.fallback_font, pos + Vector2(-12, -18), "敌", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#fff0f0"))
 		var hp_ratio: float = clampf(float(enemy["hp"]) / maxf(float(enemy["max_hp"]), 1.0), 0.0, 1.0)
-		draw_rect(Rect2(pos.x - 14, pos.y - 20, 28 * hp_ratio, 3), Color("#ff5f57"), true)
+		draw_rect(Rect2(pos.x - 16, pos.y - 24, 32, 4), Color(0.08, 0.08, 0.08, 0.96), true)
+		draw_rect(Rect2(pos.x - 16, pos.y - 24, 32 * hp_ratio, 4), Color("#ff5f57"), true)
+		draw_rect(Rect2(pos.x - 16, pos.y - 25, 32, 6), Color(1.0, 1.0, 1.0, 0.10), false, 1.0)
+
+	for projectile in _projectiles:
+		var from_pos := to_local(projectile["from"])
+		var to_pos := to_local(projectile["to"])
+		draw_line(from_pos, to_pos, projectile.get("color", Color.WHITE), 2.0)
+		draw_circle(to_pos, 2.5, projectile.get("color", Color.WHITE))
 
 	if phase == Phase.PLACE and is_instance_valid(field):
 		var hover: Vector2i = field.world_to_cell(get_global_mouse_position())
-		if field.is_inside_grid(hover) and not field.is_vehicle_cell(hover):
+		if field.is_inside_grid(hover) and field.can_place_tower(hover, {}):
 			var local_origin := field.field_origin + Vector2(hover.x * field.tile_size, hover.y * field.tile_size)
 			var rect := Rect2(local_origin, Vector2(field.tile_size, field.tile_size))
-			draw_rect(rect, Color(0.43, 0.82, 0.55, 0.3), true)
-			draw_rect(rect, Color("#6ed08b"), false, 2.0)
+			draw_rect(rect, Color(0.43, 0.82, 0.55, 0.42), true)
+			draw_rect(rect, Color("#ffffff"), false, 2.5)
+			draw_string(ThemeDB.fallback_font, rect.position + Vector2(6, 18), "可放置", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#f1fff3"))
+		else:
+			var invalid_rect := Rect2(field.field_origin + Vector2(hover.x * field.tile_size, hover.y * field.tile_size), Vector2(field.tile_size, field.tile_size))
+			draw_rect(invalid_rect, Color(0.95, 0.35, 0.35, 0.28), true)
+			draw_rect(invalid_rect, Color(1.0, 0.8, 0.8, 0.8), false, 2.0)
 
 	if is_instance_valid(field):
 		var bar_rect := field.get_field_rect_local()
