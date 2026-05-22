@@ -12,6 +12,7 @@ config_version=5
 
 config/name="终末旅行"
 run/main_scene="res://scenes/menu/main_menu.tscn"
+config/features=PackedStringArray("4.6")
 
 [autoload]
 
