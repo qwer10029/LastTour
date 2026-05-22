@@ -21,6 +21,7 @@ anchors_preset = 10
 anchor_right = 1.0
 offset_bottom = 120.0
 grow_horizontal = 2
+mouse_filter = 0
 
 [node name="Margin" type="MarginContainer" parent="Hud/TopBar"]
 layout_mode = 2
@@ -63,6 +64,7 @@ offset_left = -220.0
 offset_top = 130.0
 offset_bottom = -16.0
 grow_vertical = 2
+mouse_filter = 0
 
 [node name="Margin" type="MarginContainer" parent="Hud/SidePanel"]
 layout_mode = 2

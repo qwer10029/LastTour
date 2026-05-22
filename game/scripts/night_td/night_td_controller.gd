@@ -64,14 +64,26 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 
-func start_session(inventory: int, diff: int, day: int, allow_placement: bool = true) -> void:
+func start_session(
+	inventory: int,
+	diff: int,
+	day: int,
+	allow_placement: bool = true,
+	vehicle_hp: float = -1.0,
+	vehicle_hp_max: float = -1.0,
+) -> void:
 	_allow_placement = allow_placement
 	_starting_inventory = maxi(inventory, 0)
 	backpack_remaining = maxi(inventory, 0)
 	resources_spent = 0
 	difficulty = diff
 	day_index = day
-	base_hp = base_max_hp
+	if vehicle_hp_max > 0.0:
+		base_max_hp = vehicle_hp_max
+	if vehicle_hp >= 0.0:
+		base_hp = clampf(vehicle_hp, 0.0, base_max_hp)
+	else:
+		base_hp = base_max_hp
 	placement_remaining = placement_time_sec if allow_placement else 0.0
 	_selected_tower = "jammer"
 	_towers.clear()
@@ -135,6 +147,9 @@ func _process_combat(delta: float) -> void:
 		_spawn_timer = spawn_interval_sec
 	_update_enemies(delta)
 	_update_towers(delta)
+	if base_hp <= 0.0:
+		_end_combat_vehicle_destroyed()
+		return
 	if is_instance_valid(hud) and int(Engine.get_frames_drawn()) % 15 == 0:
 		hud.set_combat_status("波次 %d/%d · 场上 %d 敌 · 车辆 HP %.0f" % [
 			_enemies_spawned, _enemies_spawned + _wave_queue.size(), _enemies.size(), base_hp
@@ -348,6 +363,21 @@ func _begin_combat() -> void:
 		hud.append_log("—— 夜间威胁来袭 ——")
 
 
+func _end_combat_vehicle_destroyed() -> void:
+	if _combat_done:
+		return
+	_combat_done = true
+	_last_result = _build_result()
+	_last_result["outcome"] = "vehicle_destroyed"
+	_last_result["message"] = "车辆防线被突破，乘员失联。本局勘探终止。"
+	base_hp = 0.0
+	phase = Phase.RESULT
+	if is_instance_valid(hud):
+		hud.show_result(str(_last_result.get("message", "")))
+		hud.set_phase_text("夜晚塔防 · 车辆损毁")
+		hud.set_combat_status("车辆 HP 归零")
+
+
 func _end_combat() -> void:
 	_combat_done = true
 	_last_result = _build_result()
@@ -442,44 +472,3 @@ func _draw() -> void:
 	if view_size == Vector2.ZERO:
 		view_size = Vector2(1280.0, 720.0)
 	draw_rect(Rect2(Vector2.ZERO, view_size), Color("#060a10"), true)
-
-	for enemy in _enemies:
-		var pos: Vector2 = to_local(enemy["pos"])
-		var radius: float = float(enemy["radius"])
-		draw_circle(pos, radius * 2.0, Color(1.0, 0.95, 0.95, 0.18))
-		draw_circle(pos, radius + 3.0, Color("#ffffff"))
-		draw_circle(pos, radius, enemy.get("color", Color.WHITE))
-		draw_arc(pos, radius + 4.0, 0.0, TAU, 24, Color("#ffe5e5"), 2.5)
-		draw_string(ThemeDB.fallback_font, pos + Vector2(-12, -18), "敌", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#fff0f0"))
-		var hp_ratio: float = clampf(float(enemy["hp"]) / maxf(float(enemy["max_hp"]), 1.0), 0.0, 1.0)
-		draw_rect(Rect2(pos.x - 16, pos.y - 24, 32, 4), Color(0.08, 0.08, 0.08, 0.96), true)
-		draw_rect(Rect2(pos.x - 16, pos.y - 24, 32 * hp_ratio, 4), Color("#ff5f57"), true)
-		draw_rect(Rect2(pos.x - 16, pos.y - 25, 32, 6), Color(1.0, 1.0, 1.0, 0.10), false, 1.0)
-
-	for projectile in _projectiles:
-		var from_pos := to_local(projectile["from"])
-		var to_pos := to_local(projectile["to"])
-		draw_line(from_pos, to_pos, projectile.get("color", Color.WHITE), 2.0)
-		draw_circle(to_pos, 2.5, projectile.get("color", Color.WHITE))
-
-	if phase == Phase.PLACE and is_instance_valid(field):
-		var hover: Vector2i = field.world_to_cell(get_global_mouse_position())
-		if field.is_inside_grid(hover) and field.can_place_tower(hover, {}):
-			var local_origin := field.field_origin + Vector2(hover.x * field.tile_size, hover.y * field.tile_size)
-			var rect := Rect2(local_origin, Vector2(field.tile_size, field.tile_size))
-			draw_rect(rect, Color(0.43, 0.82, 0.55, 0.42), true)
-			draw_rect(rect, Color("#ffffff"), false, 2.5)
-			draw_string(ThemeDB.fallback_font, rect.position + Vector2(6, 18), "可放置", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#f1fff3"))
-		else:
-			var invalid_rect := Rect2(field.field_origin + Vector2(hover.x * field.tile_size, hover.y * field.tile_size), Vector2(field.tile_size, field.tile_size))
-			draw_rect(invalid_rect, Color(0.95, 0.35, 0.35, 0.28), true)
-			draw_rect(invalid_rect, Color(1.0, 0.8, 0.8, 0.8), false, 2.0)
-
-	if is_instance_valid(field):
-		var bar_rect := field.get_field_rect_local()
-		var bar_w: float = bar_rect.size.x
-		var bar_x: float = bar_rect.position.x
-		var bar_y: float = bar_rect.end.y + 12.0
-		draw_rect(Rect2(bar_x, bar_y, bar_w, 12), Color("#1a2533"), true)
-		draw_rect(Rect2(bar_x, bar_y, bar_w * (base_hp / base_max_hp), 12), Color("#d89246"), true)
-		draw_string(ThemeDB.fallback_font, Vector2(bar_x, bar_y - 18), "车辆耐久", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#d8e4f0"))

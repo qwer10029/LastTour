@@ -21,7 +21,8 @@ var _last_view_size: Vector2 = Vector2.ZERO
 
 func _ready() -> void:
 	_controller = get_parent() as NightTdController
-	set_process_input(true)
+	set_process_unhandled_input(true)
+	z_index = 1
 	_reflow_layout()
 	base_local_pos = get_vehicle_center_local()
 
@@ -125,8 +126,10 @@ func can_place_tower(cell: Vector2i, occupied: Dictionary) -> bool:
 	return true
 
 
-func _input(event: InputEvent) -> void:
-	if _controller != null and _controller.phase != NightTdController.Phase.PLACE:
+func _unhandled_input(event: InputEvent) -> void:
+	if _controller == null or _controller.phase != NightTdController.Phase.PLACE:
+		return
+	if _is_pointer_over_ui():
 		return
 	if event is InputEventMouseButton and event.pressed:
 		var cell := world_to_cell(get_global_mouse_position())
@@ -134,8 +137,21 @@ func _input(event: InputEvent) -> void:
 			return
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			cell_clicked.emit(cell)
+			get_viewport().set_input_as_handled()
 		elif event.button_index == MOUSE_BUTTON_RIGHT:
 			cell_right_clicked.emit(cell)
+			get_viewport().set_input_as_handled()
+
+
+func _is_pointer_over_ui() -> bool:
+	var control: Control = get_viewport().gui_get_hovered_control()
+	while control != null:
+		if control is BaseButton:
+			return true
+		if control.name in ["SidePanel", "TopBar", "ResultOverlay", "Hud", "ResultPanel", "ContinueBtn"]:
+			return true
+		control = control.get_parent() as Control
+	return false
 
 
 func _draw() -> void:
@@ -190,6 +206,69 @@ func _draw() -> void:
 
 	if _controller != null:
 		_draw_placed_towers()
+		_draw_combat_entities()
+		_draw_placement_preview()
+		_draw_vehicle_hp_bar()
+
+
+func _draw_combat_entities() -> void:
+	if _controller == null:
+		return
+	for enemy in _controller._enemies:
+		var local_pos := to_local(enemy["pos"])
+		var radius: float = maxf(float(enemy.get("radius", 10.0)), 12.0)
+		var color: Color = enemy.get("color", Color.WHITE)
+		var edef: Dictionary = NightTdDefs.get_enemy_def(str(enemy.get("type", "")))
+		var label: String = str(edef.get("name", "敌")).left(2)
+		draw_circle(local_pos, radius + 6.0, Color(1.0, 0.35, 0.35, 0.35))
+		draw_circle(local_pos, radius + 3.0, Color("#ffffff"))
+		draw_circle(local_pos, radius, color)
+		draw_arc(local_pos, radius + 5.0, 0.0, TAU, 32, Color("#ff8b7a"), 2.5)
+		draw_string(ThemeDB.fallback_font, local_pos + Vector2(-14, -20), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#fff8f8"))
+		var hp_ratio: float = clampf(float(enemy["hp"]) / maxf(float(enemy["max_hp"]), 1.0), 0.0, 1.0)
+		draw_rect(Rect2(local_pos.x - 18, local_pos.y - 28, 36, 5), Color(0.05, 0.05, 0.05, 0.95), true)
+		draw_rect(Rect2(local_pos.x - 18, local_pos.y - 28, 36 * hp_ratio, 5), Color("#ff5f57"), true)
+
+	for projectile in _controller._projectiles:
+		var from_pos := to_local(projectile["from"])
+		var to_pos := to_local(projectile["to"])
+		draw_line(from_pos, to_pos, projectile.get("color", Color.WHITE), 3.0)
+		draw_circle(to_pos, 4.0, projectile.get("color", Color.WHITE))
+
+
+func _draw_placement_preview() -> void:
+	if _controller == null or _controller.phase != NightTdController.Phase.PLACE:
+		return
+	if _is_pointer_over_ui():
+		return
+	var hover: Vector2i = world_to_cell(get_global_mouse_position())
+	if not is_inside_grid(hover):
+		return
+	var occupied: Dictionary = {}
+	for tower in _controller._towers:
+		if not tower.get("removed", false):
+			occupied[tower["cell"]] = true
+	var build_rect := Rect2(field_origin + Vector2(hover.x * _layout_tile_size, hover.y * _layout_tile_size), Vector2(_layout_tile_size, _layout_tile_size))
+	if can_place_tower(hover, occupied):
+		draw_rect(build_rect, Color(0.43, 0.82, 0.55, 0.42), true)
+		draw_rect(build_rect, Color("#ffffff"), false, 2.5)
+		draw_string(ThemeDB.fallback_font, build_rect.position + Vector2(6, 18), "可放置", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#f1fff3"))
+	else:
+		draw_rect(build_rect, Color(0.95, 0.35, 0.35, 0.28), true)
+		draw_rect(build_rect, Color(1.0, 0.8, 0.8, 0.8), false, 2.0)
+
+
+func _draw_vehicle_hp_bar() -> void:
+	if _controller == null:
+		return
+	var bar_rect := get_field_rect_local()
+	var bar_w: float = bar_rect.size.x
+	var bar_x: float = bar_rect.position.x
+	var bar_y: float = bar_rect.end.y + 12.0
+	var ratio: float = clampf(_controller.base_hp / _controller.base_max_hp, 0.0, 1.0)
+	draw_rect(Rect2(bar_x, bar_y, bar_w, 12), Color("#1a2533"), true)
+	draw_rect(Rect2(bar_x, bar_y, bar_w * ratio, 12), Color("#d89246"), true)
+	draw_string(ThemeDB.fallback_font, Vector2(bar_x, bar_y - 18), "车辆耐久", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#d8e4f0"))
 
 
 func _draw_placed_towers() -> void:

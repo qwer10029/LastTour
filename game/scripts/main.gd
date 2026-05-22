@@ -1,5 +1,7 @@
 extends Node2D
 
+const RunEndOverlayScript = preload("res://scripts/ui/run_end_overlay.gd")
+
 enum TravelMode { DRIVE, FOOT }
 
 @export var vehicle_scene: PackedScene
@@ -20,6 +22,8 @@ var _vehicle: VehicleUnit
 var _player: PlayerCharacter
 var _resource_nodes: Array[Area2D] = []
 var _fuel: float = 0.0
+var _vehicle_hp: float = 100.0
+var _vehicle_hp_max: float = 100.0
 var _inventory: int = 0
 var _current_node_index: int = -1
 var _previous_node_index: int = -1
@@ -34,7 +38,10 @@ var _exit_options: Dictionary = {}
 var _drive_offset: Vector2 = Vector2.ZERO
 var _current_layer: int = 1
 var _elevator_repair_progress: int = 0
-var _run_completed := false
+var _run_ended := false
+var _run_end_reason := ""
+var _final_choice_id := ""
+var _run_end_overlay: CanvasLayer
 var _base_fuel_max: float = 999.0
 var _base_elevator_repair_cost: int = 3
 var _run_difficulty_name: String = "普通"
@@ -74,6 +81,7 @@ func _ready() -> void:
 	_ensure_input_actions()
 	_connect_buttons()
 	_setup_pause_ui()
+	_setup_run_end_ui()
 	_spawn_vehicle()
 	_spawn_player()
 	_setup_day_night()
@@ -94,8 +102,12 @@ func _ready() -> void:
 
 
 func _start_new_run() -> void:
+	_run_ended = false
+	_run_end_reason = ""
+	_final_choice_id = ""
 	_generate_layer_map()
 	_fuel = fuel_max
+	_reset_vehicle_hp_for_new_run()
 	_spawn_resources()
 	if is_instance_valid(minimap_view):
 		minimap_view.set_world_map(_map)
@@ -180,6 +192,8 @@ func _spawn_resources() -> void:
 			_resource_nodes.append(pickup)
 
 func _physics_process(delta: float) -> void:
+	if _run_ended:
+		return
 	if _game_paused:
 		return
 	_sync_view_cameras()
@@ -193,6 +207,8 @@ func _physics_process(delta: float) -> void:
 		_refresh_ui()
 		queue_redraw()
 		return
+
+	_check_vehicle_destroyed()
 
 	if Input.is_action_just_pressed("interact"):
 		if _mode == TravelMode.DRIVE and _segment_target_index < 0:
@@ -252,6 +268,8 @@ func _process_foot(_delta: float) -> void:
 		_player.global_position = _clamp_to_cell(_player.global_position, _current_district_index)
 
 func _unhandled_input(event: InputEvent) -> void:
+	if _run_ended:
+		return
 	if event.is_action_pressed("pause"):
 		_toggle_pause()
 		get_viewport().set_input_as_handled()
@@ -474,7 +492,7 @@ func _can_disembark() -> bool:
 	return _current_district_index >= 0 and _map.is_district(_current_district_index)
 
 func _can_repair_elevator() -> bool:
-	return _mode == TravelMode.FOOT and _current_district_index >= 0 and _map.district_has_elevator(_current_district_index) and not _run_completed
+	return _mode == TravelMode.FOOT and _current_district_index >= 0 and _map.district_has_elevator(_current_district_index) and not _run_ended
 
 func apply_run_config(manager: Node) -> void:
 	if manager == null:
@@ -507,7 +525,10 @@ func _attempt_repair_elevator() -> void:
 	_inventory -= 1
 	_elevator_repair_progress += 1
 	if _elevator_repair_progress >= _current_repair_cost():
-		_advance_layer()
+		if _current_layer >= total_layers:
+			_begin_final_ceremony()
+		else:
+			_advance_layer()
 
 func _on_resource_collected(pickup: Node) -> void:
 	if not is_instance_valid(pickup):
@@ -604,7 +625,124 @@ func _setup_pause_ui() -> void:
 	_pause_layer.visible = false
 
 
+func _setup_run_end_ui() -> void:
+	_run_end_overlay = RunEndOverlayScript.new()
+	add_child(_run_end_overlay)
+	_run_end_overlay.ceremony_choice_made.connect(_on_final_ceremony_choice)
+	_run_end_overlay.summary_closed.connect(_on_run_summary_closed)
+
+
+func _check_vehicle_destroyed() -> bool:
+	if _run_ended:
+		return true
+	if _vehicle_hp > 0.0:
+		return false
+	_trigger_vehicle_destroyed()
+	return true
+
+
+func _trigger_vehicle_destroyed() -> void:
+	if _run_ended:
+		return
+	_run_ended = true
+	_run_end_reason = "vehicle_destroyed"
+	_freeze_run_for_end()
+	_show_run_summary()
+
+
+func _begin_final_ceremony() -> void:
+	if _run_ended:
+		return
+	_run_ended = true
+	_run_end_reason = "reached_top"
+	_freeze_run_for_end()
+	if is_instance_valid(_run_end_overlay):
+		_run_end_overlay.show_ceremony()
+
+
+func _freeze_run_for_end() -> void:
+	_game_paused = false
+	if is_instance_valid(_pause_layer):
+		_pause_layer.visible = false
+	if is_instance_valid(time_system):
+		time_system.pause()
+	if is_instance_valid(night_defense):
+		night_defense.hide_td_session()
+	if is_instance_valid(evening_notice) and evening_notice.has_method("hide_notice"):
+		evening_notice.hide_notice()
+	if is_instance_valid(_player):
+		_player.set_active(false)
+	if is_instance_valid(_vehicle):
+		_vehicle.set_active(true)
+
+
+func _on_final_ceremony_choice(choice_id: String) -> void:
+	_final_choice_id = choice_id
+	_show_run_summary()
+
+
+func _show_run_summary() -> void:
+	if not is_instance_valid(_run_end_overlay):
+		return
+	var title := ""
+	var body := _build_run_summary_text()
+	match _run_end_reason:
+		"vehicle_destroyed":
+			title = "本局结束 · 车辆损毁"
+		"reached_top":
+			title = "本局结算 · 归档完成"
+		_:
+			title = "本局结算"
+	_run_end_overlay.show_summary(title, body)
+
+
+func _build_run_summary_text() -> String:
+	var lines: PackedStringArray = []
+	var day_n := 1
+	if is_instance_valid(time_system):
+		day_n = time_system.day_index
+	lines.append("—— 勘探记录 ——")
+	lines.append("难度: %s  |  分队: %s" % [_run_difficulty_name, _run_squad_name])
+	lines.append("抵达层数: %d / %d" % [_current_layer, total_layers])
+	lines.append("生存天数: %d" % day_n)
+	lines.append("车辆耐久: %.0f / %.0f" % [_vehicle_hp, _vehicle_hp_max])
+	lines.append("剩余资源: %d  |  剩余燃料: %.1f" % [_inventory, _fuel])
+	lines.append("地图探索: %d / %d 格" % [_map.explored_count(), _map.cells.size()])
+	if _run_end_reason == "vehicle_destroyed":
+		lines.append("")
+		lines.append("车辆在夜间防线崩溃后失去作战能力。")
+		lines.append("昆仑程序将判定本次勘探失败，新的克隆体即将被派遣。")
+	elif _run_end_reason == "reached_top":
+		lines.append("")
+		lines.append("你已抵达顶层并完成归档仪式。")
+		if _final_choice_id != "":
+			lines.append("最终抉择: %s" % RunEndingDefs.choice_title(_final_choice_id))
+			lines.append(RunEndingDefs.choice_summary(_final_choice_id))
+		match _final_choice_id:
+			"stop_signal":
+				lines.append("")
+				lines.append("终止信号已发送。克隆循环停止。")
+				lines.append("（真结局 · 制作人员名单）")
+			"message_only":
+				lines.append("")
+				lines.append("留言已写入前代勘探者档案。程序将继续运转。")
+			"fake_success":
+				lines.append("")
+				lines.append("虚假成功信号已注入。循环以讽刺的方式停摆。")
+	return "\n".join(lines)
+
+
+func _on_run_summary_closed() -> void:
+	if SaveManager.has_save():
+		SaveManager.delete_save()
+	if is_instance_valid(_run_end_overlay):
+		_run_end_overlay.hide_overlay()
+	GameManager.go_to_main_menu()
+
+
 func _toggle_pause() -> void:
+	if _run_ended:
+		return
 	if _pause_confirm != null and _pause_confirm.visible:
 		return
 	if _game_paused:
@@ -640,6 +778,8 @@ func capture_save_data() -> Dictionary:
 		"difficulty": GameManager.difficulty,
 		"squad_id": GameManager.squad_id,
 		"fuel_max": fuel_max,
+		"vehicle_hp": _vehicle_hp,
+		"vehicle_hp_max": _vehicle_hp_max,
 		"base_elevator_repair_cost": _base_elevator_repair_cost,
 		"map": _map.to_dictionary(),
 		"travel": {
@@ -659,7 +799,9 @@ func capture_save_data() -> Dictionary:
 		"layer": {
 			"current_layer": _current_layer,
 			"elevator_repair_progress": _elevator_repair_progress,
-			"run_completed": _run_completed,
+			"run_ended": _run_ended,
+			"run_end_reason": _run_end_reason,
+			"final_choice_id": _final_choice_id,
 		},
 		"time": time_system.to_dictionary() if is_instance_valid(time_system) else {},
 		"foot": {
@@ -673,8 +815,12 @@ func _apply_save_data(data: Dictionary) -> void:
 	GameManager.difficulty = int(data.get("difficulty", GameManager.Difficulty.NORMAL))
 	GameManager.squad_id = str(data.get("squad_id", "scavenger"))
 	fuel_max = float(data.get("fuel_max", _base_fuel_max))
+	_vehicle_hp_max = float(data.get("vehicle_hp_max", _get_vehicle_hp_max()))
+	_vehicle_hp = clampf(float(data.get("vehicle_hp", _vehicle_hp_max)), 0.0, _vehicle_hp_max)
 	_base_elevator_repair_cost = int(data.get("base_elevator_repair_cost", base_elevator_repair_cost))
 	_apply_run_config_from_manager()
+	_vehicle_hp_max = _get_vehicle_hp_max()
+	_vehicle_hp = clampf(_vehicle_hp, 0.0, _vehicle_hp_max)
 
 	_map.load_from_dictionary(data.get("map", {}))
 	var travel: Dictionary = data.get("travel", {})
@@ -694,7 +840,16 @@ func _apply_save_data(data: Dictionary) -> void:
 	var layer: Dictionary = data.get("layer", {})
 	_current_layer = int(layer.get("current_layer", 1))
 	_elevator_repair_progress = int(layer.get("elevator_repair_progress", 0))
-	_run_completed = bool(layer.get("run_completed", false))
+	_run_ended = bool(layer.get("run_ended", false))
+	_run_end_reason = str(layer.get("run_end_reason", ""))
+	_final_choice_id = str(layer.get("final_choice_id", ""))
+	if _run_ended and _run_end_reason == "vehicle_destroyed":
+		_show_run_summary()
+	elif _run_ended and _run_end_reason == "reached_top":
+		if _final_choice_id != "":
+			_show_run_summary()
+		else:
+			_begin_final_ceremony()
 
 	if is_instance_valid(time_system):
 		time_system.load_from_dictionary(data.get("time", {}))
@@ -762,7 +917,9 @@ func _restore_time_phase_after_load() -> void:
 		TimeSystem.Phase.NIGHT_SETUP:
 			_force_return_to_vehicle_for_night()
 			if is_instance_valid(night_defense):
-				night_defense.start_td_session(_inventory, GameManager.difficulty, time_system.day_index, true)
+				night_defense.start_td_session(
+					_inventory, GameManager.difficulty, time_system.day_index, true, _vehicle_hp, _vehicle_hp_max
+				)
 			time_system.pause()
 		TimeSystem.Phase.NIGHT_RESOLVE:
 			time_system.finish_night_and_advance_day()
@@ -858,7 +1015,9 @@ func _on_night_setup_started(day_index: int, manual_setup: bool) -> void:
 	if is_instance_valid(evening_notice) and evening_notice.has_method("hide_notice"):
 		evening_notice.hide_notice()
 	if is_instance_valid(night_defense):
-		night_defense.start_td_session(_inventory, GameManager.difficulty, day_index, manual_setup)
+		night_defense.start_td_session(
+			_inventory, GameManager.difficulty, day_index, manual_setup, _vehicle_hp, _vehicle_hp_max
+		)
 	_refresh_ui()
 
 
@@ -866,6 +1025,8 @@ func _on_night_td_finished(result: Dictionary) -> void:
 	if is_instance_valid(night_defense):
 		night_defense.hide_td_session()
 	_apply_night_result(result)
+	if _check_vehicle_destroyed():
+		return
 	if is_instance_valid(time_system):
 		# 塔防界面已展示结算，直接进下一天（避免 pause 导致 NIGHT_RESOLVE 永不结束）
 		time_system.finish_night_and_advance_day()
@@ -874,10 +1035,30 @@ func _on_night_td_finished(result: Dictionary) -> void:
 func _apply_night_result(result: Dictionary) -> void:
 	if result.has("inventory_remaining"):
 		_inventory = int(result.get("inventory_remaining", _inventory))
+	var loss := int(result.get("inventory_loss", 0))
+	_inventory = maxi(_inventory - loss, 0)
 	_fuel = maxf(_fuel - float(result.get("fuel_loss", 0.0)), 0.0)
+	if result.has("base_hp"):
+		_vehicle_hp = clampf(float(result.get("base_hp", _vehicle_hp)), 0.0, _vehicle_hp_max)
+	if result.has("base_hp_max"):
+		_vehicle_hp_max = float(result.get("base_hp_max", _vehicle_hp_max))
+		_vehicle_hp = clampf(_vehicle_hp, 0.0, _vehicle_hp_max)
+
+
+func _get_vehicle_hp_max() -> float:
+	if is_instance_valid(night_td):
+		return night_td.base_max_hp
+	return _vehicle_hp_max
+
+
+func _reset_vehicle_hp_for_new_run() -> void:
+	_vehicle_hp_max = _get_vehicle_hp_max()
+	_vehicle_hp = _vehicle_hp_max
 
 
 func _on_day_started(_day_index: int) -> void:
+	if _check_vehicle_destroyed():
+		return
 	if is_instance_valid(evening_notice) and evening_notice.has_method("hide_notice"):
 		evening_notice.hide_notice()
 	if is_instance_valid(time_system):
@@ -928,7 +1109,7 @@ func _refresh_ui() -> void:
 				phase_hint = "（傍晚·请回车设防）"
 			mode_label.text = "状态: %s%s" % ["驾驶车辆" if _mode != TravelMode.FOOT else "步行探索", phase_hint]
 	if is_instance_valid(fuel_label):
-		fuel_label.text = "燃料: %.1f / %.1f" % [_fuel, fuel_max]
+		fuel_label.text = "燃料: %.1f / %.1f  |  车辆: %.0f / %.0f" % [_fuel, fuel_max, _vehicle_hp, _vehicle_hp_max]
 	if is_instance_valid(inventory_label):
 		inventory_label.text = "已搬运资源: %d" % _inventory
 
@@ -987,8 +1168,9 @@ func _update_prompts() -> void:
 			back_track_button.visible = true
 			back_track_button.text = "原路返回 %s (E)" % _direction_label(back_dir)
 	elif in_foot:
-		if _run_completed:
-			prompt_label.text = "已完成 %d 层试作流程，可继续探索或返回车辆" % total_layers
+		if _can_repair_elevator() and _current_layer >= total_layers:
+			prompt_label.text = "顶层电梯：修复完成将触发归档仪式与最终抉择"
+			repair_button.visible = true
 		elif _can_repair_elevator():
 			prompt_label.text = "电梯楼：消耗资源修复电梯，进度满后进入上层"
 			repair_button.visible = true
@@ -1333,8 +1515,10 @@ func _generate_layer_map() -> void:
 	_current_district_index = -1
 
 func _advance_layer() -> void:
+	if _run_ended:
+		return
 	if _current_layer >= total_layers:
-		_run_completed = true
+		_begin_final_ceremony()
 		return
 	_current_layer += 1
 	_mode = TravelMode.DRIVE

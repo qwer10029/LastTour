@@ -42,16 +42,16 @@ const ENEMY_TYPES := {
 		"hp": 28.0,
 		"speed": 58.0,
 		"base_damage": 6.0,
-		"color": Color("#7da0be"),
-		"radius": 10.0,
+		"color": Color("#9ec9ff"),
+		"radius": 14.0,
 	},
 	"scout": {
 		"name": "回收侦察机",
 		"hp": 52.0,
 		"speed": 42.0,
 		"base_damage": 10.0,
-		"color": Color("#c45c5c"),
-		"radius": 12.0,
+		"color": Color("#ff7b6b"),
+		"radius": 16.0,
 	},
 }
 
