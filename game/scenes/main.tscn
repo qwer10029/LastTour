@@ -34,7 +34,7 @@ script = ExtResource("7_night")
 offset_left = 16.0
 offset_top = 16.0
 offset_right = 376.0
-offset_bottom = 196.0
+offset_bottom = 228.0
 
 [node name="MarginContainer" type="MarginContainer" parent="HUD/InfoPanel"]
 offset_right = 360.0
@@ -150,7 +150,13 @@ text = "状态: 驾驶车辆"
 text = "燃料: 0 / 0"
 
 [node name="InventoryLabel" type="Label" parent="HUD/InfoPanel/MarginContainer/VBoxContainer"]
-text = "已搬运资源: 0"
+text = "背包: 空"
+
+[node name="VitalsLabel" type="Label" parent="HUD/InfoPanel/MarginContainer/VBoxContainer"]
+text = "生命 100 | 饥饿 100 | 口渴 100"
+
+[node name="BackpackButton" type="Button" parent="HUD/InfoPanel/MarginContainer/VBoxContainer"]
+text = "打开背包 (B)"
 
 [node name="StatusLabel" type="Label" parent="HUD/InfoPanel/MarginContainer/VBoxContainer"]
 text = "探索: 0 / 0 | 剩余资源: 0 | 区块 1-1"

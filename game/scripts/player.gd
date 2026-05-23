@@ -7,6 +7,7 @@ signal moved
 @export var world_bounds: Rect2 = Rect2(Vector2.ZERO, Vector2(1280, 720))
 
 var _hud_callback: Callable = Callable()
+var _blocked_checker: Callable = Callable()
 var _active := false
 
 @onready var camera: Camera2D = $Camera2D
@@ -41,11 +42,20 @@ func set_active(active: bool) -> void:
 func set_hud_callback(callback: Callable) -> void:
 	_hud_callback = callback
 
+
+func set_blocked_checker(callback: Callable) -> void:
+	_blocked_checker = callback
+
+
 func _physics_process(delta: float) -> void:
+	var prev_pos := global_position
 	var input_vector := Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	velocity = input_vector * move_speed
 	move_and_slide()
 	clamp_to_world()
+	if _blocked_checker.is_valid() and bool(_blocked_checker.call(global_position)):
+		global_position = prev_pos
+		velocity = Vector2.ZERO
 	if input_vector != Vector2.ZERO:
 		emit_signal("moved")
 		if _hud_callback.is_valid():

@@ -1,6 +1,8 @@
 class_name WorldMapData
 extends RefCounted
 
+const FOOT_TILE_SIZE := 48
+
 const DIRECTIONS := {
 	"up": Vector2i(0, -1),
 	"down": Vector2i(0, 1),
@@ -50,9 +52,17 @@ func generate(new_columns: int, new_rows: int, new_cell_size: Vector2i, rng_seed
 		cells[index]["kind"] = "district"
 		cells[index]["building_type"] = _pick_building_type(rng)
 		cells[index]["has_elevator"] = cells[index]["building_type"] == "elevator"
-		cells[index]["resource_total"] = rng.randi_range(1, 4)
+		var building_type := str(cells[index]["building_type"])
+		cells[index]["seed"] = rng.randi()
+		var foot_layout := _build_foot_layout(rng, cell_size)
+		cells[index]["foot_grid_cols"] = foot_layout["cols"]
+		cells[index]["foot_grid_rows"] = foot_layout["rows"]
+		cells[index]["foot_blocked"] = foot_layout["blocked"]
+		cells[index]["resource_total"] = rng.randi_range(2, 6)
 		cells[index]["resource_remaining"] = cells[index]["resource_total"]
-		cells[index]["resource_spawns"] = _generate_resource_spawns(rng, int(cells[index]["resource_total"]))
+		cells[index]["resource_spawns"] = _generate_resource_spawns_on_walkable(
+			rng, int(cells[index]["resource_total"]), building_type, foot_layout
+		)
 		district_indices.append(index)
 
 	_ensure_elevator_district()
@@ -300,6 +310,9 @@ func _create_empty_cell(coord: Vector2i) -> Dictionary:
 		"resource_total": 0,
 		"resource_remaining": 0,
 		"resource_spawns": [],
+		"foot_grid_cols": 0,
+		"foot_grid_rows": 0,
+		"foot_blocked": [],
 		"connections": {
 			"up": -1,
 			"down": -1,
@@ -412,11 +425,169 @@ func _pick_building_type(rng: RandomNumberGenerator) -> String:
 	var options := ["warehouse", "elevator", "garage", "archive", "warehouse", "market"]
 	return options[rng.randi_range(0, options.size() - 1)]
 
-func _generate_resource_spawns(rng: RandomNumberGenerator, amount: int) -> Array[Vector2]:
-	var result: Array[Vector2] = []
-	for _i in range(amount):
-		result.append(Vector2(rng.randf_range(36.0, float(cell_size.x) - 36.0), rng.randf_range(36.0, float(cell_size.y) - 36.0)))
+func _build_foot_layout(rng: RandomNumberGenerator, district_size: Vector2i) -> Dictionary:
+	var cols := maxi(int(district_size.x / FOOT_TILE_SIZE), 4)
+	var rows := maxi(int(district_size.y / FOOT_TILE_SIZE), 4)
+	var center := Vector2i(cols / 2, rows / 2)
+	var blocked: Array[Vector2i] = []
+	var target_blocked := maxi(int(float(cols * rows) * 0.14), 2)
+	var attempts := 0
+	while blocked.size() < target_blocked and attempts < 200:
+		attempts += 1
+		var tile := Vector2i(rng.randi_range(0, cols - 1), rng.randi_range(0, rows - 1))
+		if maxi(absi(tile.x - center.x), absi(tile.y - center.y)) <= 1:
+			continue
+		if tile in blocked:
+			continue
+		blocked.append(tile)
+	# 保证从出生点能走到所有可走格子
+	while not _foot_tiles_connected(cols, rows, center, blocked):
+		if blocked.is_empty():
+			break
+		blocked.pop_back()
+	return {"cols": cols, "rows": rows, "blocked": blocked, "center": center}
+
+
+func _foot_tiles_connected(cols: int, rows: int, start: Vector2i, blocked: Array[Vector2i]) -> bool:
+	var blocked_set: Dictionary = {}
+	for tile in blocked:
+		blocked_set[tile] = true
+	var total_walkable := 0
+	for x in range(cols):
+		for y in range(rows):
+			if not blocked_set.has(Vector2i(x, y)):
+				total_walkable += 1
+	if total_walkable <= 0:
+		return false
+	var queue: Array[Vector2i] = [start]
+	var visited: Dictionary = {start: true}
+	var seen := 1
+	var neighbors: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+	while not queue.is_empty():
+		var current: Vector2i = queue.pop_front()
+		for offset in neighbors:
+			var next: Vector2i = current + offset
+			if next.x < 0 or next.y < 0 or next.x >= cols or next.y >= rows:
+				continue
+			if blocked_set.has(next) or visited.has(next):
+				continue
+			visited[next] = true
+			seen += 1
+			queue.append(next)
+	return seen >= total_walkable
+
+
+func _get_walkable_tiles(foot_layout: Dictionary) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	var cols: int = int(foot_layout.get("cols", 0))
+	var rows: int = int(foot_layout.get("rows", 0))
+	var blocked_set: Dictionary = {}
+	for raw in foot_layout.get("blocked", []):
+		if raw is Vector2i:
+			blocked_set[raw] = true
+		elif raw is Dictionary:
+			blocked_set[Vector2i(int(raw.get("x", 0)), int(raw.get("y", 0)))] = true
+	for x in range(cols):
+		for y in range(rows):
+			var tile := Vector2i(x, y)
+			if not blocked_set.has(tile):
+				result.append(tile)
 	return result
+
+
+func _generate_resource_spawns_on_walkable(
+	rng: RandomNumberGenerator,
+	amount: int,
+	building_type: String,
+	foot_layout: Dictionary,
+) -> Array:
+	var walkable := _get_walkable_tiles(foot_layout)
+	if walkable.is_empty():
+		return []
+	var pool := walkable.duplicate()
+	for i in range(pool.size() - 1, 0, -1):
+		var j: int = rng.randi_range(0, i)
+		var tmp: Vector2i = pool[i]
+		pool[i] = pool[j]
+		pool[j] = tmp
+	var result: Array = []
+	var spawn_count := mini(amount, pool.size())
+	for i in range(spawn_count):
+		var tile: Vector2i = pool[i]
+		var center := Vector2(
+			float(tile.x) * FOOT_TILE_SIZE + FOOT_TILE_SIZE * 0.5,
+			float(tile.y) * FOOT_TILE_SIZE + FOOT_TILE_SIZE * 0.5
+		)
+		result.append({
+			"x": center.x + rng.randf_range(-10.0, 10.0),
+			"y": center.y + rng.randf_range(-10.0, 10.0),
+			"item_id": ItemDefs.pick_loot_for_building(building_type, rng),
+		})
+	return result
+
+
+func is_foot_tile_blocked(cell: Dictionary, district_rect: Rect2, world_pos: Vector2) -> bool:
+	var local := world_pos - district_rect.position
+	var tile := Vector2i(
+		clampi(int(local.x / FOOT_TILE_SIZE), 0, maxi(int(cell.get("foot_grid_cols", 1)) - 1, 0)),
+		clampi(int(local.y / FOOT_TILE_SIZE), 0, maxi(int(cell.get("foot_grid_rows", 1)) - 1, 0)),
+	)
+	for raw in cell.get("foot_blocked", []):
+		var blocked_tile := Vector2i.ZERO
+		if raw is Vector2i:
+			blocked_tile = raw
+		elif raw is Dictionary:
+			blocked_tile = Vector2i(int(raw.get("x", 0)), int(raw.get("y", 0)))
+		if blocked_tile == tile:
+			return true
+	return false
+
+
+func ensure_foot_layout(index: int) -> void:
+	if not is_valid_index(index) or not is_district(index):
+		return
+	var cell := cells[index]
+	if cell.get("foot_blocked", []) is Array and not cell["foot_blocked"].is_empty():
+		return
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(cell.get("seed", index + 1))
+	var layout := _build_foot_layout(rng, cell_size)
+	cell["foot_grid_cols"] = layout["cols"]
+	cell["foot_grid_rows"] = layout["rows"]
+	cell["foot_blocked"] = layout["blocked"]
+
+
+func get_walkable_world_positions(index: int) -> Array[Vector2]:
+	ensure_foot_layout(index)
+	if not is_valid_index(index):
+		return []
+	var cell := cells[index]
+	var district_rect := cell_rect(index)
+	var layout := {
+		"cols": int(cell.get("foot_grid_cols", 0)),
+		"rows": int(cell.get("foot_grid_rows", 0)),
+		"blocked": cell.get("foot_blocked", []),
+	}
+	var positions: Array[Vector2] = []
+	for tile in _get_walkable_tiles(layout):
+		positions.append(
+			district_rect.position
+			+ Vector2(
+				float(tile.x) * FOOT_TILE_SIZE + FOOT_TILE_SIZE * 0.5,
+				float(tile.y) * FOOT_TILE_SIZE + FOOT_TILE_SIZE * 0.5,
+			)
+		)
+	return positions
+
+
+func get_foot_spawn_world_pos(cell: Dictionary, district_rect: Rect2) -> Vector2:
+	var cols: int = maxi(int(cell.get("foot_grid_cols", 1)), 1)
+	var rows: int = maxi(int(cell.get("foot_grid_rows", 1)), 1)
+	var center := Vector2i(cols / 2, rows / 2)
+	return district_rect.position + Vector2(
+		float(center.x) * FOOT_TILE_SIZE + FOOT_TILE_SIZE * 0.5,
+		float(center.y) * FOOT_TILE_SIZE + FOOT_TILE_SIZE * 0.5,
+	)
 
 func _finalize_cell_kinds() -> void:
 	for index in range(cells.size()):
@@ -498,7 +669,13 @@ func _serialize_cell(cell: Dictionary) -> Dictionary:
 	var spawns: Array = []
 	for spawn in cell.get("resource_spawns", []):
 		if spawn is Vector2:
-			spawns.append({"x": spawn.x, "y": spawn.y})
+			spawns.append({"x": spawn.x, "y": spawn.y, "item_id": "scrap"})
+		elif spawn is Dictionary:
+			spawns.append({
+				"x": float(spawn.get("x", 0.0)),
+				"y": float(spawn.get("y", 0.0)),
+				"item_id": str(spawn.get("item_id", "scrap")),
+			})
 	var connections: Dictionary = {}
 	for direction in cell.get("connections", {}).keys():
 		connections[direction] = int(cell["connections"][direction])
@@ -511,6 +688,9 @@ func _serialize_cell(cell: Dictionary) -> Dictionary:
 		"resource_total": int(cell.get("resource_total", 0)),
 		"resource_remaining": int(cell.get("resource_remaining", 0)),
 		"resource_spawns": spawns,
+		"foot_grid_cols": int(cell.get("foot_grid_cols", 0)),
+		"foot_grid_rows": int(cell.get("foot_grid_rows", 0)),
+		"foot_blocked": _serialize_foot_blocked(cell.get("foot_blocked", [])),
 		"connections": connections,
 		"seed": int(cell.get("seed", 0)),
 	}
@@ -519,10 +699,14 @@ func _serialize_cell(cell: Dictionary) -> Dictionary:
 func _deserialize_cell(data: Dictionary) -> Dictionary:
 	var coord_dict: Dictionary = data.get("coord", {})
 	var coord := Vector2i(int(coord_dict.get("x", 0)), int(coord_dict.get("y", 0)))
-	var spawns: Array[Vector2] = []
+	var spawns: Array = []
 	for spawn_data in data.get("resource_spawns", []):
 		if spawn_data is Dictionary:
-			spawns.append(Vector2(float(spawn_data.get("x", 0.0)), float(spawn_data.get("y", 0.0))))
+			spawns.append({
+				"x": float(spawn_data.get("x", 0.0)),
+				"y": float(spawn_data.get("y", 0.0)),
+				"item_id": str(spawn_data.get("item_id", "scrap")),
+			})
 	var connections := {
 		"up": -1,
 		"down": -1,
@@ -540,6 +724,27 @@ func _deserialize_cell(data: Dictionary) -> Dictionary:
 		"resource_total": int(data.get("resource_total", 0)),
 		"resource_remaining": int(data.get("resource_remaining", 0)),
 		"resource_spawns": spawns,
+		"foot_grid_cols": int(data.get("foot_grid_cols", 0)),
+		"foot_grid_rows": int(data.get("foot_grid_rows", 0)),
+		"foot_blocked": _deserialize_foot_blocked(data.get("foot_blocked", [])),
 		"connections": connections,
 		"seed": int(data.get("seed", 0)),
 	}
+
+
+func _serialize_foot_blocked(blocked: Array) -> Array:
+	var result: Array = []
+	for raw in blocked:
+		if raw is Vector2i:
+			result.append({"x": raw.x, "y": raw.y})
+		elif raw is Dictionary:
+			result.append({"x": int(raw.get("x", 0)), "y": int(raw.get("y", 0))})
+	return result
+
+
+func _deserialize_foot_blocked(raw_list: Array) -> Array:
+	var result: Array = []
+	for raw in raw_list:
+		if raw is Dictionary:
+			result.append(Vector2i(int(raw.get("x", 0)), int(raw.get("y", 0))))
+	return result

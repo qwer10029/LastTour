@@ -104,6 +104,10 @@ func get_field_rect_local() -> Rect2:
 	return Rect2(field_origin, Vector2(grid_cols * _layout_tile_size, grid_rows * _layout_tile_size))
 
 
+func get_layout_tile_size() -> float:
+	return _layout_tile_size
+
+
 func is_inside_grid(cell: Vector2i) -> bool:
 	return cell.x >= 0 and cell.y >= 0 and cell.x < grid_cols and cell.y < grid_rows
 
@@ -205,10 +209,104 @@ func _draw() -> void:
 	draw_string(ThemeDB.fallback_font, veh_center + Vector2(-18, -28), "防守核心", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#ffb1a8"))
 
 	if _controller != null:
+		if (
+			_controller.show_route_overlay
+			and _controller.debug_draw_routes
+			and _controller.wave_plan != null
+		):
+			_draw_wave_design_overlay()
 		_draw_placed_towers()
 		_draw_combat_entities()
 		_draw_placement_preview()
 		_draw_vehicle_hp_bar()
+
+
+func _draw_arrow_head(tip: Vector2, direction: Vector2, size: float, color: Color) -> void:
+	if direction.length_squared() < 0.0001:
+		return
+	var dir := direction.normalized()
+	var wing := dir.orthogonal() * size * 0.45
+	var base := tip - dir * size
+	draw_colored_polygon(PackedVector2Array([tip, base + wing, base - wing]), color)
+
+
+func _draw_wave_design_overlay() -> void:
+	var plan: NightTdWavePlan = _controller.wave_plan
+	if plan == null:
+		return
+	var route_color := Color(0.95, 0.28, 0.28, 0.75)
+	var arrow_color := Color(1.0, 0.55, 0.35, 0.95)
+	var spawn_color := Color(0.95, 0.2, 0.2, 0.9)
+	var standby_color := Color(1.0, 0.55, 0.2, 0.85)
+	draw_string(
+		ThemeDB.fallback_font,
+		field_origin + Vector2(8, -28),
+		"敌人行进方向 →",
+		HORIZONTAL_ALIGNMENT_LEFT,
+		-1,
+		12,
+		Color("#ffc9a8"),
+	)
+	for route_id in plan.routes.keys():
+		var waypoints := plan.get_route_waypoints(str(route_id))
+		var prev: Vector2 = Vector2.ZERO
+		var has_prev := false
+		for idx in range(waypoints.size()):
+			var wp: Dictionary = waypoints[idx]
+			var cell: Vector2i = wp["cell"]
+			if not is_inside_grid(cell):
+				continue
+			var local_pos := _cell_to_local(cell)
+			var standby := float(wp.get("standby_sec", 0.0))
+			if has_prev:
+				draw_line(prev, local_pos, route_color, 3.0)
+				var seg := local_pos - prev
+				if seg.length_squared() > 4.0:
+					var mid := prev + seg * 0.55
+					_draw_arrow_head(mid + seg.normalized() * 10.0, seg, 14.0, arrow_color)
+			prev = local_pos
+			has_prev = true
+			if standby > 0.0:
+				draw_circle(local_pos, 10.0, standby_color)
+				draw_string(
+					ThemeDB.fallback_font,
+					local_pos + Vector2(-16, -14),
+					"%.0fs" % standby,
+					HORIZONTAL_ALIGNMENT_LEFT,
+					-1,
+					10,
+					Color("#ffe8c8"),
+				)
+			draw_string(
+				ThemeDB.fallback_font,
+				local_pos + Vector2(-10, 6),
+				NightTdWavePlan.cell_label(cell),
+				HORIZONTAL_ALIGNMENT_LEFT,
+				-1,
+				9,
+				Color("#ffd0d0"),
+			)
+	for sp_id in plan.spawn_points.keys():
+		for label in plan.spawn_points[sp_id]:
+			var cell := NightTdWavePlan.parse_cell_label(str(label))
+			if not is_inside_grid(cell):
+				continue
+			var local_pos := _cell_to_local(cell)
+			draw_rect(
+				Rect2(local_pos.x - 12, local_pos.y - 12, 24, 24),
+				spawn_color,
+				false,
+				2.5,
+			)
+			draw_string(
+				ThemeDB.fallback_font,
+				local_pos + Vector2(-14, -18),
+				str(label),
+				HORIZONTAL_ALIGNMENT_LEFT,
+				-1,
+				10,
+				Color("#ffcccc"),
+			)
 
 
 func _draw_combat_entities() -> void:
@@ -225,6 +323,21 @@ func _draw_combat_entities() -> void:
 		draw_circle(local_pos, radius, color)
 		draw_arc(local_pos, radius + 5.0, 0.0, TAU, 32, Color("#ff8b7a"), 2.5)
 		draw_string(ThemeDB.fallback_font, local_pos + Vector2(-14, -20), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#fff8f8"))
+		if _controller.phase == NightTdController.Phase.COMBAT:
+			var move_dir: Vector2 = enemy.get("move_dir", Vector2.ZERO)
+			if move_dir.length_squared() > 0.0001:
+				var arrow_tip := local_pos + move_dir * (radius + 14.0)
+				_draw_arrow_head(arrow_tip, move_dir, 11.0, Color(1.0, 0.45, 0.35, 0.95))
+		if float(enemy.get("wait_remaining", 0.0)) > 0.0:
+			draw_string(
+				ThemeDB.fallback_font,
+				local_pos + Vector2(-10, 8),
+				"停",
+				HORIZONTAL_ALIGNMENT_LEFT,
+				-1,
+				10,
+				Color("#ffe0a0"),
+			)
 		var hp_ratio: float = clampf(float(enemy["hp"]) / maxf(float(enemy["max_hp"]), 1.0), 0.0, 1.0)
 		draw_rect(Rect2(local_pos.x - 18, local_pos.y - 28, 36, 5), Color(0.05, 0.05, 0.05, 0.95), true)
 		draw_rect(Rect2(local_pos.x - 18, local_pos.y - 28, 36 * hp_ratio, 5), Color("#ff5f57"), true)

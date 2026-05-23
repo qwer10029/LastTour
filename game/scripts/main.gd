@@ -24,7 +24,10 @@ var _resource_nodes: Array[Area2D] = []
 var _fuel: float = 0.0
 var _vehicle_hp: float = 100.0
 var _vehicle_hp_max: float = 100.0
-var _inventory: int = 0
+var _backpack: InventoryData = InventoryData.new()
+var _survival: PlayerSurvival = PlayerSurvival.new()
+var _backpack_ui: BackpackUI
+var _backpack_open := false
 var _current_node_index: int = -1
 var _previous_node_index: int = -1
 var _arrived_from_index: int = -1
@@ -61,6 +64,8 @@ var _pause_confirm: ConfirmationDialog
 @onready var mode_label: Label = $HUD/InfoPanel/MarginContainer/VBoxContainer/ModeLabel
 @onready var fuel_label: Label = $HUD/InfoPanel/MarginContainer/VBoxContainer/FuelLabel
 @onready var inventory_label: Label = $HUD/InfoPanel/MarginContainer/VBoxContainer/InventoryLabel
+@onready var vitals_label: Label = $HUD/InfoPanel/MarginContainer/VBoxContainer/VitalsLabel
+@onready var backpack_button: Button = $HUD/InfoPanel/MarginContainer/VBoxContainer/BackpackButton
 @onready var status_label: Label = $HUD/InfoPanel/MarginContainer/VBoxContainer/StatusLabel
 @onready var minimap_view: MinimapView = $HUD/MapPanel/MarginContainer/VBoxContainer/MinimapView
 @onready var map_info_label: Label = $HUD/MapPanel/MarginContainer/VBoxContainer/MapInfoLabel
@@ -81,6 +86,7 @@ func _ready() -> void:
 	_ensure_input_actions()
 	_connect_buttons()
 	_setup_pause_ui()
+	_setup_backpack_ui()
 	_setup_run_end_ui()
 	_spawn_vehicle()
 	_spawn_player()
@@ -105,6 +111,7 @@ func _start_new_run() -> void:
 	_run_ended = false
 	_run_end_reason = ""
 	_final_choice_id = ""
+	_init_player_loadout()
 	_generate_layer_map()
 	_fuel = fuel_max
 	_reset_vehicle_hp_for_new_run()
@@ -117,7 +124,7 @@ func _start_new_run() -> void:
 		time_system.start_day(1)
 
 func _ensure_input_actions() -> void:
-	for action_name in ["move_up", "move_down", "move_left", "move_right", "interact", "repair", "pause", "enter_defense_mode"]:
+	for action_name in ["move_up", "move_down", "move_left", "move_right", "interact", "repair", "pause", "enter_defense_mode", "toggle_backpack"]:
 		if not InputMap.has_action(action_name):
 			InputMap.add_action(action_name)
 	# 步行：WASD；驾车/选路：方向键（↑北 ↓南 ←西 →东）
@@ -139,6 +146,7 @@ func _ensure_input_actions() -> void:
 	_register_key_action("pause", KEY_ESCAPE)
 	_register_key_action("pause", KEY_P)
 	_register_key_action("enter_defense_mode", KEY_F)
+	_register_key_action("toggle_backpack", KEY_B)
 
 func _reset_action_keys(action_name: String) -> void:
 	for event in InputMap.action_get_events(action_name):
@@ -156,6 +164,8 @@ func _connect_buttons() -> void:
 	disembark_button.pressed.connect(_on_disembark_pressed)
 	return_button.pressed.connect(_on_return_pressed)
 	repair_button.pressed.connect(_on_repair_pressed)
+	if is_instance_valid(backpack_button):
+		backpack_button.pressed.connect(_toggle_backpack)
 	if is_instance_valid(back_track_button):
 		back_track_button.focus_mode = Control.FOCUS_NONE
 		back_track_button.pressed.connect(_take_back_at_node)
@@ -182,19 +192,30 @@ func _spawn_resources() -> void:
 	_resource_nodes.clear()
 	for district_index in _map.district_indices:
 		var cell := _map.get_cell(district_index)
-		for spawn_position in cell.get("resource_spawns", []):
+		for spawn_data in cell.get("resource_spawns", []):
+			var spawn_position := Vector2.ZERO
+			var loot_id := "scrap"
+			if spawn_data is Dictionary:
+				spawn_position = Vector2(float(spawn_data.get("x", 0.0)), float(spawn_data.get("y", 0.0)))
+				loot_id = str(spawn_data.get("item_id", "scrap"))
+			elif spawn_data is Vector2:
+				spawn_position = spawn_data
 			var pickup := resource_scene.instantiate()
 			add_child(pickup)
 			pickup.visible = false
 			pickup.position = _map.cell_rect(district_index).position + spawn_position
 			pickup.set_meta("district_index", district_index)
-			pickup.collected.connect(_on_resource_collected.bind(pickup))
+			pickup.set_meta("item_id", loot_id)
+			if pickup.has_method("setup_loot"):
+				pickup.setup_loot(loot_id)
+			if pickup.has_signal("collected"):
+				pickup.collected.connect(_on_resource_collected.bind(district_index))
 			_resource_nodes.append(pickup)
 
 func _physics_process(delta: float) -> void:
 	if _run_ended:
 		return
-	if _game_paused:
+	if _game_paused or _backpack_open:
 		return
 	_sync_view_cameras()
 	_update_evening_tint(delta)
@@ -209,6 +230,8 @@ func _physics_process(delta: float) -> void:
 		return
 
 	_check_vehicle_destroyed()
+	_tick_survival(delta)
+	_check_player_vitals_failure()
 
 	if Input.is_action_just_pressed("interact"):
 		if _mode == TravelMode.DRIVE and _segment_target_index < 0:
@@ -267,14 +290,32 @@ func _process_foot(_delta: float) -> void:
 	if is_instance_valid(_player):
 		_player.global_position = _clamp_to_cell(_player.global_position, _current_district_index)
 
+func _input(event: InputEvent) -> void:
+	if _run_ended:
+		return
+	if event is InputEventKey and event.pressed and not event.is_echo():
+		if event.keycode == KEY_B or event.physical_keycode == KEY_B or event.is_action_pressed("toggle_backpack"):
+			_toggle_backpack()
+			get_viewport().set_input_as_handled()
+			return
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if _run_ended:
+		return
+	if event.is_action_pressed("toggle_backpack"):
+		_toggle_backpack()
+		get_viewport().set_input_as_handled()
+		return
+	if _backpack_open and event.is_action_pressed("pause"):
+		_close_backpack()
+		get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed("pause"):
 		_toggle_pause()
 		get_viewport().set_input_as_handled()
 		return
-	if _game_paused:
+	if _game_paused or _backpack_open:
 		return
 	if event.is_action_pressed("enter_defense_mode") and is_instance_valid(time_system) and time_system.phase == TimeSystem.Phase.EVENING and _mode == TravelMode.DRIVE and _segment_target_index < 0:
 		time_system.enter_night_setup(true)
@@ -452,14 +493,19 @@ func _begin_drive_segment(from_index: int, to_index: int) -> void:
 func _begin_foot_mode() -> void:
 	if _current_district_index < 0:
 		return
+	_map.ensure_foot_layout(_current_district_index)
 	_mode = TravelMode.FOOT
 	_segment_target_index = -1
 	if is_instance_valid(_vehicle):
 		_vehicle.set_active(false)
 	if is_instance_valid(_player):
 		_player.set_active(true)
-		_player.world_bounds = _map.cell_rect(_current_district_index)
-		_player.global_position = _map.cell_rect(_current_district_index).position + _map.cell_rect(_current_district_index).size * 0.5
+		var district_rect := _map.cell_rect(_current_district_index)
+		_player.world_bounds = district_rect
+		_player.set_blocked_checker(Callable(self, "_is_foot_blocked_at"))
+		_player.global_position = _map.get_foot_spawn_world_pos(_map.get_cell(_current_district_index), district_rect)
+		_player.global_position = _clamp_to_walkable(_player.global_position)
+	_fix_district_pickup_positions(_current_district_index)
 	for node in _resource_nodes:
 		if is_instance_valid(node):
 			node.visible = int(node.get_meta("district_index", -1)) == _current_district_index
@@ -467,6 +513,7 @@ func _begin_foot_mode() -> void:
 func _return_to_vehicle() -> void:
 	_mode = TravelMode.DRIVE
 	if is_instance_valid(_player):
+		_player.set_blocked_checker(Callable())
 		_player.set_active(false)
 	if is_instance_valid(_vehicle):
 		_vehicle.set_active(true)
@@ -499,8 +546,6 @@ func apply_run_config(manager: Node) -> void:
 		return
 	if manager.has_method("get_fuel_max"):
 		fuel_max = manager.get_fuel_max(_base_fuel_max)
-	if manager.has_method("get_starting_inventory"):
-		_inventory = manager.get_starting_inventory()
 	if manager.has_method("get_difficulty_name"):
 		_run_difficulty_name = manager.get_difficulty_name()
 	if manager.has_method("get_squad_name"):
@@ -517,12 +562,13 @@ func _current_repair_cost() -> int:
 func _attempt_repair_elevator() -> void:
 	if not _can_repair_elevator():
 		return
-	if _inventory <= 0:
+	if not _consume_repair_material():
+		if is_instance_valid(prompt_label) and _can_repair_elevator():
+			prompt_label.text = ItemDefs.get_repair_requirement_text(_backpack)
 		return
 	var needed := _current_repair_cost() - _elevator_repair_progress
 	if needed <= 0:
 		return
-	_inventory -= 1
 	_elevator_repair_progress += 1
 	if _elevator_repair_progress >= _current_repair_cost():
 		if _current_layer >= total_layers:
@@ -530,15 +576,17 @@ func _attempt_repair_elevator() -> void:
 		else:
 			_advance_layer()
 
-func _on_resource_collected(pickup: Node) -> void:
-	if not is_instance_valid(pickup):
+func _on_resource_collected(item_id: String, district_index: int) -> void:
+	if not _map.collect_resource(district_index):
 		return
-	if not pickup.has_meta("district_index"):
-		return
-	var district_index := int(pickup.get_meta("district_index"))
-	if _map.collect_resource(district_index):
-		_inventory += 1
+	var loot_id := str(item_id)
+	if loot_id == "":
+		loot_id = "scrap"
+	var added := _backpack.add(loot_id, 1)
+	if added > 0:
 		_refresh_ui()
+		if is_instance_valid(_backpack_ui) and _backpack_ui.is_open():
+			_backpack_ui.show_backpack(_backpack)
 
 func _current_focus_position() -> Vector2:
 	if _mode == TravelMode.FOOT and is_instance_valid(_player):
@@ -625,6 +673,148 @@ func _setup_pause_ui() -> void:
 	_pause_layer.visible = false
 
 
+func _setup_backpack_ui() -> void:
+	var hud := get_node_or_null("HUD")
+	if hud == null:
+		return
+	_backpack_ui = BackpackUI.new()
+	_backpack_ui.name = "BackpackUI"
+	_backpack_ui.z_index = 100
+	hud.add_child(_backpack_ui)
+	_backpack_ui.item_use_requested.connect(_on_backpack_use_item)
+	_backpack_ui.item_discard_requested.connect(_on_backpack_discard_item)
+	_backpack_ui.closed.connect(_on_backpack_closed)
+
+
+func _init_player_loadout() -> void:
+	_survival.reset_for_new_run()
+	_backpack.clear()
+	if GameManager.has_method("get_starting_items"):
+		_backpack.apply_starting_items(GameManager.get_starting_items())
+	var bonus := GameManager.get_starting_inventory() if GameManager.has_method("get_starting_inventory") else 0
+	if bonus > 0:
+		_backpack.add("scrap", bonus)
+
+
+func _toggle_backpack() -> void:
+	if _run_ended:
+		return
+	if is_instance_valid(night_td) and night_td.visible:
+		if _backpack_open:
+			_close_backpack()
+		return
+	if not _is_exploration_allowed() and not _backpack_open:
+		return
+	if _backpack_open:
+		_close_backpack()
+	else:
+		_open_backpack()
+
+
+func _open_backpack() -> void:
+	if not is_instance_valid(_backpack_ui):
+		return
+	_backpack_open = true
+	_backpack_ui.show_backpack(_backpack)
+	if is_instance_valid(time_system) and not _is_night_phase():
+		time_system.pause()
+
+
+func _close_backpack() -> void:
+	_backpack_open = false
+	if is_instance_valid(_backpack_ui):
+		_backpack_ui.hide_backpack()
+	if is_instance_valid(time_system) and not _game_paused and not _is_night_phase():
+		time_system.resume()
+
+
+func _on_backpack_closed() -> void:
+	_backpack_open = false
+	if is_instance_valid(time_system) and not _game_paused and not _is_night_phase():
+		time_system.resume()
+
+
+func _on_backpack_use_item(item_id: String) -> void:
+	if not _use_backpack_item(item_id):
+		return
+	_backpack_ui.show_backpack(_backpack)
+	_refresh_ui()
+
+
+func _on_backpack_discard_item(item_id: String) -> void:
+	if _backpack.remove(item_id, 1):
+		_backpack_ui.show_backpack(_backpack)
+		_refresh_ui()
+
+
+func _use_backpack_item(item_id: String) -> bool:
+	if not _backpack.has(item_id, 1):
+		return false
+	match item_id:
+		"food":
+			_backpack.remove("food", 1)
+			_survival.eat_food()
+			return true
+		"water":
+			_backpack.remove("water", 1)
+			_survival.drink_water()
+			return true
+		"medkit":
+			_backpack.remove("medkit", 1)
+			_survival.use_medkit()
+			return true
+		_:
+			return false
+
+
+func _consume_repair_material() -> bool:
+	if _backpack.has("parts", ItemDefs.REPAIR_PARTS_EACH):
+		return _backpack.remove("parts", ItemDefs.REPAIR_PARTS_EACH)
+	if _backpack.has("scrap", ItemDefs.REPAIR_SCRAP_EACH):
+		return _backpack.remove("scrap", ItemDefs.REPAIR_SCRAP_EACH)
+	if _backpack.has("wood", ItemDefs.REPAIR_WOOD_EACH) and _backpack.has("scrap", ItemDefs.REPAIR_SCRAP_ALT_EACH):
+		return _backpack.remove("wood", ItemDefs.REPAIR_WOOD_EACH) and _backpack.remove("scrap", ItemDefs.REPAIR_SCRAP_ALT_EACH)
+	return false
+
+
+func _repair_button_label() -> String:
+	if _backpack.has("parts", ItemDefs.REPAIR_PARTS_EACH):
+		return "修复电梯 (零件×%d)" % ItemDefs.REPAIR_PARTS_EACH
+	if _backpack.has("scrap", ItemDefs.REPAIR_SCRAP_EACH):
+		return "修复电梯 (废料×%d 应急)" % ItemDefs.REPAIR_SCRAP_EACH
+	if _backpack.has("wood", ItemDefs.REPAIR_WOOD_EACH) and _backpack.has("scrap", ItemDefs.REPAIR_SCRAP_ALT_EACH):
+		return "修复电梯 (木×%d+废料×%d)" % [ItemDefs.REPAIR_WOOD_EACH, ItemDefs.REPAIR_SCRAP_ALT_EACH]
+	return "修复电梯 (材料不足)"
+
+
+func _tick_survival(delta: float) -> void:
+	if not _is_exploration_allowed() or _is_night_phase():
+		return
+	_survival.tick(delta)
+
+
+func _check_player_vitals_failure() -> void:
+	if _run_ended or _survival.is_alive():
+		return
+	_run_ended = true
+	_run_end_reason = "player_collapsed"
+	if is_instance_valid(_player):
+		_player.set_active(false)
+	if is_instance_valid(_vehicle):
+		_vehicle.set_active(false)
+	_show_run_summary()
+
+
+func _inventory_summary() -> String:
+	if _backpack.total_count() <= 0:
+		return "空"
+	var parts: PackedStringArray = []
+	for entry in _backpack.get_sorted_entries():
+		var id := str(entry["id"])
+		parts.append("%s×%d" % [ItemDefs.get_item_name(id), int(entry["count"])])
+	return " ".join(parts)
+
+
 func _setup_run_end_ui() -> void:
 	_run_end_overlay = RunEndOverlayScript.new()
 	add_child(_run_end_overlay)
@@ -689,6 +879,8 @@ func _show_run_summary() -> void:
 	match _run_end_reason:
 		"vehicle_destroyed":
 			title = "本局结束 · 车辆损毁"
+		"player_collapsed":
+			title = "本局结束 · 乘员倒下"
 		"reached_top":
 			title = "本局结算 · 归档完成"
 		_:
@@ -706,12 +898,17 @@ func _build_run_summary_text() -> String:
 	lines.append("抵达层数: %d / %d" % [_current_layer, total_layers])
 	lines.append("生存天数: %d" % day_n)
 	lines.append("车辆耐久: %.0f / %.0f" % [_vehicle_hp, _vehicle_hp_max])
-	lines.append("剩余资源: %d  |  剩余燃料: %.1f" % [_inventory, _fuel])
+	lines.append("背包: %s  |  燃料: %.1f" % [_inventory_summary(), _fuel])
+	lines.append("生命 %.0f | 饥饿 %.0f | 口渴 %.0f" % [_survival.hp, _survival.hunger, _survival.thirst])
 	lines.append("地图探索: %d / %d 格" % [_map.explored_count(), _map.cells.size()])
 	if _run_end_reason == "vehicle_destroyed":
 		lines.append("")
 		lines.append("车辆在夜间防线崩溃后失去作战能力。")
 		lines.append("昆仑程序将判定本次勘探失败，新的克隆体即将被派遣。")
+	elif _run_end_reason == "player_collapsed":
+		lines.append("")
+		lines.append("饥饿、脱水或伤势导致乘员无法继续行动。")
+		lines.append("本局勘探失败，新的克隆体即将被派遣。")
 	elif _run_end_reason == "reached_top":
 		lines.append("")
 		lines.append("你已抵达顶层并完成归档仪式。")
@@ -752,6 +949,8 @@ func _toggle_pause() -> void:
 
 
 func _pause_game() -> void:
+	if _backpack_open:
+		_close_backpack()
 	_game_paused = true
 	if is_instance_valid(_pause_layer):
 		_pause_layer.visible = true
@@ -770,6 +969,19 @@ func _resume_from_pause() -> void:
 			time_system.resume()
 
 
+func _load_travel_inventory(travel: Dictionary) -> void:
+	_backpack.clear()
+	_survival.reset_for_new_run()
+	if travel.has("items"):
+		_backpack.load_from_dictionary(travel["items"])
+	elif travel.has("inventory"):
+		var legacy_count := int(travel.get("inventory", 0))
+		if legacy_count > 0:
+			_backpack.add("scrap", legacy_count)
+	if travel.has("survival"):
+		_survival.load_from_dictionary(travel["survival"])
+
+
 func capture_save_data() -> Dictionary:
 	var player_pos := Vector2.ZERO
 	if is_instance_valid(_player):
@@ -785,7 +997,8 @@ func capture_save_data() -> Dictionary:
 		"travel": {
 			"mode": _mode,
 			"fuel": _fuel,
-			"inventory": _inventory,
+			"items": _backpack.to_dictionary(),
+			"survival": _survival.to_dictionary(),
 			"current_node_index": _current_node_index,
 			"previous_node_index": _previous_node_index,
 			"arrived_from_index": _arrived_from_index,
@@ -826,7 +1039,7 @@ func _apply_save_data(data: Dictionary) -> void:
 	var travel: Dictionary = data.get("travel", {})
 	_mode = int(travel.get("mode", TravelMode.DRIVE))
 	_fuel = float(travel.get("fuel", fuel_max))
-	_inventory = int(travel.get("inventory", 0))
+	_load_travel_inventory(travel)
 	_current_node_index = int(travel.get("current_node_index", -1))
 	_previous_node_index = int(travel.get("previous_node_index", -1))
 	_arrived_from_index = int(travel.get("arrived_from_index", -1))
@@ -883,9 +1096,12 @@ func _restore_foot_mode_from_save(foot: Dictionary) -> void:
 		_vehicle.set_active(false)
 	if is_instance_valid(_player):
 		_player.set_active(true)
-		_player.world_bounds = _map.cell_rect(_current_district_index)
+		_map.ensure_foot_layout(_current_district_index)
+		var district_rect := _map.cell_rect(_current_district_index)
+		_player.world_bounds = district_rect
+		_player.set_blocked_checker(Callable(self, "_is_foot_blocked_at"))
 		_player.global_position = Vector2(float(foot.get("player_x", 0.0)), float(foot.get("player_y", 0.0)))
-		_player.global_position = _clamp_to_cell(_player.global_position, _current_district_index)
+		_player.global_position = _clamp_to_walkable(_player.global_position)
 	for node in _resource_nodes:
 		if is_instance_valid(node):
 			node.visible = int(node.get_meta("district_index", -1)) == _current_district_index
@@ -918,7 +1134,7 @@ func _restore_time_phase_after_load() -> void:
 			_force_return_to_vehicle_for_night()
 			if is_instance_valid(night_defense):
 				night_defense.start_td_session(
-					_inventory, GameManager.difficulty, time_system.day_index, true, _vehicle_hp, _vehicle_hp_max
+					_backpack.total_count(), GameManager.difficulty, time_system.day_index, true, _vehicle_hp, _vehicle_hp_max
 				)
 			time_system.pause()
 		TimeSystem.Phase.NIGHT_RESOLVE:
@@ -1016,7 +1232,7 @@ func _on_night_setup_started(day_index: int, manual_setup: bool) -> void:
 		evening_notice.hide_notice()
 	if is_instance_valid(night_defense):
 		night_defense.start_td_session(
-			_inventory, GameManager.difficulty, day_index, manual_setup, _vehicle_hp, _vehicle_hp_max
+			_backpack.total_count(), GameManager.difficulty, day_index, manual_setup, _vehicle_hp, _vehicle_hp_max
 		)
 	_refresh_ui()
 
@@ -1033,10 +1249,7 @@ func _on_night_td_finished(result: Dictionary) -> void:
 
 
 func _apply_night_result(result: Dictionary) -> void:
-	if result.has("inventory_remaining"):
-		_inventory = int(result.get("inventory_remaining", _inventory))
-	var loss := int(result.get("inventory_loss", 0))
-	_inventory = maxi(_inventory - loss, 0)
+	_survival.apply_night_defense_outcome(str(result.get("outcome", "success")))
 	_fuel = maxf(_fuel - float(result.get("fuel_loss", 0.0)), 0.0)
 	if result.has("base_hp"):
 		_vehicle_hp = clampf(float(result.get("base_hp", _vehicle_hp)), 0.0, _vehicle_hp_max)
@@ -1092,6 +1305,9 @@ func _force_return_to_vehicle_for_night() -> void:
 
 func _refresh_ui() -> void:
 	var in_td := is_instance_valid(night_td) and night_td.visible
+	if is_instance_valid(backpack_button):
+		backpack_button.visible = not in_td and _is_exploration_allowed()
+		backpack_button.text = "关闭背包 (B)" if _backpack_open else "打开背包 (B)"
 	if has_node("HUD/InfoPanel"):
 		$HUD/InfoPanel.visible = not in_td
 	if has_node("HUD/MapPanel"):
@@ -1110,8 +1326,16 @@ func _refresh_ui() -> void:
 			mode_label.text = "状态: %s%s" % ["驾驶车辆" if _mode != TravelMode.FOOT else "步行探索", phase_hint]
 	if is_instance_valid(fuel_label):
 		fuel_label.text = "燃料: %.1f / %.1f  |  车辆: %.0f / %.0f" % [_fuel, fuel_max, _vehicle_hp, _vehicle_hp_max]
+	if is_instance_valid(vitals_label):
+		var wound_hint := " · 昨夜失利" if _survival.night_defense_wounded else ""
+		var bleed_hint := ""
+		if _survival.should_bleed_hp():
+			bleed_hint = " · 生命流失中"
+		vitals_label.text = "生命 %.0f | 饥饿 %.0f | 口渴 %.0f%s%s  [B 背包]" % [
+			_survival.hp, _survival.hunger, _survival.thirst, wound_hint, bleed_hint
+		]
 	if is_instance_valid(inventory_label):
-		inventory_label.text = "已搬运资源: %d" % _inventory
+		inventory_label.text = "背包: %s" % _inventory_summary()
 
 	var district_text := ""
 	if _current_district_index >= 0 and _map.is_valid_index(_current_district_index):
@@ -1172,10 +1396,11 @@ func _update_prompts() -> void:
 			prompt_label.text = "顶层电梯：修复完成将触发归档仪式与最终抉择"
 			repair_button.visible = true
 		elif _can_repair_elevator():
-			prompt_label.text = "电梯楼：消耗资源修复电梯，进度满后进入上层"
+			prompt_label.text = ItemDefs.get_repair_requirement_text(_backpack) + "\n进度满后进入上层。"
 			repair_button.visible = true
+			repair_button.text = _repair_button_label()
 		else:
-			prompt_label.text = "步行探索：收集资源后按返回车辆"
+			prompt_label.text = "步行探索：深绿格为障碍不可通行，物资只在可走区域刷新。B 开背包。"
 		return_button.visible = true
 	elif can_stop:
 		prompt_label.text = "建筑群：可以下车探索"
@@ -1285,6 +1510,43 @@ func _clamp_to_cell(position: Vector2, district_index: int) -> Vector2:
 		return position
 	var rect := _map.cell_rect(district_index)
 	return Vector2(clampf(position.x, rect.position.x + 18.0, rect.end.x - 18.0), clampf(position.y, rect.position.y + 18.0, rect.end.y - 18.0))
+
+
+func _is_foot_blocked_at(world_pos: Vector2) -> bool:
+	if _current_district_index < 0 or _mode != TravelMode.FOOT:
+		return false
+	var rect := _map.cell_rect(_current_district_index)
+	return _map.is_foot_tile_blocked(_map.get_cell(_current_district_index), rect, world_pos)
+
+
+func _fix_district_pickup_positions(district_index: int) -> void:
+	if district_index < 0:
+		return
+	var walkable: Array[Vector2] = _map.get_walkable_world_positions(district_index)
+	if walkable.is_empty():
+		return
+	var rect := _map.cell_rect(district_index)
+	var cell := _map.get_cell(district_index)
+	var spot_idx := 0
+	for node in _resource_nodes:
+		if not is_instance_valid(node):
+			continue
+		if int(node.get_meta("district_index", -1)) != district_index:
+			continue
+		if _map.is_foot_tile_blocked(cell, rect, node.global_position):
+			node.global_position = walkable[spot_idx % walkable.size()]
+			spot_idx += 1
+
+
+func _clamp_to_walkable(position: Vector2) -> Vector2:
+	if _current_district_index < 0:
+		return position
+	var rect := _map.cell_rect(_current_district_index)
+	var result := _clamp_to_cell(position, _current_district_index)
+	if not _is_foot_blocked_at(result):
+		return result
+	# 落在障碍上时退回区块中心
+	return _map.get_foot_spawn_world_pos(_map.get_cell(_current_district_index), rect)
 
 func _draw() -> void:
 	if _is_night_phase() and (not is_instance_valid(night_td) or not night_td.visible):
@@ -1481,14 +1743,29 @@ func _draw_foot_background() -> void:
 			var py := interior_origin.y + gy * tile_size
 			var shade := Color("#05223a") if ((gx + gy) % 2 == 0) else Color("#022033")
 			draw_rect(Rect2(px, py, tile_size, tile_size), shade, true)
-	var rng := RandomNumberGenerator.new()
-	rng.seed = int(_map.get_cell(_current_district_index)["seed"])
-	for detail in range(5):
-		var detail_width := rng.randf_range(40.0, 110.0)
-		var detail_height := rng.randf_range(28.0, 80.0)
-		var detail_x := rng.randf_range(rect.position.x + 20.0, rect.end.x - detail_width - 20.0)
-		var detail_y := rng.randf_range(rect.position.y + 20.0, rect.end.y - detail_height - 20.0)
-		draw_rect(Rect2(detail_x, detail_y, detail_width, detail_height), Color("#39463a"), true)
+	_map.ensure_foot_layout(_current_district_index)
+	var cell := _map.get_cell(_current_district_index)
+	for raw in cell.get("foot_blocked", []):
+		var tile := Vector2i.ZERO
+		if raw is Vector2i:
+			tile = raw
+		elif raw is Dictionary:
+			tile = Vector2i(int(raw.get("x", 0)), int(raw.get("y", 0)))
+		var tile_rect := Rect2(
+			rect.position + Vector2(float(tile.x), float(tile.y)) * WorldMapData.FOOT_TILE_SIZE,
+			Vector2(WorldMapData.FOOT_TILE_SIZE, WorldMapData.FOOT_TILE_SIZE),
+		)
+		draw_rect(tile_rect, Color("#2a4a32"), true)
+		draw_rect(tile_rect.grow(-3.0), Color("#39463a"), true)
+		draw_string(
+			ThemeDB.fallback_font,
+			tile_rect.position + Vector2(10, 22),
+			"障碍",
+			HORIZONTAL_ALIGNMENT_LEFT,
+			-1,
+			10,
+			Color("#8fb89a"),
+		)
 
 func _draw_night_camp_background() -> void:
 	var view_size := get_viewport_rect().size

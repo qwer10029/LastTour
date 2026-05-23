@@ -1,0 +1,130 @@
+{
+	"name": "夜晚塔防 · 标准夜袭",
+	"spawn_points": {
+		"sp_east": ["F8", "E9", "D8"],
+		"sp_north": ["F2", "E2"]
+	},
+	"routes": {
+		"route_f_line": {
+			"label": "F 行迂回",
+			"waypoints": [
+				{ "cell": "F8", "standby": 0 },
+				{ "cell": "F6", "standby": 5 },
+				{ "cell": "F4", "standby": 5 },
+				{ "cell": "F2", "standby": 0 },
+				{ "cell": "D2", "standby": 0 },
+				{ "cell": "B2", "standby": 0 },
+				{ "cell": "B8", "standby": 0 }
+			]
+		},
+		"route_e_line": {
+			"label": "E 行压迫",
+			"waypoints": [
+				{ "cell": "E9", "standby": 0 },
+				{ "cell": "E6", "standby": 5 },
+				{ "cell": "E4", "standby": 0 },
+				{ "cell": "D2", "standby": 0 },
+				{ "cell": "B2", "standby": 0 },
+				{ "cell": "B8", "standby": 0 }
+			]
+		},
+		"route_d_rush": {
+			"label": "D 路突进",
+			"waypoints": [
+				{ "cell": "D8", "standby": 0 },
+				{ "cell": "D5", "standby": 0 },
+				{ "cell": "D2", "standby": 0 },
+				{ "cell": "B8", "standby": 0 }
+			]
+		},
+		"route_swarm": {
+			"label": "北侧蜂群",
+			"waypoints": [
+				{ "cell": "F2", "standby": 0 },
+				{ "cell": "E2", "standby": 0 },
+				{ "cell": "D2", "standby": 0 },
+				{ "cell": "B8", "standby": 0 }
+			]
+		}
+	},
+	"waves": [
+		{
+			"id": 1,
+			"entries": [
+				{
+					"enemy": "drone",
+					"count": 8,
+					"spawn_interval": 0.9,
+					"pre_delay": 0,
+					"move_speed": 56,
+					"route_id": "route_f_line",
+					"spawn_point": "F8"
+				},
+				{
+					"enemy": "drone",
+					"count": 6,
+					"spawn_interval": 1.0,
+					"pre_delay": 4.0,
+					"move_speed": 54,
+					"route_id": "route_e_line",
+					"spawn_point": "E9"
+				}
+			]
+		},
+		{
+			"id": 2,
+			"entries": [
+				{
+					"enemy": "swarm",
+					"count": 12,
+					"spawn_interval": 0.55,
+					"pre_delay": 0,
+					"move_speed": 68,
+					"route_id": "route_swarm",
+					"spawn_point": "F2"
+				},
+				{
+					"enemy": "scout",
+					"count": 4,
+					"spawn_interval": 2.2,
+					"pre_delay": 6.0,
+					"move_speed": 44,
+					"route_id": "route_d_rush",
+					"spawn_point": "D8"
+				}
+			]
+		},
+		{
+			"id": 3,
+			"entries": [
+				{
+					"enemy": "heavy",
+					"count": 3,
+					"spawn_interval": 4.0,
+					"pre_delay": 0,
+					"move_speed": 30,
+					"route_id": "route_d_rush",
+					"spawn_point": "D8"
+				},
+				{
+					"enemy": "drone",
+					"count": 8,
+					"spawn_interval": 0.8,
+					"pre_delay": 8.0,
+					"move_speed": 60,
+					"route_id": "route_f_line",
+					"spawn_point": "F8"
+				},
+				{
+					"enemy": "scout",
+					"count": 3,
+					"spawn_interval": 2.5,
+					"pre_delay": 12.0,
+					"move_speed": 46,
+					"route_id": "route_e_line",
+					"spawn_point": "E9"
+				}
+			]
+		}
+	]
+}

@@ -8,13 +8,19 @@ enum Phase { PLACE, COMBAT, RESULT }
 @export var placement_time_sec: float = 180.0
 @export var base_max_hp: float = 100.0
 @export var spawn_interval_sec: float = 1.2
+@export var use_wave_plan: bool = true
+@export_file("*.json") var wave_plan_path: String = "res://data/night_td/waves/night_wave_demo.json"
+@export var debug_draw_routes: bool = true
+@export var td_base_deploy: int = 14
 
 @onready var field: NightTdField = $Field
 @onready var hud: CanvasLayer = $Hud
 
 var phase: int = Phase.PLACE
+var show_route_overlay: bool = false
 var _allow_placement := true
 var _starting_inventory: int = 0
+var _exploration_inventory: int = 0
 var backpack_remaining: int = 0
 var resources_spent: int = 0
 var difficulty: int = 1
@@ -25,6 +31,8 @@ var _selected_tower := "jammer"
 var _towers: Array[Dictionary] = []
 var _enemies: Array[Dictionary] = []
 var _wave_queue: Array[String] = []
+var wave_plan: NightTdWavePlan
+var _wave_scheduler: NightTdWaveScheduler
 var _spawn_timer: float = 0.0
 var _enemies_spawned: int = 0
 var _enemies_killed: int = 0
@@ -73,8 +81,9 @@ func start_session(
 	vehicle_hp_max: float = -1.0,
 ) -> void:
 	_allow_placement = allow_placement
-	_starting_inventory = maxi(inventory, 0)
-	backpack_remaining = maxi(inventory, 0)
+	_exploration_inventory = maxi(inventory, 0)
+	_starting_inventory = _exploration_inventory
+	backpack_remaining = _compute_deploy_budget()
 	resources_spent = 0
 	difficulty = diff
 	day_index = day
@@ -90,6 +99,13 @@ func start_session(
 	_enemies.clear()
 	_projectiles.clear()
 	_wave_queue = _build_wave_queue()
+	_wave_scheduler = NightTdWaveScheduler.new()
+	wave_plan = null
+	if use_wave_plan:
+		wave_plan = NightTdWavePlan.load_from_json(wave_plan_path)
+		_wave_scheduler.build_from_plan(wave_plan, difficulty, day_index)
+	else:
+		_wave_scheduler.build_legacy_queue(_wave_queue)
 	_spawn_timer = 0.0
 	_enemies_spawned = 0
 	_enemies_killed = 0
@@ -97,6 +113,7 @@ func start_session(
 	_combat_done = false
 	_last_result = {}
 	phase = Phase.PLACE if allow_placement and placement_time_sec > 0.0 else Phase.COMBAT
+	show_route_overlay = phase == Phase.PLACE
 	visible = true
 	if is_instance_valid(hud):
 		hud.show_session_ui()
@@ -105,7 +122,10 @@ func start_session(
 			hud.set_place_mode(true)
 			hud.set_phase_text("夜晚塔防 · 布防阶段")
 			hud.set_placement_timer(placement_remaining)
-			hud.set_hint("俯视图：左键点击地图格子放置防御，右键撤销已放置设施。选中背包中的设施后，消耗对应资源部署。")
+			hud.set_hint(
+				"俯视图：红线为敌人路线（接敌后隐藏）。左键放置设施、右键撤销。\n"
+				+ "右侧列出每种设施消耗的部署点与效果，选中后点地图格子放置。"
+			)
 		else:
 			hud.set_place_mode(false)
 			hud.set_combat_mode()
@@ -115,6 +135,16 @@ func start_session(
 	_update_hud_tools()
 
 
+func _compute_deploy_budget() -> int:
+	var pts := td_base_deploy + day_index * 3
+	match difficulty:
+		0:
+			pts += 2
+		2:
+			pts -= 2
+	return maxi(pts, 10)
+
+
 func _update_hud_tools() -> void:
 	if is_instance_valid(hud):
 		hud.refresh_tool_buttons()
@@ -122,6 +152,7 @@ func _update_hud_tools() -> void:
 
 func hide_session() -> void:
 	phase = Phase.PLACE
+	show_route_overlay = false
 	_combat_done = false
 	visible = false
 	_towers.clear()
@@ -141,20 +172,31 @@ func _process_place(delta: float) -> void:
 func _process_combat(delta: float) -> void:
 	if _combat_done:
 		return
-	_spawn_timer -= delta
-	if _spawn_timer <= 0.0 and _wave_queue.size() > 0:
-		_spawn_next_enemy()
-		_spawn_timer = spawn_interval_sec
+	if _wave_scheduler != null:
+		for spec in _wave_scheduler.tick(delta):
+			_spawn_from_spec(spec)
+	else:
+		_spawn_timer -= delta
+		if _spawn_timer <= 0.0 and _wave_queue.size() > 0:
+			_spawn_next_enemy()
+			_spawn_timer = spawn_interval_sec
 	_update_enemies(delta)
 	_update_towers(delta)
 	if base_hp <= 0.0:
 		_end_combat_vehicle_destroyed()
 		return
 	if is_instance_valid(hud) and int(Engine.get_frames_drawn()) % 15 == 0:
-		hud.set_combat_status("波次 %d/%d · 场上 %d 敌 · 车辆 HP %.0f" % [
-			_enemies_spawned, _enemies_spawned + _wave_queue.size(), _enemies.size(), base_hp
+		var total := _wave_scheduler.total_spawn_events if _wave_scheduler != null else _enemies_spawned + _wave_queue.size()
+		var remain := _wave_scheduler.remaining_count() if _wave_scheduler != null else _wave_queue.size()
+		hud.set_combat_status("波次 %d/%d · 待刷 %d · 场上 %d 敌 · 车辆 HP %.0f" % [
+			_enemies_spawned, total, remain, _enemies.size(), base_hp
 		])
-	if _wave_queue.is_empty() and _enemies.is_empty() and _enemies_spawned > 0:
+	var waves_done := false
+	if _wave_scheduler != null:
+		waves_done = _wave_scheduler.is_finished(_enemies.size())
+	else:
+		waves_done = _wave_queue.is_empty()
+	if waves_done and _enemies.is_empty() and _enemies_spawned > 0:
 		_end_combat()
 
 
@@ -162,39 +204,89 @@ func _spawn_next_enemy() -> void:
 	if _wave_queue.is_empty():
 		return
 	var type_id: String = _wave_queue.pop_front()
+	_spawn_from_spec({"enemy": type_id, "move_speed": -1.0, "route_id": "", "spawn_point": ""})
+
+
+func _spawn_from_spec(spec: Dictionary) -> void:
+	var type_id: String = str(spec.get("enemy", "drone"))
 	var def: Dictionary = NightTdDefs.get_enemy_def(type_id)
 	if def.is_empty():
 		return
-	var rng := RandomNumberGenerator.new()
-	rng.randomize()
-	var spawn_cell := Vector2i.ZERO
-	match rng.randi_range(0, 3):
-		0:
-			spawn_cell = Vector2i(rng.randi_range(0, field.grid_cols - 1), 0)
-		1:
-			spawn_cell = Vector2i(rng.randi_range(0, field.grid_cols - 1), field.grid_rows - 1)
-		2:
-			spawn_cell = Vector2i(0, rng.randi_range(0, field.grid_rows - 1))
-		_:
-			spawn_cell = Vector2i(field.grid_cols - 1, rng.randi_range(0, field.grid_rows - 1))
+	var move_speed := float(spec.get("move_speed", -1.0))
+	if move_speed <= 0.0:
+		move_speed = float(def.get("speed", 50))
+	var route_id := str(spec.get("route_id", ""))
+	var spawn_point := str(spec.get("spawn_point", ""))
+	var spawn_cell := _resolve_spawn_cell(route_id, spawn_point)
+	var path_runtime := _build_runtime_path(route_id, spawn_cell)
+	var path_index := 0
+	if path_runtime.size() > 1 and path_runtime[0]["cell"] == spawn_cell:
+		path_index = 1
 	var pos: Vector2 = field.cell_to_world(spawn_cell)
 	_enemies.append({
 		"type": type_id,
 		"pos": pos,
 		"hp": float(def.get("hp", 20)),
 		"max_hp": float(def.get("hp", 20)),
-		"speed": float(def.get("speed", 50)),
+		"speed": move_speed,
 		"base_damage": float(def.get("base_damage", 5)),
 		"color": def.get("color", Color.WHITE),
 		"radius": float(def.get("radius", 10)),
+		"path_waypoints": path_runtime,
+		"path_index": path_index,
+		"wait_remaining": 0.0,
+		"route_finished": path_runtime.is_empty(),
+		"move_dir": Vector2.LEFT,
 	})
 	_enemies_spawned += 1
 	if is_instance_valid(hud):
-		hud.append_log("敌袭：%s 接近防线" % def.get("name", type_id))
+		var route_hint := (" · 路线 %s" % route_id) if route_id != "" else ""
+		hud.append_log("敌袭：%s 自 %s 出现%s" % [
+			def.get("name", type_id),
+			NightTdWavePlan.cell_label(spawn_cell),
+			route_hint,
+		])
+
+
+func _resolve_spawn_cell(route_id: String, spawn_point: String) -> Vector2i:
+	if wave_plan != null:
+		return wave_plan.pick_spawn_cell(route_id, spawn_point, field.grid_cols, field.grid_rows)
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	match rng.randi_range(0, 3):
+		0:
+			return Vector2i(rng.randi_range(0, field.grid_cols - 1), 0)
+		1:
+			return Vector2i(rng.randi_range(0, field.grid_cols - 1), field.grid_rows - 1)
+		2:
+			return Vector2i(0, rng.randi_range(0, field.grid_rows - 1))
+		_:
+			return Vector2i(field.grid_cols - 1, rng.randi_range(0, field.grid_rows - 1))
+
+
+func _build_runtime_path(route_id: String, spawn_cell: Vector2i) -> Array:
+	var runtime: Array = []
+	if wave_plan == null or route_id == "":
+		return runtime
+	for wp in wave_plan.get_route_waypoints(route_id):
+		var cell: Vector2i = wp["cell"]
+		runtime.append({
+			"cell": cell,
+			"world": field.cell_to_world(cell),
+			"standby_sec": float(wp.get("standby_sec", 0.0)),
+		})
+	if runtime.is_empty():
+		runtime.append({
+			"cell": spawn_cell,
+			"world": field.cell_to_world(spawn_cell),
+			"standby_sec": 0.0,
+		})
+	return runtime
 
 
 func _update_enemies(delta: float) -> void:
 	var base_pos: Vector2 = field.get_vehicle_center_world()
+	var arrive_radius := maxf(field.get_layout_tile_size() * 0.38, 16.0)
 	var to_remove: Array[int] = []
 	for i in range(_enemies.size()):
 		var enemy: Dictionary = _enemies[i]
@@ -208,9 +300,42 @@ func _update_enemies(delta: float) -> void:
 				var bdef: Dictionary = NightTdDefs.get_tower_def("barrier")
 				slow = minf(slow, float(bdef.get("slow_factor", 0.25)))
 				_damage_tower(tower, float(bdef.get("damage", 6)) * delta)
-		var dir: Vector2 = (base_pos - pos).normalized()
-		pos += dir * float(enemy["speed"]) * slow * delta
-		enemy["pos"] = pos
+		var move_dir := Vector2.ZERO
+		if not bool(enemy.get("route_finished", true)):
+			var wait_left := float(enemy.get("wait_remaining", 0.0))
+			if wait_left > 0.0:
+				enemy["wait_remaining"] = maxf(wait_left - delta, 0.0)
+			else:
+				var waypoints: Array = enemy.get("path_waypoints", [])
+				var path_index: int = int(enemy.get("path_index", 0))
+				if path_index >= waypoints.size():
+					enemy["route_finished"] = true
+				else:
+					var wp: Dictionary = waypoints[path_index]
+					var target: Vector2 = wp["world"]
+					if pos.distance_to(target) <= arrive_radius:
+						var standby := float(wp.get("standby_sec", 0.0))
+						if standby > 0.0:
+							enemy["wait_remaining"] = standby
+						enemy["path_index"] = path_index + 1
+					else:
+						move_dir = target - pos
+						if move_dir.length_squared() > 0.0001:
+							move_dir = move_dir.normalized()
+							pos += move_dir * float(enemy["speed"]) * slow * delta
+							enemy["pos"] = pos
+		if not bool(enemy.get("route_finished", true)):
+			pos = enemy["pos"]
+			cell = field.world_to_cell(pos)
+		else:
+			move_dir = base_pos - pos
+			if move_dir.length_squared() > 0.0001:
+				move_dir = move_dir.normalized()
+				pos += move_dir * float(enemy["speed"]) * slow * delta
+			enemy["pos"] = pos
+			cell = field.world_to_cell(pos)
+		if move_dir.length_squared() > 0.0001:
+			enemy["move_dir"] = move_dir
 		for tower in _towers:
 			if tower.get("removed", false):
 				continue
@@ -354,12 +479,16 @@ func _begin_combat() -> void:
 	if phase == Phase.COMBAT:
 		return
 	phase = Phase.COMBAT
+	show_route_overlay = false
 	_spawn_timer = 0.0
+	if is_instance_valid(field):
+		field.queue_redraw()
 	if is_instance_valid(hud):
 		hud.set_combat_mode()
 		hud.set_phase_text("夜晚塔防 · 接敌中")
-		hud.set_hint("敌人正从四周逼近车辆，设施会自动开火/阻挡。")
-		hud.set_combat_status("波次 %d/%d · 场上 %d 敌" % [_enemies_spawned, _enemies_spawned + _wave_queue.size(), _enemies.size()])
+		hud.set_hint("接敌中：敌人头顶箭头为当前前进方向，设施自动开火/阻挡。")
+		var total := _wave_scheduler.total_spawn_events if _wave_scheduler != null else _enemies_spawned + _wave_queue.size()
+		hud.set_combat_status("波次 %d/%d · 场上 %d 敌" % [_enemies_spawned, total, _enemies.size()])
 		hud.append_log("—— 夜间威胁来袭 ——")
 
 
@@ -399,7 +528,7 @@ func _finish_session() -> void:
 
 func _build_result() -> Dictionary:
 	var outcome: String = "success"
-	var inv_loss: int = maxi(_starting_inventory - backpack_remaining, 0)
+	var inv_loss: int = maxi(_exploration_inventory - _exploration_inventory, 0)
 	var fuel_loss: float = 0.0
 	var msg: String = ""
 	if base_hp >= 70.0:
@@ -418,7 +547,7 @@ func _build_result() -> Dictionary:
 	return {
 		"outcome": outcome,
 		"message": msg,
-		"inventory_remaining": backpack_remaining,
+		"inventory_remaining": _exploration_inventory,
 		"inventory_loss": inv_loss,
 		"fuel_loss": fuel_loss,
 		"base_hp": base_hp,

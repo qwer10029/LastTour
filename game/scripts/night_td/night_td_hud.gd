@@ -94,7 +94,7 @@ func set_phase_text(text: String) -> void:
 
 func set_resources(remaining: int, spent: int) -> void:
 	if is_instance_valid(resource_label):
-		resource_label.text = "背包资源: %d（已用于布防 %d）" % [remaining, spent]
+		resource_label.text = "布防部署点: %d（已用 %d）" % [remaining, spent]
 
 
 func set_placement_timer(sec: float) -> void:
@@ -173,7 +173,6 @@ func show_result(text: String) -> void:
 
 
 func refresh_tool_buttons() -> void:
-	const defs: Dictionary = NightTdDefs.TOWER_TYPES
 	for btn_data in [
 		[jammer_btn, "jammer"],
 		[barrier_btn, "barrier"],
@@ -183,6 +182,5 @@ func refresh_tool_buttons() -> void:
 		var id: String = btn_data[1]
 		if not is_instance_valid(btn):
 			continue
-		var def: Dictionary = defs.get(id, {})
-		var mark: String = "► " if id == _selected else "   "
-		btn.text = "%s%s（消耗 %d）" % [mark, def.get("name", id), int(def.get("cost", 1))]
+		btn.text = NightTdDefs.get_tower_button_text(id, id == _selected)
+		btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

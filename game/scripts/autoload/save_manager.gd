@@ -1,7 +1,7 @@
 extends Node
 
 const SAVE_PATH := "user://run_save.json"
-const SAVE_VERSION := 1
+const SAVE_VERSION := 2
 
 signal save_completed(success: bool)
 signal load_failed(reason: String)

@@ -122,3 +122,28 @@ func get_elevator_repair_cost(base: int) -> int:
 func get_starting_inventory() -> int:
 	var squad_def: Dictionary = SQUAD_DEFS.get(squad_id, {})
 	return int(squad_def.get("inventory_bonus", 0))
+
+
+func get_starting_items() -> Dictionary:
+	var items := {
+		"food": 2,
+		"water": 2,
+		"wood": 1,
+		"parts": 1,
+		"scrap": 1,
+	}
+	match squad_id:
+		"logistics":
+			items["parts"] = 3
+			items["wood"] = 2
+			items["food"] = 1
+		"scavenger":
+			items["scrap"] = 3
+			items["food"] = 3
+	match difficulty:
+		Difficulty.EASY:
+			items["medkit"] = int(items.get("medkit", 0)) + 1
+			items["water"] = int(items.get("water", 0)) + 1
+		Difficulty.HARD:
+			items["food"] = maxi(int(items.get("food", 0)) - 1, 0)
+	return items
