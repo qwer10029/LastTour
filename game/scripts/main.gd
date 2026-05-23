@@ -1,6 +1,7 @@
 extends Node2D
 
 const RunEndOverlayScript = preload("res://scripts/ui/run_end_overlay.gd")
+const CommunicationTerminalScript = preload("res://scripts/ui/communication_terminal.gd")
 
 enum TravelMode { DRIVE, FOOT }
 
@@ -45,6 +46,7 @@ var _run_ended := false
 var _run_end_reason := ""
 var _final_choice_id := ""
 var _run_end_overlay: CanvasLayer
+var _communication_terminal: CanvasLayer
 var _base_fuel_max: float = 999.0
 var _base_elevator_repair_cost: int = 3
 var _run_difficulty_name: String = "普通"
@@ -572,7 +574,7 @@ func _attempt_repair_elevator() -> void:
 	_elevator_repair_progress += 1
 	if _elevator_repair_progress >= _current_repair_cost():
 		if _current_layer >= total_layers:
-			_begin_final_ceremony()
+			_open_communication_terminal()
 		else:
 			_advance_layer()
 
@@ -820,6 +822,10 @@ func _setup_run_end_ui() -> void:
 	add_child(_run_end_overlay)
 	_run_end_overlay.ceremony_choice_made.connect(_on_final_ceremony_choice)
 	_run_end_overlay.summary_closed.connect(_on_run_summary_closed)
+	_communication_terminal = CommunicationTerminalScript.new()
+	add_child(_communication_terminal)
+	_communication_terminal.strike_completed.connect(_on_terminal_strike)
+	_communication_terminal.transfer_completed.connect(_on_terminal_transfer)
 
 
 func _check_vehicle_destroyed() -> bool:
@@ -848,6 +854,41 @@ func _begin_final_ceremony() -> void:
 	_freeze_run_for_end()
 	if is_instance_valid(_run_end_overlay):
 		_run_end_overlay.show_ceremony()
+
+
+func _open_communication_terminal() -> void:
+	if _run_ended:
+		return
+	if not is_instance_valid(_communication_terminal):
+		_begin_final_ceremony()
+		return
+	var evidence_count := MetaManager.evidence_count()
+	var threshold := MetaManager.EVIDENCE_THRESHOLD_FOR_TRANSFER
+	_communication_terminal.start_flow(evidence_count, threshold)
+
+
+func _on_terminal_strike() -> void:
+	if _run_ended:
+		return
+	var stub_id := "placeholder_run_%d" % Time.get_unix_time_from_system()
+	MetaManager.add_evidence(stub_id)
+	MetaManager.save_meta()
+	_run_ended = true
+	_run_end_reason = "strike"
+	_freeze_run_for_end()
+	if is_instance_valid(_communication_terminal):
+		_communication_terminal.hide_terminal()
+	_show_run_summary()
+
+
+func _on_terminal_transfer() -> void:
+	if _run_ended:
+		return
+	MetaManager.management_rights_transferred = true
+	MetaManager.save_meta()
+	if is_instance_valid(_communication_terminal):
+		_communication_terminal.hide_terminal()
+	_begin_final_ceremony()
 
 
 func _freeze_run_for_end() -> void:
@@ -883,6 +924,8 @@ func _show_run_summary() -> void:
 			title = "本局结束 · 乘员倒下"
 		"reached_top":
 			title = "本局结算 · 归档完成"
+		"strike":
+			title = "本局结束 · 通讯被打击"
 		_:
 			title = "本局结算"
 	_run_end_overlay.show_summary(title, body)
@@ -909,6 +952,10 @@ func _build_run_summary_text() -> String:
 		lines.append("")
 		lines.append("饥饿、脱水或伤势导致乘员无法继续行动。")
 		lines.append("本局勘探失败，新的克隆体即将被派遣。")
+	elif _run_end_reason == "strike":
+		lines.append("")
+		lines.append("通讯终端身份验证未通过，昆仑程序对本次勘探实施打击。")
+		lines.append("本局失败；与终端的接触已被记录，新的克隆体即将被派遣。")
 	elif _run_end_reason == "reached_top":
 		lines.append("")
 		lines.append("你已抵达顶层并完成归档仪式。")
@@ -1056,7 +1103,7 @@ func _apply_save_data(data: Dictionary) -> void:
 	_run_ended = bool(layer.get("run_ended", false))
 	_run_end_reason = str(layer.get("run_end_reason", ""))
 	_final_choice_id = str(layer.get("final_choice_id", ""))
-	if _run_ended and _run_end_reason == "vehicle_destroyed":
+	if _run_ended and (_run_end_reason == "vehicle_destroyed" or _run_end_reason == "player_collapsed" or _run_end_reason == "strike"):
 		_show_run_summary()
 	elif _run_ended and _run_end_reason == "reached_top":
 		if _final_choice_id != "":
@@ -1795,7 +1842,7 @@ func _advance_layer() -> void:
 	if _run_ended:
 		return
 	if _current_layer >= total_layers:
-		_begin_final_ceremony()
+		_open_communication_terminal()
 		return
 	_current_layer += 1
 	_mode = TravelMode.DRIVE
