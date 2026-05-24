@@ -2,6 +2,7 @@ extends Node2D
 
 const RunEndOverlayScript = preload("res://scripts/ui/run_end_overlay.gd")
 const CommunicationTerminalScript = preload("res://scripts/ui/communication_terminal.gd")
+const EndingOutcomeOverlayScript = preload("res://scripts/ui/ending_outcome_overlay.gd")
 
 enum TravelMode { DRIVE, FOOT }
 
@@ -47,6 +48,7 @@ var _run_end_reason := ""
 var _final_choice_id := ""
 var _run_end_overlay: CanvasLayer
 var _communication_terminal: CanvasLayer
+var _ending_outcome_overlay: CanvasLayer
 var _base_fuel_max: float = 999.0
 var _base_elevator_repair_cost: int = 3
 var _run_difficulty_name: String = "普通"
@@ -826,6 +828,9 @@ func _setup_run_end_ui() -> void:
 	add_child(_communication_terminal)
 	_communication_terminal.strike_completed.connect(_on_terminal_strike)
 	_communication_terminal.transfer_completed.connect(_on_terminal_transfer)
+	_ending_outcome_overlay = EndingOutcomeOverlayScript.new()
+	add_child(_ending_outcome_overlay)
+	_ending_outcome_overlay.closed.connect(_on_ending_outcome_closed)
 
 
 func _check_vehicle_destroyed() -> bool:
@@ -870,8 +875,6 @@ func _open_communication_terminal() -> void:
 func _on_terminal_strike() -> void:
 	if _run_ended:
 		return
-	var stub_id := "placeholder_run_%d" % Time.get_unix_time_from_system()
-	MetaManager.add_evidence(stub_id)
 	MetaManager.save_meta()
 	_run_ended = true
 	_run_end_reason = "strike"
@@ -909,6 +912,17 @@ func _freeze_run_for_end() -> void:
 
 func _on_final_ceremony_choice(choice_id: String) -> void:
 	_final_choice_id = choice_id
+	MetaManager.record_ending(choice_id)
+	MetaManager.save_meta()
+	if is_instance_valid(_ending_outcome_overlay):
+		_ending_outcome_overlay.show_outcome(choice_id, _current_layer)
+		return
+	_show_run_summary()
+
+
+func _on_ending_outcome_closed() -> void:
+	if is_instance_valid(_ending_outcome_overlay):
+		_ending_outcome_overlay.hide_overlay()
 	_show_run_summary()
 
 
