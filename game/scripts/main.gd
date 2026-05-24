@@ -2,6 +2,7 @@ extends Node2D
 
 const RunEndOverlayScript = preload("res://scripts/ui/run_end_overlay.gd")
 const CommunicationTerminalScript = preload("res://scripts/ui/communication_terminal.gd")
+const EndingOutcomeOverlayScript = preload("res://scripts/ui/ending_outcome_overlay.gd")
 
 enum TravelMode { DRIVE, FOOT }
 
@@ -47,6 +48,7 @@ var _run_end_reason := ""
 var _final_choice_id := ""
 var _run_end_overlay: CanvasLayer
 var _communication_terminal: CanvasLayer
+var _ending_outcome_overlay: CanvasLayer
 var _base_fuel_max: float = 999.0
 var _base_elevator_repair_cost: int = 3
 var _run_difficulty_name: String = "普通"
@@ -213,6 +215,37 @@ func _spawn_resources() -> void:
 			if pickup.has_signal("collected"):
 				pickup.collected.connect(_on_resource_collected.bind(district_index))
 			_resource_nodes.append(pickup)
+	_spawn_evidence_pickups()
+
+func _spawn_evidence_pickups() -> void:
+	var ids := EvidenceData.ids_for_layer(_current_layer)
+	if ids.is_empty():
+		return
+	var district_indices: Array = _map.district_indices.duplicate()
+	if district_indices.is_empty():
+		return
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	for evidence_id in ids:
+		if MetaManager.evidence_collected.has(evidence_id):
+			continue
+		var district_index: int = int(district_indices[rng.randi_range(0, district_indices.size() - 1)])
+		var rect := _map.cell_rect(district_index)
+		var spawn_offset := Vector2(
+			rng.randf_range(rect.size.x * 0.25, rect.size.x * 0.75),
+			rng.randf_range(rect.size.y * 0.25, rect.size.y * 0.75)
+		)
+		var pickup := resource_scene.instantiate()
+		add_child(pickup)
+		pickup.visible = false
+		pickup.position = rect.position + spawn_offset
+		pickup.set_meta("district_index", district_index)
+		pickup.set_meta("item_id", "evidence:%s" % evidence_id)
+		if pickup.has_method("setup_loot"):
+			pickup.setup_loot("evidence:%s" % evidence_id)
+		if pickup.has_signal("collected"):
+			pickup.collected.connect(_on_resource_collected.bind(district_index))
+		_resource_nodes.append(pickup)
 
 func _physics_process(delta: float) -> void:
 	if _run_ended:
@@ -584,11 +617,21 @@ func _on_resource_collected(item_id: String, district_index: int) -> void:
 	var loot_id := str(item_id)
 	if loot_id == "":
 		loot_id = "scrap"
+	if loot_id.begins_with("evidence:"):
+		var ev_id := loot_id.substr("evidence:".length())
+		if MetaManager.add_evidence(ev_id):
+			MetaManager.save_meta()
+			_show_evidence_pickup_toast(ev_id)
+		return
 	var added := _backpack.add(loot_id, 1)
 	if added > 0:
 		_refresh_ui()
 		if is_instance_valid(_backpack_ui) and _backpack_ui.is_open():
 			_backpack_ui.show_backpack(_backpack)
+
+func _show_evidence_pickup_toast(evidence_id: String) -> void:
+	var title := EvidenceData.title_of(evidence_id)
+	print("[Evidence] 拾取：%s" % title)
 
 func _current_focus_position() -> Vector2:
 	if _mode == TravelMode.FOOT and is_instance_valid(_player):
@@ -826,6 +869,9 @@ func _setup_run_end_ui() -> void:
 	add_child(_communication_terminal)
 	_communication_terminal.strike_completed.connect(_on_terminal_strike)
 	_communication_terminal.transfer_completed.connect(_on_terminal_transfer)
+	_ending_outcome_overlay = EndingOutcomeOverlayScript.new()
+	add_child(_ending_outcome_overlay)
+	_ending_outcome_overlay.closed.connect(_on_ending_outcome_closed)
 
 
 func _check_vehicle_destroyed() -> bool:
@@ -870,8 +916,6 @@ func _open_communication_terminal() -> void:
 func _on_terminal_strike() -> void:
 	if _run_ended:
 		return
-	var stub_id := "placeholder_run_%d" % Time.get_unix_time_from_system()
-	MetaManager.add_evidence(stub_id)
 	MetaManager.save_meta()
 	_run_ended = true
 	_run_end_reason = "strike"
@@ -909,6 +953,16 @@ func _freeze_run_for_end() -> void:
 
 func _on_final_ceremony_choice(choice_id: String) -> void:
 	_final_choice_id = choice_id
+	MetaManager.record_ending(choice_id)
+	MetaManager.save_meta()
+	if is_instance_valid(_ending_outcome_overlay):
+		_ending_outcome_overlay.show_outcome(choice_id, _current_layer)
+		return
+	_show_run_summary()
+
+func _on_ending_outcome_closed() -> void:
+	if is_instance_valid(_ending_outcome_overlay):
+		_ending_outcome_overlay.hide_overlay()
 	_show_run_summary()
 
 

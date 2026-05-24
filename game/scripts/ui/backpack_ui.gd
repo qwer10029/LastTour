@@ -15,6 +15,11 @@ var _use_btn: Button
 var _discard_btn: Button
 var _selected_id: String = ""
 var _inventory: InventoryData
+var _tab_bar: TabBar
+var _items_view: Control
+var _archive_view: Control
+var _archive_list: ItemList
+var _archive_detail: Label
 
 
 func _ready() -> void:
@@ -71,6 +76,12 @@ func _build_ui() -> void:
 	title.add_theme_color_override("font_color", Color("#eef8ff"))
 	outer.add_child(title)
 
+	_tab_bar = TabBar.new()
+	_tab_bar.add_tab("物品")
+	_tab_bar.add_tab("档案库")
+	_tab_bar.tab_changed.connect(_on_tab_changed)
+	outer.add_child(_tab_bar)
+
 	var body := HBoxContainer.new()
 	body.add_theme_constant_override("separation", 14)
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -113,10 +124,43 @@ func _build_ui() -> void:
 	close_btn.pressed.connect(func(): hide_backpack())
 	side.add_child(close_btn)
 
+	_items_view = body
+
+	_archive_view = HBoxContainer.new()
+	_archive_view.add_theme_constant_override("separation", 14)
+	_archive_view.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_archive_view.visible = false
+	outer.add_child(_archive_view)
+
+	_archive_list = ItemList.new()
+	_archive_list.custom_minimum_size = Vector2(280, 320)
+	_archive_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_archive_list.item_selected.connect(_on_archive_selected)
+	_archive_view.add_child(_archive_list)
+
+	var archive_side := VBoxContainer.new()
+	archive_side.custom_minimum_size = Vector2(240, 320)
+	archive_side.add_theme_constant_override("separation", 10)
+	_archive_view.add_child(archive_side)
+
+	_archive_detail = Label.new()
+	_archive_detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_archive_detail.custom_minimum_size = Vector2(228, 180)
+	_archive_detail.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_archive_detail.text = "← 选择左侧档案"
+	_archive_detail.add_theme_color_override("font_color", Color("#d8e4f0"))
+	archive_side.add_child(_archive_detail)
+
+	var archive_close_btn := Button.new()
+	archive_close_btn.text = "关闭 (B / Esc)"
+	archive_close_btn.pressed.connect(func(): hide_backpack())
+	archive_side.add_child(archive_close_btn)
+
 
 func show_backpack(inventory: InventoryData) -> void:
 	_inventory = inventory
 	_refresh_list(inventory)
+	_refresh_archive_list()
 	_root.visible = true
 	_root.mouse_filter = Control.MOUSE_FILTER_STOP
 	mouse_filter = Control.MOUSE_FILTER_STOP
@@ -207,3 +251,36 @@ func _on_discard_pressed() -> void:
 	if _selected_id == "":
 		return
 	item_discard_requested.emit(_selected_id)
+
+func _refresh_archive_list() -> void:
+	_archive_list.clear()
+	var ids := EvidenceData.all_ids()
+	ids.sort_custom(func(a, b): return EvidenceData.layer_of(a) < EvidenceData.layer_of(b))
+	for ev_id in ids:
+		var collected := MetaManager.evidence_collected.has(ev_id)
+		var label_text: String
+		if collected:
+			label_text = "✓ %s（第%d层）" % [EvidenceData.title_of(ev_id), EvidenceData.layer_of(ev_id)]
+		else:
+			label_text = "○ ??? （第%d层）" % EvidenceData.layer_of(ev_id)
+		var idx := _archive_list.add_item(label_text)
+		_archive_list.set_item_metadata(idx, ev_id)
+		if not collected:
+			_archive_list.set_item_custom_fg_color(idx, Color(0.55, 0.6, 0.7))
+
+func _on_archive_selected(index: int) -> void:
+	if index < 0:
+		_archive_detail.text = ""
+		return
+	var ev_id := str(_archive_list.get_item_metadata(index))
+	if MetaManager.evidence_collected.has(ev_id):
+		_archive_detail.text = "%s\n\n%s" % [
+			EvidenceData.title_of(ev_id),
+			EvidenceData.content_of(ev_id),
+		]
+	else:
+		_archive_detail.text = "（尚未收集此档案。）"
+
+func _on_tab_changed(tab: int) -> void:
+	_items_view.visible = (tab == 0)
+	_archive_view.visible = (tab == 1)

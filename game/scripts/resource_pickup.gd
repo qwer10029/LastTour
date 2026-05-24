@@ -27,6 +27,15 @@ func setup_loot(id: String) -> void:
 func _load_texture() -> void:
 	if not is_instance_valid(sprite):
 		return
+	if _is_evidence():
+		sprite.texture = ItemIconFactory.get_texture("scrap", 28)
+		sprite.modulate = Color("#ffd966")
+		if sprite.texture != null:
+			var tex_size := sprite.texture.get_size()
+			if tex_size.x > 0.0:
+				var scale_factor := 28.0 / maxf(tex_size.x, tex_size.y)
+				sprite.scale = Vector2(scale_factor, scale_factor)
+		return
 	sprite.texture = ItemIconFactory.get_texture(item_id, 28)
 	sprite.modulate = Color.WHITE
 	if sprite.texture != null:
@@ -39,6 +48,10 @@ func _load_texture() -> void:
 func _refresh_label() -> void:
 	if not is_instance_valid(label):
 		return
+	if _is_evidence():
+		label.text = EvidenceData.title_of(_evidence_id())
+		label.add_theme_color_override("font_color", Color("#ffe28a"))
+		return
 	label.text = ItemDefs.get_item_name(item_id)
 	label.add_theme_color_override("font_color", ItemDefs.get_def(item_id).get("color", Color("#eef8ff")))
 
@@ -50,3 +63,9 @@ func _on_body_entered(body: Node) -> void:
 		_is_collected = true
 		collected.emit(item_id)
 		queue_free()
+
+func _is_evidence() -> bool:
+	return item_id.begins_with("evidence:")
+
+func _evidence_id() -> String:
+	return item_id.substr("evidence:".length())
