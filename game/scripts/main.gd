@@ -55,6 +55,7 @@ var _run_difficulty_name: String = "普通"
 var _run_squad_name: String = "拾荒者"
 var _saved_travel_mode: int = TravelMode.DRIVE
 var _evening_tint: float = 0.0
+var _last_night_losses: Array[String] = []
 var _game_paused := false
 var _pause_layer: CanvasLayer
 var _pause_panel: PanelContainer
@@ -998,6 +999,8 @@ func _build_run_summary_text() -> String:
 	lines.append("背包: %s  |  燃料: %.1f" % [_inventory_summary(), _fuel])
 	lines.append("生命 %.0f | 饥饿 %.0f | 口渴 %.0f" % [_survival.hp, _survival.hunger, _survival.thirst])
 	lines.append("地图探索: %d / %d 格" % [_map.explored_count(), _map.cells.size()])
+	if not _last_night_losses.is_empty():
+		lines.append("夜间物资损耗: %s" % "、".join(_last_night_losses))
 	if _run_end_reason == "vehicle_destroyed":
 		lines.append("")
 		lines.append("车辆在夜间防线崩溃后失去作战能力。")
@@ -1344,9 +1347,12 @@ func _on_night_td_finished(result: Dictionary) -> void:
 	_apply_night_result(result)
 	if _check_vehicle_destroyed():
 		return
-	if is_instance_valid(time_system):
-		# 塔防界面已展示结算，直接进下一天（避免 pause 导致 NIGHT_RESOLVE 永不结束）
-		time_system.finish_night_and_advance_day()
+	if _last_night_losses.is_empty():
+		if is_instance_valid(time_system):
+			time_system.finish_night_and_advance_day()
+		return
+	# Show detailed item loss before advancing
+	_show_night_loss_popup()
 
 
 func _apply_night_result(result: Dictionary) -> void:
@@ -1357,6 +1363,68 @@ func _apply_night_result(result: Dictionary) -> void:
 	if result.has("base_hp_max"):
 		_vehicle_hp_max = float(result.get("base_hp_max", _vehicle_hp_max))
 		_vehicle_hp = clampf(_vehicle_hp, 0.0, _vehicle_hp_max)
+	# Remove items from backpack based on night losses
+	_last_night_losses.clear()
+	var severity: String = str(result.get("loss_severity", "none"))
+	var inv_loss: int = int(result.get("inventory_loss", 0))
+	if inv_loss > 0:
+		_remove_backpack_items_for_night(inv_loss, severity)
+
+
+func _remove_backpack_items_for_night(loss_count: int, severity: String) -> void:
+	if _backpack.total_count() <= 0:
+		return
+	var entries := _backpack.get_sorted_entries()
+	var material_entries: Array[Dictionary] = []
+	for entry in entries:
+		if not str(entry["id"]).begins_with("evidence:"):
+			material_entries.append(entry)
+	if material_entries.is_empty():
+		return
+	var extra := 0
+	match severity:
+		"partial": extra = randi_range(1, 2)
+		"severe": extra = randi_range(3, 5)
+	var total_loss := mini(loss_count + extra, _backpack.total_count())
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	for _i in range(total_loss):
+		if material_entries.is_empty():
+			break
+		var idx := rng.randi_range(0, material_entries.size() - 1)
+		var item_id: String = str(material_entries[idx]["id"])
+		var removed := _backpack.remove(item_id, 1)
+		if removed:
+			_last_night_losses.append(ItemDefs.get_item_name(item_id))
+			material_entries[idx]["count"] = int(material_entries[idx]["count"]) - 1
+			if int(material_entries[idx]["count"]) <= 0:
+				material_entries.remove_at(idx)
+
+
+func _show_night_loss_popup() -> void:
+	var loss_counts: Dictionary = {}
+	for name in _last_night_losses:
+		loss_counts[name] = int(loss_counts.get(name, 0)) + 1
+	var parts: PackedStringArray = []
+	for name in loss_counts:
+		parts.append("%s ×%d" % [name, int(loss_counts[name])])
+	var msg := "夜间物资损耗明细：\n  %s\n\n剩余背包：%s" % [", ".join(parts), _inventory_summary()]
+	var dialog := AcceptDialog.new()
+	dialog.title = "物资损耗"
+	dialog.dialog_text = msg
+	dialog.ok_button_text = "确认"
+	add_child(dialog)
+	dialog.confirmed.connect(func():
+		dialog.queue_free()
+		if is_instance_valid(time_system):
+			time_system.finish_night_and_advance_day()
+	)
+	dialog.close_requested.connect(func():
+		dialog.queue_free()
+		if is_instance_valid(time_system):
+			time_system.finish_night_and_advance_day()
+	)
+	dialog.popup_centered()
 
 
 func _get_vehicle_hp_max() -> float:
@@ -1617,7 +1685,13 @@ func _is_foot_blocked_at(world_pos: Vector2) -> bool:
 	if _current_district_index < 0 or _mode != TravelMode.FOOT:
 		return false
 	var rect := _map.cell_rect(_current_district_index)
-	return _map.is_foot_tile_blocked(_map.get_cell(_current_district_index), rect, world_pos)
+	var cell := _map.get_cell(_current_district_index)
+	# Probe axis-aligned cross (collision radius ≈ 12, use ±10 to leave slight margin)
+	var probe_offsets := [Vector2.ZERO, Vector2(-10, 0), Vector2(10, 0), Vector2(0, -10), Vector2(0, 10)]
+	for offset in probe_offsets:
+		if _map.is_foot_tile_blocked(cell, rect, world_pos + offset):
+			return true
+	return false
 
 
 func _fix_district_pickup_positions(district_index: int) -> void:
@@ -1831,7 +1905,7 @@ func _draw_foot_background() -> void:
 		return
 	# Expand foot view to a larger interior area and draw a dark-blue tiled grid background.
 	var rect := _map.cell_rect(_current_district_index)
-	var interior_margin := Vector2(80.0, 80.0)
+	var interior_margin := Vector2(16.0, 16.0)
 	var interior_size := rect.size + interior_margin * 2.0
 	var interior_origin := rect.position - interior_margin
 	var interior_rect := Rect2(interior_origin, interior_size)

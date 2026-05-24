@@ -215,7 +215,17 @@ func _spawn_from_spec(spec: Dictionary) -> void:
 	var move_speed := float(spec.get("move_speed", -1.0))
 	if move_speed <= 0.0:
 		move_speed = float(def.get("speed", 50))
+	# Speed jitter ±15% so enemies in the same wave spread out
+	move_speed *= randf_range(0.85, 1.15)
 	var route_id := str(spec.get("route_id", ""))
+	# Randomly pick from main route + alternates for variety
+	var alt_routes: Array = spec.get("alternate_routes", [])
+	if alt_routes is Array and not alt_routes.is_empty():
+		var candidates: Array = [route_id]
+		for alt in alt_routes:
+			if alt is String and alt != "":
+				candidates.append(alt)
+		route_id = str(candidates[randi_range(0, candidates.size() - 1)])
 	var spawn_point := str(spec.get("spawn_point", ""))
 	var spawn_cell := _resolve_spawn_cell(route_id, spawn_point)
 	var path_runtime := _build_runtime_path(route_id, spawn_cell)
@@ -268,11 +278,16 @@ func _build_runtime_path(route_id: String, spawn_cell: Vector2i) -> Array:
 	var runtime: Array = []
 	if wave_plan == null or route_id == "":
 		return runtime
+	var tile_size := field.get_layout_tile_size()
+	var jitter_range := tile_size * 0.22
 	for wp in wave_plan.get_route_waypoints(route_id):
 		var cell: Vector2i = wp["cell"]
+		var world_pos := field.cell_to_world(cell)
+		# Add small random jitter so enemies on the same route don't visually overlap
+		world_pos += Vector2(randf_range(-jitter_range, jitter_range), randf_range(-jitter_range, jitter_range))
 		runtime.append({
 			"cell": cell,
-			"world": field.cell_to_world(cell),
+			"world": world_pos,
 			"standby_sec": float(wp.get("standby_sec", 0.0)),
 		})
 	if runtime.is_empty():
@@ -528,27 +543,32 @@ func _finish_session() -> void:
 
 func _build_result() -> Dictionary:
 	var outcome: String = "success"
-	var inv_loss: int = maxi(_exploration_inventory - _exploration_inventory, 0)
+	var loss_severity: String = "none"
 	var fuel_loss: float = 0.0
 	var msg: String = ""
 	if base_hp >= 70.0:
 		outcome = "success"
+		loss_severity = "none"
 		msg = "防线稳固！车辆完好，今夜安全度过。"
 	elif base_hp >= 35.0:
 		outcome = "partial"
+		loss_severity = "partial"
 		fuel_loss = 8.0
 		msg = "部分敌人突破防线，损失少量物资（车辆 HP %.0f/%.0f）。" % [base_hp, base_max_hp]
 	else:
 		outcome = "fail"
+		loss_severity = "severe"
 		fuel_loss = 18.0
 		msg = "防线失守！车辆严重受损（HP %.0f/%.0f）。" % [base_hp, base_max_hp]
+	var inv_loss: int = resources_spent
 	if inv_loss > 0:
-		msg += " 物资损耗 %d。" % inv_loss
+		msg += " 物资损耗 %d 件。" % inv_loss
 	return {
 		"outcome": outcome,
 		"message": msg,
-		"inventory_remaining": _exploration_inventory,
+		"inventory_remaining": maxi(_exploration_inventory - inv_loss, 0),
 		"inventory_loss": inv_loss,
+		"loss_severity": loss_severity,
 		"fuel_loss": fuel_loss,
 		"base_hp": base_hp,
 		"base_hp_max": base_max_hp,

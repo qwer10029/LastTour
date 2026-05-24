@@ -93,6 +93,7 @@ func _append_single_entry(
 	var move_speed := float(entry.get("move_speed", -1.0))
 	var route_id := str(entry.get("route_id", ""))
 	var spawn_point := str(entry.get("spawn_point", entry.get("spawn_cell", "")))
+	var alt_routes: Array = entry.get("alternate_routes", [])
 	var day_bonus := maxi((day_index - 1) / 2, 0)
 	count += day_bonus
 	match difficulty:
@@ -112,5 +113,6 @@ func _append_single_entry(
 			"move_speed": move_speed,
 			"route_id": route_id,
 			"spawn_point": spawn_point,
+			"alternate_routes": alt_routes,
 			"wave_id": int(entry.get("wave_id", 0)),
 		})
