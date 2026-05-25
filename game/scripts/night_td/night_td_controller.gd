@@ -87,6 +87,7 @@ func start_session(
 	resources_spent = 0
 	difficulty = diff
 	day_index = day
+	wave_plan_path = _resolve_wave_plan_path(day, diff)
 	if vehicle_hp_max > 0.0:
 		base_max_hp = vehicle_hp_max
 	if vehicle_hp >= 0.0:
@@ -519,7 +520,7 @@ func _end_combat_vehicle_destroyed() -> void:
 	base_hp = 0.0
 	phase = Phase.RESULT
 	if is_instance_valid(hud):
-		hud.show_result(str(_last_result.get("message", "")))
+		hud.show_result(_compose_result_message(_last_result))
 		hud.set_phase_text("夜晚塔防 · 车辆损毁")
 		hud.set_combat_status("车辆 HP 归零")
 
@@ -529,9 +530,27 @@ func _end_combat() -> void:
 	_last_result = _build_result()
 	phase = Phase.RESULT
 	if is_instance_valid(hud):
-		hud.show_result(str(_last_result.get("message", "")))
+		hud.show_result(_compose_result_message(_last_result))
 		hud.set_phase_text("夜晚塔防 · 结算")
 		hud.set_combat_status("交互结束，请确认结算")
+
+
+func _compose_result_message(result: Dictionary) -> String:
+	var msg := str(result.get("message", ""))
+	var root := get_parent()
+	if root != null and root.has_method("on_td_combat_ended"):
+		var extra: String = root.on_td_combat_ended(result)
+		if extra != "":
+			msg += extra
+	return msg
+
+
+func _resolve_wave_plan_path(day: int, diff: int) -> String:
+	if day >= 6 or diff >= 2:
+		return "res://data/night_td/waves/night_wave_heavy.json"
+	if day >= 3:
+		return "res://data/night_td/waves/night_wave_mid.json"
+	return "res://data/night_td/waves/night_wave_demo.json"
 
 
 func _finish_session() -> void:

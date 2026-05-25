@@ -70,7 +70,7 @@ text = "  ▶   继续游戏（无存档）"
 unique_name_in_owner = true
 custom_minimum_size = Vector2(360, 56)
 layout_mode = 2
-text = "  🏆   成就"
+text = "  📝   写下留言"
 
 [node name="SettingsButton" type="Button" parent="CenterContainer/VBox/MenuList"]
 unique_name_in_owner = true

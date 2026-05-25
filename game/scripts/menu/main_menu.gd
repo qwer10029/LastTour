@@ -9,6 +9,10 @@ extends Control
 @onready var placeholder_dialog: AcceptDialog = %PlaceholderDialog
 
 var _message_wall_popup: Window = null
+var _msg_read_content: RichTextLabel
+var _msg_custom_input: LineEdit
+var _msg_status_label: Label
+
 
 func _ready() -> void:
 	MenuStyles.style_title(title_label, 48)
@@ -22,9 +26,11 @@ func _ready() -> void:
 	settings_button.pressed.connect(_on_placeholder_pressed)
 
 	_refresh_continue_button()
-	achievements_button.text = "  📝   前代勘探者留言墙"
+	achievements_button.text = "  📝   写下留言"
 	achievements_button.disabled = false
 	settings_button.disabled = true
+	if is_instance_valid(subtitle_label):
+		subtitle_label.text = "昆仑计划 · 地表勘探\n顶层通信终端或主菜单写留言时，可阅读前代留言"
 
 	_build_message_wall_popup()
 
@@ -33,71 +39,164 @@ func _build_message_wall_popup() -> void:
 	_message_wall_popup = Window.new()
 	_message_wall_popup.title = "前代勘探者留言墙"
 	_message_wall_popup.initial_position = Window.WINDOW_INITIAL_POSITION_CENTER_PRIMARY_SCREEN
-	_message_wall_popup.size = Vector2i(520, 420)
+	_message_wall_popup.size = Vector2i(560, 520)
 	_message_wall_popup.unresizable = true
 	_message_wall_popup.close_requested.connect(_message_wall_popup.hide)
 	_message_wall_popup.visible = false
 	add_child(_message_wall_popup)
 
-	var vbox := VBoxContainer.new()
-	vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	vbox.add_theme_constant_override("separation", 12)
-	_message_wall_popup.add_child(vbox)
+	var root := VBoxContainer.new()
+	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	root.add_theme_constant_override("separation", 10)
+	_message_wall_popup.add_child(root)
 
 	var margin := MarginContainer.new()
+	margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	margin.add_theme_constant_override("margin_left", 16)
 	margin.add_theme_constant_override("margin_top", 12)
 	margin.add_theme_constant_override("margin_right", 16)
-	margin.add_theme_constant_override("margin_bottom", 12)
-	vbox.add_child(margin)
+	margin.add_theme_constant_override("margin_bottom", 8)
+	root.add_child(margin)
+
+	var inner := VBoxContainer.new()
+	inner.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	inner.add_theme_constant_override("separation", 10)
+	margin.add_child(inner)
+
+	var write_title := Label.new()
+	write_title.text = "—— 写下留言（保存后下局可见）——"
+	write_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	inner.add_child(write_title)
+
+	var read_hint := Label.new()
+	read_hint.text = "前代留言（仅写留言时可见）"
+	read_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	inner.add_child(read_hint)
 
 	var scroll := ScrollContainer.new()
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	margin.add_child(scroll)
+	scroll.custom_minimum_size = Vector2(0, 120)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	inner.add_child(scroll)
 
-	var content := RichTextLabel.new()
-	content.name = "Content"
-	content.bbcode_enabled = true
-	content.fit_content = true
-	content.scroll_active = false
-	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(content)
+	_msg_read_content = RichTextLabel.new()
+	_msg_read_content.name = "Content"
+	_msg_read_content.bbcode_enabled = true
+	_msg_read_content.fit_content = true
+	_msg_read_content.scroll_active = false
+	_msg_read_content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_msg_read_content)
+
+	var sep := HSeparator.new()
+	inner.add_child(sep)
+
+	var preset_box := VBoxContainer.new()
+	preset_box.add_theme_constant_override("separation", 6)
+	inner.add_child(preset_box)
+	for preset in RunEndingDefs.MESSAGE_PRESETS:
+		var preset_id: String = str(preset.get("id", ""))
+		var btn := Button.new()
+		btn.text = str(preset.get("text", ""))
+		btn.custom_minimum_size = Vector2(0, 36)
+		btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		btn.pressed.connect(_on_menu_preset_pressed.bind(preset_id, str(preset.get("text", ""))))
+		preset_box.add_child(btn)
+
+	_msg_custom_input = LineEdit.new()
+	_msg_custom_input.placeholder_text = "或在此输入自定义留言（最多80字）…"
+	_msg_custom_input.max_length = 80
+	inner.add_child(_msg_custom_input)
+
+	var submit_row := HBoxContainer.new()
+	submit_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	submit_row.add_theme_constant_override("separation", 12)
+	var submit_btn := Button.new()
+	submit_btn.text = "提交自定义留言"
+	submit_btn.custom_minimum_size = Vector2(180, 40)
+	submit_btn.pressed.connect(_on_menu_submit_custom)
+	submit_row.add_child(submit_btn)
+	inner.add_child(submit_row)
+
+	_msg_status_label = Label.new()
+	_msg_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_msg_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_msg_status_label.add_theme_color_override("font_color", Color("#8fd49a"))
+	inner.add_child(_msg_status_label)
 
 	var close_btn := Button.new()
 	close_btn.text = "关闭"
 	close_btn.custom_minimum_size = Vector2(120, 40)
 	close_btn.pressed.connect(_message_wall_popup.hide)
 	close_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	vbox.add_child(close_btn)
+	root.add_child(close_btn)
 
 
-func _refresh_message_wall_popup() -> void:
-	if _message_wall_popup == null:
-		return
-	var content := _message_wall_popup.get_node("VBoxContainer/MarginContainer/ScrollContainer/Content")
-	if not is_instance_valid(content):
+func _refresh_message_wall_read() -> void:
+	if not is_instance_valid(_msg_read_content):
 		return
 	var messages: Array = MetaManager.message_wall
 	if messages.is_empty():
-		content.text = "[center][color=#6a8aaa]还没有留言。\n完成一次勘探并选择留言后，这里会显示前代勘探者的痕迹。[/color][/center]"
+		_msg_read_content.text = "[center][color=#6a8aaa]还没有留言。\n在下方选择一条或输入自定义留言，即可成为第一位勘探者。[/color][/center]"
 		return
 	var lines: PackedStringArray = []
 	for i in range(messages.size() - 1, -1, -1):
 		var entry: Dictionary = messages[i]
 		var text := str(entry.get("text", ""))
 		var layer := int(entry.get("layer", 0))
-		var run_id := str(entry.get("run_id", ""))
-		lines.append("[color=#b8c7d8]第%d层[/color]  [color=#e8d090]%s[/color]" % [layer, text])
+		var day := int(entry.get("day_index", 0))
+		var choice := str(entry.get("choice_id", ""))
+		var meta := "第%d层" % layer
+		if day > 0:
+			meta += "·第%d天" % day
+		if choice != "":
+			var choice_title := "主菜单"
+			if choice == "terminal":
+				choice_title = "通信终端"
+			elif choice != "menu":
+				choice_title = RunEndingDefs.choice_title(choice)
+			meta += "·%s" % choice_title
+		lines.append("[color=#b8c7d8]%s[/color]  [color=#e8d090]%s[/color]" % [meta, text])
 		if i > 0:
 			lines.append("[color=#3a4a5a]──────────────────────────[/color]")
-	content.text = "\n".join(lines)
+	_msg_read_content.text = "\n".join(lines)
+
+
+func _submit_menu_message(text: String) -> void:
+	var cleaned := text.strip_edges()
+	if cleaned == "":
+		_set_msg_status("请输入或选择一条留言。", false)
+		return
+	MetaManager.append_message(cleaned, 3, 0, "menu")
+	MetaManager.save_meta()
+	_msg_custom_input.text = ""
+	_refresh_message_wall_read()
+	_set_msg_status("留言已保存！下局游戏可在顶层终端/仪式中读到。", true)
+
+
+func _set_msg_status(text: String, ok: bool) -> void:
+	if not is_instance_valid(_msg_status_label):
+		return
+	_msg_status_label.text = text
+	_msg_status_label.add_theme_color_override("font_color", Color("#8fd49a") if ok else Color("#e8a060"))
+
+
+func _on_menu_preset_pressed(preset_id: String, preset_text: String) -> void:
+	if preset_id == "custom":
+		_msg_custom_input.grab_focus()
+		_set_msg_status("请在输入框填写后点「提交自定义留言」。", true)
+		return
+	_submit_menu_message(preset_text)
+
+
+func _on_menu_submit_custom() -> void:
+	_submit_menu_message(_msg_custom_input.text)
 
 
 func _on_message_wall_pressed() -> void:
-	_refresh_message_wall_popup()
+	_refresh_message_wall_read()
+	_set_msg_status("", true)
 	if _message_wall_popup:
+		_message_wall_popup.popup_centered()
 		_message_wall_popup.show()
 
 

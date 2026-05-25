@@ -2,17 +2,16 @@ extends CanvasLayer
 
 signal closed
 
-enum Mode { CREDITS, MESSAGE, FAKE_SUCCESS }
+enum Mode { CREDITS, FAKE_SUCCESS, MESSAGE_ONLY_EPILOGUE }
 
 var _mode: int = Mode.CREDITS
 var _dim: ColorRect
 var _panel: PanelContainer
 var _title: Label
 var _body: RichTextLabel
-var _msg_input: LineEdit
-var _msg_history: RichTextLabel
+var _credits_scroll: ScrollContainer
 var _primary_btn: Button
-var _layer_at_choice: int = 0
+var _credits_scroll_speed: float = 28.0
 
 
 func _ready() -> void:
@@ -20,6 +19,17 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	visible = false
 	_build_ui()
+
+
+func _process(delta: float) -> void:
+	if not visible or _mode != Mode.CREDITS:
+		return
+	if not is_instance_valid(_credits_scroll):
+		return
+	var bar := _credits_scroll.get_v_scroll_bar()
+	if bar == null:
+		return
+	bar.value = minf(bar.value + _credits_scroll_speed * delta, bar.max_value)
 
 
 func _build_ui() -> void:
@@ -55,23 +65,28 @@ func _build_ui() -> void:
 
 	_body = RichTextLabel.new()
 	_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_body.custom_minimum_size = Vector2(680, 200)
-	_body.scroll_following = true
+	_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_body.custom_minimum_size = Vector2(660, 200)
+	_body.scroll_active = false
+	_body.fit_content = true
+	_body.visible = false
 	root.add_child(_body)
 
-	_msg_input = LineEdit.new()
-	_msg_input.max_length = 80
-	_msg_input.placeholder_text = "输入留言（最多80字）…"
-	_msg_input.custom_minimum_size = Vector2(0, 36)
-	_msg_input.visible = false
-	root.add_child(_msg_input)
+	_credits_scroll = ScrollContainer.new()
+	_credits_scroll.custom_minimum_size = Vector2(680, 220)
+	_credits_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_credits_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_credits_scroll.visible = false
+	root.add_child(_credits_scroll)
 
-	_msg_history = RichTextLabel.new()
-	_msg_history.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_msg_history.custom_minimum_size = Vector2(680, 80)
-	_msg_history.visible = false
-	root.add_child(_msg_history)
+	var credits_body := RichTextLabel.new()
+	credits_body.name = "CreditsBody"
+	credits_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	credits_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	credits_body.custom_minimum_size = Vector2(660, 480)
+	credits_body.scroll_active = false
+	credits_body.fit_content = true
+	_credits_scroll.add_child(credits_body)
 
 	_primary_btn = Button.new()
 	_primary_btn.custom_minimum_size = Vector2(280, 44)
@@ -80,14 +95,13 @@ func _build_ui() -> void:
 	root.add_child(_primary_btn)
 
 
-func show_outcome(choice_id: String, run_layer: int) -> void:
-	_layer_at_choice = run_layer
+func show_outcome(choice_id: String, _run_layer: int, _day_index: int = 1) -> void:
 	visible = true
 	match choice_id:
 		"stop_signal":
 			_enter_credits()
 		"message_only":
-			_enter_message()
+			_enter_message_only_epilogue()
 		"fake_success":
 			_enter_fake_success()
 		_:
@@ -101,38 +115,31 @@ func hide_overlay() -> void:
 func _enter_credits() -> void:
 	_mode = Mode.CREDITS
 	_title.text = "克隆循环 · 终止"
-	_body.text = """[center]—— 制作名单 ——[/center]
-
-程序员：……
-美术：……
-音效：……
-剧本：……
-
-[center]感谢游玩。[/center]
-
-[center]克隆程序至此终止。
-地表的风第一次吹进了地下控制室。[/center]"""
-	_body.visible = true
-	_msg_input.visible = false
-	_msg_history.visible = false
+	_body.visible = false
+	_credits_scroll.visible = true
+	var credits_body := _credits_scroll.get_node_or_null("CreditsBody") as RichTextLabel
+	if credits_body != null:
+		var lines: PackedStringArray = []
+		for line in RunEndingDefs.CREDITS_LINES:
+			lines.append(line)
+		credits_body.text = "[center]%s[/center]" % "\n".join(lines)
+	call_deferred("_reset_credits_scroll")
 	_primary_btn.text = "返回主菜单"
 
 
-func _enter_message() -> void:
-	_mode = Mode.MESSAGE
-	_title.text = "留言墙"
-	_body.text = "你选择不发送终止信号。\n请为下一代勘探者留下一段话，他们抵达顶层时会看到它。"
-	_body.visible = true
-	_msg_input.visible = true
-	_msg_input.text = ""
-	_msg_history.visible = true
-	_refresh_message_history()
-	_primary_btn.text = "留下留言"
+func _reset_credits_scroll() -> void:
+	if not is_instance_valid(_credits_scroll):
+		return
+	var bar := _credits_scroll.get_v_scroll_bar()
+	if bar != null:
+		bar.value = 0.0
 
 
 func _enter_fake_success() -> void:
 	_mode = Mode.FAKE_SUCCESS
 	_title.text = "勘探成功 · 伪造"
+	_credits_scroll.visible = false
+	_body.visible = true
 	_body.text = """昆仑中继收到一条伪造的「勘探成功」信号。
 
 程序不会追问真伪。
@@ -140,33 +147,20 @@ func _enter_fake_success() -> void:
 
 循环以讽刺的方式停摆了。
 也许这就是人类能给出的最后答案。"""
-	_body.visible = true
-	_msg_input.visible = false
-	_msg_history.visible = false
 	_primary_btn.text = "返回主菜单"
 
 
-func _refresh_message_history() -> void:
-	var entries := MetaManager.message_wall
-	if entries.is_empty():
-		_msg_history.text = "（还没有人留下留言。）"
-		return
-	var lines: PackedStringArray = []
-	var start := maxi(0, entries.size() - 10)
-	for i in range(start, entries.size()):
-		var entry: Dictionary = entries[i]
-		lines.append("[%s]" % entry.get("text", ""))
-	_msg_history.text = "—— 前代留言 ——\n" + "\n".join(lines)
+func _enter_message_only_epilogue() -> void:
+	_mode = Mode.MESSAGE_ONLY_EPILOGUE
+	_title.text = "只留言，不发停机"
+	_credits_scroll.visible = false
+	_body.visible = true
+	_body.text = """你没有发送终止信号。
+
+若已在通信终端留言，话语已写入前代勘探者档案。
+昆仑程序将把新的克隆体送上来——循环继续。"""
+	_primary_btn.text = "返回主菜单"
 
 
 func _on_primary_pressed() -> void:
-	match _mode:
-		Mode.MESSAGE:
-			var text := _msg_input.text
-			if text.strip_edges() != "":
-				MetaManager.append_message(text, _layer_at_choice)
-				MetaManager.save_meta()
-			_msg_input.text = ""
-		_:
-			pass
 	closed.emit()

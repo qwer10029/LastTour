@@ -33,7 +33,7 @@ const FINAL_CHOICES := {
 const TERMINAL_INTRO_TEXT := """【昆仑中继 · 顶层控制室 · 通信终端】
 
 您的观察报告已接收。
-请于下方完成本次勘探总结与身份识别。
+请先为下一位勘探者留言，再回答地表宜居性并完成身份识别。
 本终端为程序自动应答，所有结论将上报至昆仑指挥部。"""
 
 const TERMINAL_REPORT_PROMPT := "问题 1 / 1：根据您在地表的观察，请评估地表当前的宜居性。"
@@ -61,6 +61,27 @@ const TERMINAL_VERIFY_PASS_TEXT := """【验证结果】
 最高权限正在移交……"""
 
 const TERMINAL_TRANSFER_TEXT := "【权限移交完成】\n您已获得对昆仑中继的最高控制权。"
+
+const MESSAGE_PRESETS := [
+	{"id": "hope", "text": "如果你读到这里，请继续向上。不要停下。"},
+	{"id": "warning", "text": "夜晚务必布防。物资比想象掉得更快。"},
+	{"id": "truth", "text": "我们不是第一批。程序也不会停。"},
+	{"id": "custom", "text": "（自定义留言）"},
+]
+
+const CREDITS_LINES := [
+	"—— 制作名单 ——",
+	"",
+	"程序 / 系统设计",
+	"美术 / 场景与 UI",
+	"音效 / 音乐",
+	"剧本 / 关卡与叙事",
+	"",
+	"感谢游玩《终末旅行》",
+	"",
+	"克隆程序至此终止。",
+	"地表的风第一次吹进了地下控制室。",
+]
 
 static func choice_title(choice_id: String) -> String:
 	var def: Dictionary = FINAL_CHOICES.get(choice_id, {})

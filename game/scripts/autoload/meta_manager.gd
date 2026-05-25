@@ -47,6 +47,8 @@ func load_meta() -> void:
 		message_wall.append({
 			"text": str(entry.get("text", "")),
 			"layer": int(entry.get("layer", 0)),
+			"day_index": int(entry.get("day_index", 0)),
+			"choice_id": str(entry.get("choice_id", "")),
 			"run_id": str(entry.get("run_id", "")),
 		})
 
@@ -87,11 +89,42 @@ func record_ending(choice_id: String) -> void:
 		return
 	endings_seen.append(choice_id)
 
-func append_message(text: String, layer: int) -> void:
+
+func append_message(
+	text: String,
+	layer: int,
+	day_index: int = 0,
+	choice_id: String = "",
+) -> void:
 	if text.strip_edges() == "":
 		return
 	message_wall.append({
 		"text": text.strip_edges().substr(0, 80),
 		"layer": layer,
+		"day_index": day_index,
+		"choice_id": choice_id,
 		"run_id": "%d" % Time.get_unix_time_from_system(),
 	})
+
+
+func format_message_wall_preview(max_count: int = 5) -> String:
+	if message_wall.is_empty():
+		return "（尚无留言。写下第一条后，其他勘探者写留言时可见。）"
+	var lines: PackedStringArray = []
+	var start := maxi(0, message_wall.size() - max_count)
+	for i in range(start, message_wall.size()):
+		var entry: Dictionary = message_wall[i]
+		var layer := int(entry.get("layer", 0))
+		var day := int(entry.get("day_index", 0))
+		var choice := str(entry.get("choice_id", ""))
+		var meta := "第%d层" % layer
+		if day > 0:
+			meta += "·第%d天" % day
+		if choice == "menu":
+			meta += "·主菜单"
+		elif choice == "terminal":
+			meta += "·通信终端"
+		elif choice != "":
+			meta += "·%s" % RunEndingDefs.choice_title(choice)
+		lines.append("[%s] %s" % [meta, str(entry.get("text", ""))])
+	return "\n".join(lines)

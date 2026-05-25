@@ -17,6 +17,8 @@ func _ready() -> void:
 	normal_button.pressed.connect(func(): _select_difficulty(GameManager.Difficulty.NORMAL))
 	hard_button.pressed.connect(func(): _select_difficulty(GameManager.Difficulty.HARD))
 	back_button.pressed.connect(_on_back_pressed)
+	if is_instance_valid(hint_label):
+		hint_label.text = "选择难度。抵达顶层通信终端写留言时，可阅读前代留言；留言供下一位勘探者参考。"
 
 
 func _select_difficulty(value: int) -> void:

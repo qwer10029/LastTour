@@ -34,7 +34,7 @@ script = ExtResource("7_night")
 offset_left = 16.0
 offset_top = 16.0
 offset_right = 376.0
-offset_bottom = 228.0
+offset_bottom = 200.0
 
 [node name="MarginContainer" type="MarginContainer" parent="HUD/InfoPanel"]
 offset_right = 360.0
@@ -142,9 +142,6 @@ autowrap_mode = 2
 
 [node name="NightTd" parent="." instance=ExtResource("10_night_td")]
 visible = false
-
-[node name="ModeLabel" type="Label" parent="HUD/InfoPanel/MarginContainer/VBoxContainer"]
-text = "状态: 驾驶车辆"
 
 [node name="FuelLabel" type="Label" parent="HUD/InfoPanel/MarginContainer/VBoxContainer"]
 text = "燃料: 0 / 0"

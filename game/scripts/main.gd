@@ -66,10 +66,22 @@ var _pause_confirm: ConfirmationDialog
 @onready var time_hud: Control = $HUD/TimePanel/MarginContainer/TimeHud
 @onready var evening_notice: PanelContainer = $HUD/EveningNotice
 @onready var night_td: NightTdController = $NightTd
-@onready var mode_label: Label = $HUD/InfoPanel/MarginContainer/VBoxContainer/ModeLabel
 @onready var fuel_label: Label = $HUD/InfoPanel/MarginContainer/VBoxContainer/FuelLabel
 @onready var inventory_label: Label = $HUD/InfoPanel/MarginContainer/VBoxContainer/InventoryLabel
 @onready var vitals_label: Label = $HUD/InfoPanel/MarginContainer/VBoxContainer/VitalsLabel
+
+var _vitals_top_bar: PanelContainer
+var _fuel_bar: ProgressBar
+var _vehicle_hp_bar: ProgressBar
+var _hp_bar: ProgressBar
+var _hunger_bar: ProgressBar
+var _thirst_bar: ProgressBar
+var _fuel_bar_label: Label
+var _vehicle_hp_bar_label: Label
+var _hp_bar_label: Label
+var _hunger_bar_label: Label
+var _thirst_bar_label: Label
+var _night_result_applied := false
 @onready var backpack_button: Button = $HUD/InfoPanel/MarginContainer/VBoxContainer/BackpackButton
 @onready var status_label: Label = $HUD/InfoPanel/MarginContainer/VBoxContainer/StatusLabel
 @onready var minimap_view: MinimapView = $HUD/MapPanel/MarginContainer/VBoxContainer/MinimapView
@@ -93,6 +105,7 @@ func _ready() -> void:
 	_setup_pause_ui()
 	_setup_backpack_ui()
 	_setup_run_end_ui()
+	_setup_stat_bars()
 	_spawn_vehicle()
 	_spawn_player()
 	_setup_day_night()
@@ -865,6 +878,145 @@ func _inventory_summary() -> String:
 	return " ".join(parts)
 
 
+func _setup_stat_bars() -> void:
+	var hud: CanvasLayer = $HUD
+	if hud == null:
+		return
+	_vitals_top_bar = PanelContainer.new()
+	_vitals_top_bar.name = "VitalsTopBar"
+	_vitals_top_bar.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_vitals_top_bar.offset_left = -340.0
+	_vitals_top_bar.offset_top = 10.0
+	_vitals_top_bar.offset_right = 340.0
+	_vitals_top_bar.offset_bottom = 58.0
+	var panel_style := StyleBoxFlat.new()
+	panel_style.bg_color = Color(0.04, 0.07, 0.12, 0.82)
+	panel_style.border_color = Color(0.25, 0.32, 0.42, 0.9)
+	panel_style.set_border_width_all(1)
+	panel_style.set_corner_radius_all(6)
+	_vitals_top_bar.add_theme_stylebox_override("panel", panel_style)
+	hud.add_child(_vitals_top_bar)
+
+	var margin := MarginContainer.new()
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", 10)
+	margin.add_theme_constant_override("margin_top", 6)
+	margin.add_theme_constant_override("margin_right", 10)
+	margin.add_theme_constant_override("margin_bottom", 6)
+	_vitals_top_bar.add_child(margin)
+
+	var row := HBoxContainer.new()
+	row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 14)
+	margin.add_child(row)
+
+	# 参考 Mini DayZ：顶部横排，图标 + 彩色条 + 数字
+	var specs: Array = [
+		["♥", "_hp_bar", "_hp_bar_label", Color("#e74c3c")],
+		["◆", "_thirst_bar", "_thirst_bar_label", Color("#5dade2")],
+		["▣", "_hunger_bar", "_hunger_bar_label", Color("#58d68d")],
+		["◎", "_fuel_bar", "_fuel_bar_label", Color("#f4d03f")],
+		["▲", "_vehicle_hp_bar", "_vehicle_hp_bar_label", Color("#bb8fce")],
+	]
+	for spec in specs:
+		var slot := _build_vital_slot(str(spec[0]), spec[3])
+		var bar: ProgressBar = slot.get_node("VBox/ProgressBar")
+		var value_lbl: Label = slot.get_node("VBox/ValueLabel")
+		row.add_child(slot)
+		match spec[1]:
+			"_hp_bar":
+				_hp_bar = bar
+				_hp_bar_label = value_lbl
+			"_thirst_bar":
+				_thirst_bar = bar
+				_thirst_bar_label = value_lbl
+			"_hunger_bar":
+				_hunger_bar = bar
+				_hunger_bar_label = value_lbl
+			"_fuel_bar":
+				_fuel_bar = bar
+				_fuel_bar_label = value_lbl
+			"_vehicle_hp_bar":
+				_vehicle_hp_bar = bar
+				_vehicle_hp_bar_label = value_lbl
+	_update_stat_bars()
+
+
+func _build_vital_slot(icon_text: String, fill_color: Color) -> HBoxContainer:
+	var slot := HBoxContainer.new()
+	slot.add_theme_constant_override("separation", 6)
+
+	var icon_bg := PanelContainer.new()
+	icon_bg.custom_minimum_size = Vector2(28, 28)
+	var icon_box := StyleBoxFlat.new()
+	icon_box.bg_color = Color(0.08, 0.1, 0.14, 0.95)
+	icon_box.set_corner_radius_all(4)
+	icon_bg.add_theme_stylebox_override("panel", icon_box)
+	var icon := Label.new()
+	icon.text = icon_text
+	icon.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	icon.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	icon.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	icon.add_theme_font_size_override("font_size", 16)
+	icon.add_theme_color_override("font_color", fill_color)
+	icon_bg.add_child(icon)
+	slot.add_child(icon_bg)
+
+	var column := VBoxContainer.new()
+	column.name = "VBox"
+	column.add_theme_constant_override("separation", 2)
+	column.custom_minimum_size = Vector2(108, 0)
+
+	var bar := ProgressBar.new()
+	bar.name = "ProgressBar"
+	bar.custom_minimum_size = Vector2(108, 12)
+	bar.max_value = 100.0
+	bar.show_percentage = false
+	_apply_vital_bar_theme(bar, fill_color)
+	column.add_child(bar)
+
+	var value_lbl := Label.new()
+	value_lbl.name = "ValueLabel"
+	value_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	value_lbl.add_theme_font_size_override("font_size", 11)
+	value_lbl.add_theme_color_override("font_color", Color("#d8e4f0"))
+	column.add_child(value_lbl)
+
+	slot.add_child(column)
+	return slot
+
+
+func _apply_vital_bar_theme(bar: ProgressBar, fill_color: Color) -> void:
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.1, 0.12, 0.16, 1.0)
+	bg.set_corner_radius_all(3)
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = fill_color
+	fill.set_corner_radius_all(3)
+	bar.add_theme_stylebox_override("background", bg)
+	bar.add_theme_stylebox_override("fill", fill)
+
+
+func _update_stat_bars() -> void:
+	_set_bar(_hp_bar, _hp_bar_label, _survival.hp, PlayerSurvival.HP_MAX)
+	_set_bar(_thirst_bar, _thirst_bar_label, _survival.thirst, PlayerSurvival.THIRST_MAX)
+	_set_bar(_hunger_bar, _hunger_bar_label, _survival.hunger, PlayerSurvival.HUNGER_MAX)
+	_set_bar(_fuel_bar, _fuel_bar_label, _fuel, fuel_max)
+	_set_bar(_vehicle_hp_bar, _vehicle_hp_bar_label, _vehicle_hp, _vehicle_hp_max)
+	if is_instance_valid(_hp_bar_label) and _survival.should_bleed_hp():
+		_hp_bar_label.add_theme_color_override("font_color", Color("#ff9a9a"))
+
+
+func _set_bar(bar: ProgressBar, label: Label, current: float, maximum: float) -> void:
+	if not is_instance_valid(bar) or not is_instance_valid(label):
+		return
+	var max_v := maxf(maximum, 1.0)
+	bar.max_value = max_v
+	bar.value = clampf(current, 0.0, max_v)
+	label.text = "%d/%d" % [int(round(current)), int(round(max_v))]
+
+
 func _setup_run_end_ui() -> void:
 	_run_end_overlay = RunEndOverlayScript.new()
 	add_child(_run_end_overlay)
@@ -915,7 +1067,8 @@ func _open_communication_terminal() -> void:
 		return
 	var evidence_count := MetaManager.evidence_count()
 	var threshold := MetaManager.EVIDENCE_THRESHOLD_FOR_TRANSFER
-	_communication_terminal.start_flow(evidence_count, threshold)
+	var day_n := time_system.day_index if is_instance_valid(time_system) else 1
+	_communication_terminal.start_flow(evidence_count, threshold, _current_layer, day_n)
 
 
 func _on_terminal_strike() -> void:
@@ -961,7 +1114,8 @@ func _on_final_ceremony_choice(choice_id: String) -> void:
 	MetaManager.record_ending(choice_id)
 	MetaManager.save_meta()
 	if is_instance_valid(_ending_outcome_overlay):
-		_ending_outcome_overlay.show_outcome(choice_id, _current_layer)
+		var day_n := time_system.day_index if is_instance_valid(time_system) else 1
+		_ending_outcome_overlay.show_outcome(choice_id, _current_layer, day_n)
 		return
 	_show_run_summary()
 
@@ -1030,7 +1184,7 @@ func _build_run_summary_text() -> String:
 				lines.append("（真结局 · 制作人员名单）")
 			"message_only":
 				lines.append("")
-				lines.append("留言已写入前代勘探者档案。程序将继续运转。")
+				lines.append("未发送终止信号。程序将继续运转。")
 			"fake_success":
 				lines.append("")
 				lines.append("虚假成功信号已注入。循环以讽刺的方式停摆。")
@@ -1333,6 +1487,7 @@ func _on_evening_warning(remaining_sec: float) -> void:
 
 
 func _on_night_setup_started(day_index: int, manual_setup: bool) -> void:
+	_night_result_applied = false
 	_force_return_to_vehicle_for_night()
 	if is_instance_valid(time_system):
 		time_system.pause()
@@ -1345,18 +1500,35 @@ func _on_night_setup_started(day_index: int, manual_setup: bool) -> void:
 	_refresh_ui()
 
 
+func on_td_combat_ended(result: Dictionary) -> String:
+	_night_result_applied = true
+	_apply_night_result(result)
+	return _format_night_loss_summary()
+
+
+func _format_night_loss_summary() -> String:
+	if _last_night_losses.is_empty():
+		return ""
+	var loss_counts: Dictionary = {}
+	for item_name in _last_night_losses:
+		loss_counts[item_name] = int(loss_counts.get(item_name, 0)) + 1
+	var parts: PackedStringArray = []
+	for item_name in loss_counts:
+		parts.append("%s ×%d" % [item_name, int(loss_counts[item_name])])
+	return "\n\n物资损耗：\n  %s" % ", ".join(parts)
+
+
 func _on_night_td_finished(result: Dictionary) -> void:
 	if is_instance_valid(night_defense):
 		night_defense.hide_td_session()
-	_apply_night_result(result)
+	if not _night_result_applied:
+		_apply_night_result(result)
+	_night_result_applied = false
 	if _check_vehicle_destroyed():
 		return
-	if _last_night_losses.is_empty():
-		if is_instance_valid(time_system):
-			time_system.finish_night_and_advance_day()
-		return
-	# Show detailed item loss before advancing
-	_show_night_loss_popup()
+	if is_instance_valid(time_system):
+		time_system.finish_night_and_advance_day()
+	_refresh_ui()
 
 
 func _apply_night_result(result: Dictionary) -> void:
@@ -1547,24 +1719,15 @@ func _refresh_ui() -> void:
 		$HUD/ActionPanel.visible = not in_td
 	if has_node("HUD/TimePanel"):
 		$HUD/TimePanel.visible = not in_td
-	if is_instance_valid(mode_label):
-		if _is_night_phase():
-			mode_label.text = "状态: %s" % time_system.get_phase_name()
-		else:
-			var phase_hint := ""
-			if is_instance_valid(time_system) and time_system.phase == TimeSystem.Phase.EVENING:
-				phase_hint = "（傍晚·请回车设防）"
-			mode_label.text = "状态: %s%s" % ["驾驶车辆" if _mode != TravelMode.FOOT else "步行探索", phase_hint]
+	if is_instance_valid(_vitals_top_bar):
+		_vitals_top_bar.visible = not in_td
+	if is_instance_valid(evening_notice) and not in_td:
+		evening_notice.offset_top = 68.0
 	if is_instance_valid(fuel_label):
-		fuel_label.text = "燃料: %.1f / %.1f  |  车辆: %.0f / %.0f" % [_fuel, fuel_max, _vehicle_hp, _vehicle_hp_max]
+		fuel_label.visible = false
 	if is_instance_valid(vitals_label):
-		var wound_hint := " · 昨夜失利" if _survival.night_defense_wounded else ""
-		var bleed_hint := ""
-		if _survival.should_bleed_hp():
-			bleed_hint = " · 生命流失中"
-		vitals_label.text = "生命 %.0f | 饥饿 %.0f | 口渴 %.0f%s%s  [B 背包]" % [
-			_survival.hp, _survival.hunger, _survival.thirst, wound_hint, bleed_hint
-		]
+		vitals_label.visible = false
+	_update_stat_bars()
 	if is_instance_valid(inventory_label):
 		inventory_label.text = "背包: %s" % _inventory_summary()
 

@@ -78,7 +78,9 @@ func show_ceremony() -> void:
 	_confirm_btn.visible = false
 	_choices_box.visible = true
 	_title_label.text = "归档仪式 · 真相揭示"
-	_body_label.text = RunEndingDefs.TRUTH_REVEAL_TEXT
+	_body_label.text = (
+		"%s\n\n通信终端中，在回答地表宜居性之前可为下一位勘探者留言（写留言时可阅读前代留言）。"
+	) % RunEndingDefs.TRUTH_REVEAL_TEXT
 	_rebuild_choice_buttons()
 
 
