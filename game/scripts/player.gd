@@ -62,5 +62,7 @@ func _physics_process(delta: float) -> void:
 			_hud_callback.call()
 
 func clamp_to_world() -> void:
-	global_position.x = clamp(global_position.x, world_bounds.position.x + 16.0, world_bounds.position.x + world_bounds.size.x - 16.0)
-	global_position.y = clamp(global_position.y, world_bounds.position.y + 16.0, world_bounds.position.y + world_bounds.size.y - 16.0)
+	if world_bounds.size == Vector2.ZERO:
+		return
+	global_position.x = clampf(global_position.x, world_bounds.position.x, world_bounds.end.x)
+	global_position.y = clampf(global_position.y, world_bounds.position.y, world_bounds.end.y)

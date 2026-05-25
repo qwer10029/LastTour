@@ -162,6 +162,7 @@ func _register_key_action(action_name: String, keycode: Key) -> void:
 		if event is InputEventKey and event.physical_keycode == keycode:
 			return
 	var event := InputEventKey.new()
+	event.keycode = keycode
 	event.physical_keycode = keycode
 	InputMap.action_add_event(action_name, event)
 
@@ -247,6 +248,13 @@ func _spawn_evidence_pickups() -> void:
 		if pickup.has_signal("collected"):
 			pickup.collected.connect(_on_resource_collected.bind(district_index))
 		_resource_nodes.append(pickup)
+
+func _process(_delta: float) -> void:
+	if _run_ended or _game_paused or _backpack_open:
+		return
+	if Input.is_action_just_pressed("enter_defense_mode"):
+		_try_enter_defense_mode()
+
 
 func _physics_process(delta: float) -> void:
 	if _run_ended:
@@ -352,10 +360,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	if _game_paused or _backpack_open:
-		return
-	if event.is_action_pressed("enter_defense_mode") and is_instance_valid(time_system) and time_system.phase == TimeSystem.Phase.EVENING and _mode == TravelMode.DRIVE and _segment_target_index < 0:
-		time_system.enter_night_setup(true)
-		get_viewport().set_input_as_handled()
 		return
 	if _mode != TravelMode.DRIVE:
 		return
@@ -537,7 +541,7 @@ func _begin_foot_mode() -> void:
 	if is_instance_valid(_player):
 		_player.set_active(true)
 		var district_rect := _map.cell_rect(_current_district_index)
-		_player.world_bounds = district_rect
+		_player.world_bounds = _map.get_foot_play_rect(_current_district_index)
 		_player.set_blocked_checker(Callable(self, "_is_foot_blocked_at"))
 		_player.global_position = _map.get_foot_spawn_world_pos(_map.get_cell(_current_district_index), district_rect)
 		_player.global_position = _clamp_to_walkable(_player.global_position)
@@ -1202,7 +1206,7 @@ func _restore_foot_mode_from_save(foot: Dictionary) -> void:
 		_player.set_active(true)
 		_map.ensure_foot_layout(_current_district_index)
 		var district_rect := _map.cell_rect(_current_district_index)
-		_player.world_bounds = district_rect
+		_player.world_bounds = _map.get_foot_play_rect(_current_district_index)
 		_player.set_blocked_checker(Callable(self, "_is_foot_blocked_at"))
 		_player.global_position = Vector2(float(foot.get("player_x", 0.0)), float(foot.get("player_y", 0.0)))
 		_player.global_position = _clamp_to_walkable(_player.global_position)
@@ -1366,8 +1370,11 @@ func _apply_night_result(result: Dictionary) -> void:
 	# Remove items from backpack based on night losses
 	_last_night_losses.clear()
 	var severity: String = str(result.get("loss_severity", "none"))
+	var outcome: String = str(result.get("outcome", "success"))
+	if outcome == "vehicle_destroyed":
+		severity = "total"
 	var inv_loss: int = int(result.get("inventory_loss", 0))
-	if inv_loss > 0:
+	if severity != "none" or inv_loss > 0:
 		_remove_backpack_items_for_night(inv_loss, severity)
 
 
@@ -1381,11 +1388,17 @@ func _remove_backpack_items_for_night(loss_count: int, severity: String) -> void
 			material_entries.append(entry)
 	if material_entries.is_empty():
 		return
-	var extra := 0
-	match severity:
-		"partial": extra = randi_range(1, 2)
-		"severe": extra = randi_range(3, 5)
-	var total_loss := mini(loss_count + extra, _backpack.total_count())
+	var total_loss := mini(loss_count, _backpack.total_count())
+	if total_loss <= 0:
+		match severity:
+			"partial":
+				total_loss = randi_range(1, 2)
+			"severe":
+				total_loss = randi_range(3, 5)
+			"total":
+				for entry in material_entries:
+					total_loss += int(entry["count"])
+		total_loss = mini(total_loss, _backpack.total_count())
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
 	for _i in range(total_loss):
@@ -1456,20 +1469,69 @@ func _on_time_phase_changed(_old_phase: int, new_phase: int) -> void:
 	_refresh_ui()
 
 
-func _force_return_to_vehicle_for_night() -> void:
+func _is_enter_defense_mode_event(event: InputEvent) -> bool:
+	if not (event is InputEventKey and event.pressed and not event.is_echo()):
+		return false
+	if event.is_action_pressed("enter_defense_mode"):
+		return true
+	return event.keycode == KEY_F or event.physical_keycode == KEY_F
+
+
+func _try_enter_defense_mode() -> bool:
+	if not is_instance_valid(time_system):
+		return false
+	if not time_system.can_manual_enter_defense():
+		return false
+	if _game_paused or _backpack_open:
+		return false
+	if is_instance_valid(night_td) and night_td.visible:
+		return true
+	if _segment_target_index >= 0:
+		_cancel_drive_segment_for_night()
+	if _segment_target_index >= 0:
+		return false
+	_ensure_vehicle_ready_for_night()
+	if _mode != TravelMode.DRIVE:
+		return false
+	time_system.enter_night_setup(true)
+	return true
+
+
+func _cancel_drive_segment_for_night() -> void:
+	if _segment_target_index < 0:
+		return
+	var node_index := _segment_target_index if _segment_progress >= 0.5 else _segment_from_index
+	_segment_target_index = -1
+	_segment_progress = 0.0
+	if _map.is_valid_index(node_index):
+		_halt_at_node(node_index)
+	else:
+		_halt_at_node(_current_node_index)
+
+
+func _ensure_vehicle_ready_for_night() -> void:
 	_saved_travel_mode = _mode
+	if _map.is_valid_index(_current_node_index) and _map.is_district(_current_node_index):
+		_current_district_index = _current_node_index
 	if _mode == TravelMode.FOOT:
 		_return_to_vehicle()
 	_mode = TravelMode.DRIVE
 	_segment_target_index = -1
 	if is_instance_valid(_player):
 		_player.set_active(false)
+		_player.set_blocked_checker(Callable())
 	if is_instance_valid(_vehicle):
 		_vehicle.set_active(true)
-		_vehicle.global_position = _map.cell_center(maxi(_current_district_index, maxi(_current_node_index, 0)))
+		var anchor_index := maxi(_current_node_index, maxi(_current_district_index, 0))
+		if _map.is_valid_index(anchor_index):
+			_vehicle.global_position = _map.cell_center(anchor_index)
 	for node in _resource_nodes:
 		if is_instance_valid(node):
 			node.visible = false
+
+
+func _force_return_to_vehicle_for_night() -> void:
+	_ensure_vehicle_ready_for_night()
 
 
 func _refresh_ui() -> void:
@@ -1541,11 +1603,15 @@ func _update_prompts() -> void:
 		else:
 			prompt_label.text = "夜晚结算中…"
 		return
-	if is_instance_valid(time_system) and time_system.phase == TimeSystem.Phase.EVENING:
-		if _mode == TravelMode.DRIVE and _segment_target_index < 0:
-			prompt_label.text = "已回到车辆，按 F 进入布防模式"
+	if is_instance_valid(time_system) and time_system.can_manual_enter_defense():
+		if _mode == TravelMode.DRIVE and _segment_target_index >= 0:
+			prompt_label.text = "傍晚：行驶中按 F 可停车并进入布防"
+		elif _mode == TravelMode.DRIVE:
+			prompt_label.text = "傍晚：按 F 直接进入布防模式"
+		elif _mode == TravelMode.FOOT:
+			prompt_label.text = "傍晚：按 F 回车并进入布防模式"
 		else:
-			prompt_label.text = "傍晚提醒：请尽快返回车辆，随后按 F 进入布防模式"
+			prompt_label.text = "傍晚提醒：按 F 进入布防模式"
 		if can_stop and _mode == TravelMode.DRIVE:
 			disembark_button.visible = true
 		elif in_foot:
@@ -1677,8 +1743,13 @@ func _direction_label(direction: String) -> String:
 func _clamp_to_cell(position: Vector2, district_index: int) -> Vector2:
 	if not _map.is_valid_index(district_index):
 		return position
-	var rect := _map.cell_rect(district_index)
-	return Vector2(clampf(position.x, rect.position.x + 18.0, rect.end.x - 18.0), clampf(position.y, rect.position.y + 18.0, rect.end.y - 18.0))
+	var play_rect := _map.get_foot_play_rect(district_index)
+	if play_rect.size == Vector2.ZERO:
+		return position
+	return Vector2(
+		clampf(position.x, play_rect.position.x, play_rect.end.x),
+		clampf(position.y, play_rect.position.y, play_rect.end.y),
+	)
 
 
 func _is_foot_blocked_at(world_pos: Vector2) -> bool:
@@ -1903,23 +1974,19 @@ func _draw_world_map_background() -> void:
 func _draw_foot_background() -> void:
 	if _current_district_index < 0:
 		return
-	# Expand foot view to a larger interior area and draw a dark-blue tiled grid background.
-	var rect := _map.cell_rect(_current_district_index)
-	var interior_margin := Vector2(16.0, 16.0)
-	var interior_size := rect.size + interior_margin * 2.0
-	var interior_origin := rect.position - interior_margin
-	var interior_rect := Rect2(interior_origin, interior_size)
-	draw_rect(interior_rect, Color("#031026"), true)
-	# draw grid tiles
-	var tile_size := 48.0
-	for gx in range(0, int(interior_size.x / tile_size) + 1):
-		for gy in range(0, int(interior_size.y / tile_size) + 1):
-			var px := interior_origin.x + gx * tile_size
-			var py := interior_origin.y + gy * tile_size
+	_map.ensure_foot_layout(_current_district_index)
+	var foot_rect := _map.get_foot_area_rect(_current_district_index)
+	draw_rect(foot_rect, Color("#031026"), true)
+	var cell := _map.get_cell(_current_district_index)
+	var tile_size := WorldMapData.FOOT_TILE_SIZE
+	var cols: int = maxi(int(cell.get("foot_grid_cols", 1)), 1)
+	var rows: int = maxi(int(cell.get("foot_grid_rows", 1)), 1)
+	for gx in range(cols):
+		for gy in range(rows):
+			var px := foot_rect.position.x + gx * tile_size
+			var py := foot_rect.position.y + gy * tile_size
 			var shade := Color("#05223a") if ((gx + gy) % 2 == 0) else Color("#022033")
 			draw_rect(Rect2(px, py, tile_size, tile_size), shade, true)
-	_map.ensure_foot_layout(_current_district_index)
-	var cell := _map.get_cell(_current_district_index)
 	for raw in cell.get("foot_blocked", []):
 		var tile := Vector2i.ZERO
 		if raw is Vector2i:
@@ -1927,7 +1994,7 @@ func _draw_foot_background() -> void:
 		elif raw is Dictionary:
 			tile = Vector2i(int(raw.get("x", 0)), int(raw.get("y", 0)))
 		var tile_rect := Rect2(
-			rect.position + Vector2(float(tile.x), float(tile.y)) * WorldMapData.FOOT_TILE_SIZE,
+			foot_rect.position + Vector2(float(tile.x), float(tile.y)) * WorldMapData.FOOT_TILE_SIZE,
 			Vector2(WorldMapData.FOOT_TILE_SIZE, WorldMapData.FOOT_TILE_SIZE),
 		)
 		draw_rect(tile_rect, Color("#2a4a32"), true)

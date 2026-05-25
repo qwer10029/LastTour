@@ -36,6 +36,7 @@ func _build_message_wall_popup() -> void:
 	_message_wall_popup.size = Vector2i(520, 420)
 	_message_wall_popup.unresizable = true
 	_message_wall_popup.close_requested.connect(_message_wall_popup.hide)
+	_message_wall_popup.visible = false
 	add_child(_message_wall_popup)
 
 	var vbox := VBoxContainer.new()

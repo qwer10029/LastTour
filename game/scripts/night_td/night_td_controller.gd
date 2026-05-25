@@ -513,7 +513,9 @@ func _end_combat_vehicle_destroyed() -> void:
 	_combat_done = true
 	_last_result = _build_result()
 	_last_result["outcome"] = "vehicle_destroyed"
-	_last_result["message"] = "车辆防线被突破，乘员失联。本局勘探终止。"
+	_last_result["loss_severity"] = "total"
+	_last_result["inventory_loss"] = _exploration_inventory
+	_last_result["message"] = "车辆防线被突破，车外物资被拖走，乘员失联。本局勘探终止。"
 	base_hp = 0.0
 	phase = Phase.RESULT
 	if is_instance_valid(hud):
@@ -546,23 +548,32 @@ func _build_result() -> Dictionary:
 	var loss_severity: String = "none"
 	var fuel_loss: float = 0.0
 	var msg: String = ""
-	if base_hp >= 70.0:
-		outcome = "success"
-		loss_severity = "none"
-		msg = "防线稳固！车辆完好，今夜安全度过。"
-	elif base_hp >= 35.0:
-		outcome = "partial"
-		loss_severity = "partial"
-		fuel_loss = 8.0
-		msg = "部分敌人突破防线，损失少量物资（车辆 HP %.0f/%.0f）。" % [base_hp, base_max_hp]
-	else:
+	var hp_ratio := base_hp / base_max_hp if base_max_hp > 0.0 else 0.0
+	if hp_ratio < 0.35:
 		outcome = "fail"
 		loss_severity = "severe"
 		fuel_loss = 18.0
 		msg = "防线失守！车辆严重受损（HP %.0f/%.0f）。" % [base_hp, base_max_hp]
-	var inv_loss: int = resources_spent
-	if inv_loss > 0:
-		msg += " 物资损耗 %d 件。" % inv_loss
+	elif _enemies_reached > 0 or hp_ratio < 0.7:
+		outcome = "partial"
+		loss_severity = "partial"
+		fuel_loss = 8.0
+		if _enemies_reached > 0:
+			msg = "部分敌人突破防线（突破 %d 次），损失少量物资（车辆 HP %.0f/%.0f）。" % [
+				_enemies_reached, base_hp, base_max_hp,
+			]
+		else:
+			msg = "防线承压，损失少量物资（车辆 HP %.0f/%.0f）。" % [base_hp, base_max_hp]
+	else:
+		outcome = "success"
+		loss_severity = "none"
+		msg = "防线稳固！车辆完好，今夜安全度过。"
+	var inv_loss: int = 0
+	match loss_severity:
+		"partial":
+			inv_loss = randi_range(1, 2)
+		"severe":
+			inv_loss = randi_range(3, 5)
 	return {
 		"outcome": outcome,
 		"message": msg,

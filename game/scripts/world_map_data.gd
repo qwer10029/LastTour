@@ -2,6 +2,8 @@ class_name WorldMapData
 extends RefCounted
 
 const FOOT_TILE_SIZE := 48
+## 各资源区固定障碍格（网格坐标，通常为正中格）
+const FOOT_ANCHOR_OBSTACLE := Vector2i(2, 2)
 
 const DIRECTIONS := {
 	"up": Vector2i(0, -1),
@@ -430,6 +432,10 @@ func _build_foot_layout(rng: RandomNumberGenerator, district_size: Vector2i) -> 
 	var rows := maxi(int(district_size.y / FOOT_TILE_SIZE), 4)
 	var center := Vector2i(cols / 2, rows / 2)
 	var blocked: Array[Vector2i] = []
+	# 固定障碍：正中格 (2,2)，各区块一致
+	if FOOT_ANCHOR_OBSTACLE.x < cols and FOOT_ANCHOR_OBSTACLE.y < rows:
+		blocked.append(FOOT_ANCHOR_OBSTACLE)
+	var spawn_tile := _pick_foot_spawn_tile(cols, rows, center, blocked)
 	var target_blocked := maxi(int(float(cols * rows) * 0.14), 2)
 	var attempts := 0
 	while blocked.size() < target_blocked and attempts < 200:
@@ -440,12 +446,48 @@ func _build_foot_layout(rng: RandomNumberGenerator, district_size: Vector2i) -> 
 		if tile in blocked:
 			continue
 		blocked.append(tile)
-	# 保证从出生点能走到所有可走格子
-	while not _foot_tiles_connected(cols, rows, center, blocked):
-		if blocked.is_empty():
+	# 保证从出生点能走到所有可走格子（优先保留固定障碍）
+	spawn_tile = _pick_foot_spawn_tile(cols, rows, center, blocked)
+	while not _foot_tiles_connected(cols, rows, spawn_tile, blocked):
+		var removed := false
+		for i in range(blocked.size() - 1, -1, -1):
+			if blocked[i] == FOOT_ANCHOR_OBSTACLE:
+				continue
+			blocked.remove_at(i)
+			removed = true
 			break
-		blocked.pop_back()
-	return {"cols": cols, "rows": rows, "blocked": blocked, "center": center}
+		if not removed:
+			break
+		spawn_tile = _pick_foot_spawn_tile(cols, rows, center, blocked)
+	return {"cols": cols, "rows": rows, "blocked": blocked, "center": center, "spawn": spawn_tile}
+
+
+func _pick_foot_spawn_tile(cols: int, rows: int, center: Vector2i, blocked: Array) -> Vector2i:
+	var blocked_set: Dictionary = {}
+	for raw in blocked:
+		var tile := Vector2i.ZERO
+		if raw is Vector2i:
+			tile = raw
+		elif raw is Dictionary:
+			tile = Vector2i(int(raw.get("x", 0)), int(raw.get("y", 0)))
+		blocked_set[tile] = true
+	if not blocked_set.has(center):
+		return center
+	var candidates: Array[Vector2i] = [
+		center + Vector2i(0, 1),
+		center + Vector2i(0, -1),
+		center + Vector2i(1, 0),
+		center + Vector2i(-1, 0),
+	]
+	for tile in candidates:
+		if tile.x >= 0 and tile.y >= 0 and tile.x < cols and tile.y < rows and not blocked_set.has(tile):
+			return tile
+	for y in range(rows):
+		for x in range(cols):
+			var fallback := Vector2i(x, y)
+			if not blocked_set.has(fallback):
+				return fallback
+	return center
 
 
 func _foot_tiles_connected(cols: int, rows: int, start: Vector2i, blocked: Array[Vector2i]) -> bool:
@@ -526,11 +568,35 @@ func _generate_resource_spawns_on_walkable(
 	return result
 
 
+func get_foot_area_rect(index: int) -> Rect2:
+	ensure_foot_layout(index)
+	if not is_valid_index(index):
+		return Rect2()
+	var district_rect := cell_rect(index)
+	var cell := cells[index]
+	var cols: int = maxi(int(cell.get("foot_grid_cols", 1)), 1)
+	var rows: int = maxi(int(cell.get("foot_grid_rows", 1)), 1)
+	return Rect2(district_rect.position, Vector2(cols * FOOT_TILE_SIZE, rows * FOOT_TILE_SIZE))
+
+
+func get_foot_play_rect(index: int, margin: float = 12.0) -> Rect2:
+	var area := get_foot_area_rect(index)
+	if area.size == Vector2.ZERO:
+		return area
+	var inset := Vector2(margin, margin) * 2.0
+	return Rect2(area.position + Vector2(margin, margin), area.size - inset)
+
+
 func is_foot_tile_blocked(cell: Dictionary, district_rect: Rect2, world_pos: Vector2) -> bool:
 	var local := world_pos - district_rect.position
+	var cols: int = maxi(int(cell.get("foot_grid_cols", 1)), 1)
+	var rows: int = maxi(int(cell.get("foot_grid_rows", 1)), 1)
+	var area := Vector2(cols * FOOT_TILE_SIZE, rows * FOOT_TILE_SIZE)
+	if local.x < 0.0 or local.y < 0.0 or local.x >= area.x or local.y >= area.y:
+		return true
 	var tile := Vector2i(
-		clampi(int(local.x / FOOT_TILE_SIZE), 0, maxi(int(cell.get("foot_grid_cols", 1)) - 1, 0)),
-		clampi(int(local.y / FOOT_TILE_SIZE), 0, maxi(int(cell.get("foot_grid_rows", 1)) - 1, 0)),
+		clampi(int(local.x / FOOT_TILE_SIZE), 0, cols - 1),
+		clampi(int(local.y / FOOT_TILE_SIZE), 0, rows - 1),
 	)
 	for raw in cell.get("foot_blocked", []):
 		var blocked_tile := Vector2i.ZERO
@@ -548,6 +614,7 @@ func ensure_foot_layout(index: int) -> void:
 		return
 	var cell := cells[index]
 	if cell.get("foot_blocked", []) is Array and not cell["foot_blocked"].is_empty():
+		_ensure_anchor_obstacle(cell)
 		return
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(cell.get("seed", index + 1))
@@ -555,6 +622,31 @@ func ensure_foot_layout(index: int) -> void:
 	cell["foot_grid_cols"] = layout["cols"]
 	cell["foot_grid_rows"] = layout["rows"]
 	cell["foot_blocked"] = layout["blocked"]
+
+
+func _ensure_anchor_obstacle(cell: Dictionary) -> void:
+	var cols: int = maxi(int(cell.get("foot_grid_cols", 1)), 1)
+	var rows: int = maxi(int(cell.get("foot_grid_rows", 1)), 1)
+	var anchor := FOOT_ANCHOR_OBSTACLE
+	if anchor.x >= cols or anchor.y >= rows:
+		return
+	var blocked: Array = cell.get("foot_blocked", [])
+	var cleaned: Array = []
+	var has_anchor := false
+	for raw in blocked:
+		var tile := Vector2i.ZERO
+		if raw is Vector2i:
+			tile = raw
+		elif raw is Dictionary:
+			tile = Vector2i(int(raw.get("x", 0)), int(raw.get("y", 0)))
+		if tile == Vector2i(1, 2):
+			continue
+		cleaned.append(raw)
+		if tile == anchor:
+			has_anchor = true
+	if not has_anchor:
+		cleaned.append(anchor)
+	cell["foot_blocked"] = cleaned
 
 
 func get_walkable_world_positions(index: int) -> Array[Vector2]:
@@ -584,9 +676,10 @@ func get_foot_spawn_world_pos(cell: Dictionary, district_rect: Rect2) -> Vector2
 	var cols: int = maxi(int(cell.get("foot_grid_cols", 1)), 1)
 	var rows: int = maxi(int(cell.get("foot_grid_rows", 1)), 1)
 	var center := Vector2i(cols / 2, rows / 2)
+	var spawn_tile := _pick_foot_spawn_tile(cols, rows, center, cell.get("foot_blocked", []))
 	return district_rect.position + Vector2(
-		float(center.x) * FOOT_TILE_SIZE + FOOT_TILE_SIZE * 0.5,
-		float(center.y) * FOOT_TILE_SIZE + FOOT_TILE_SIZE * 0.5,
+		float(spawn_tile.x) * FOOT_TILE_SIZE + FOOT_TILE_SIZE * 0.5,
+		float(spawn_tile.y) * FOOT_TILE_SIZE + FOOT_TILE_SIZE * 0.5,
 	)
 
 func _finalize_cell_kinds() -> void:

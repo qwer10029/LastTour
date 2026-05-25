@@ -62,6 +62,10 @@ func is_exploration_allowed() -> bool:
 	return phase == Phase.DAY or phase == Phase.EVENING
 
 
+func can_manual_enter_defense() -> bool:
+	return phase == Phase.EVENING or (phase == Phase.DAY and _evening_warning_sent)
+
+
 func get_day_remaining_sec() -> float:
 	if phase == Phase.DAY:
 		return maxf(day_duration_sec - elapsed_in_phase, 0.0)
