@@ -74,10 +74,19 @@ func to_dictionary() -> Dictionary:
 func load_from_dictionary(data: Variant) -> void:
 	items.clear()
 	if data is Dictionary:
+		var normalized_totals: Dictionary = {}
 		for key in data.keys():
 			var qty := int(data[key])
-			if qty > 0:
-				add(str(key), qty)
+			if qty <= 0:
+				continue
+			var normalized := ItemDefs.normalize_item_id(str(key))
+			if normalized == "":
+				continue
+			if ItemDefs.get_def(normalized).is_empty():
+				continue
+			normalized_totals[normalized] = int(normalized_totals.get(normalized, 0)) + qty
+		for item_id in normalized_totals.keys():
+			items[str(item_id)] = int(normalized_totals[item_id])
 
 
 func apply_starting_items(starting: Dictionary) -> void:
