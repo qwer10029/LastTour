@@ -73,14 +73,10 @@ var _pause_confirm: ConfirmationDialog
 var _vitals_top_bar: PanelContainer
 var _fuel_bar: ProgressBar
 var _vehicle_hp_bar: ProgressBar
-var _hp_bar: ProgressBar
-var _hunger_bar: ProgressBar
-var _thirst_bar: ProgressBar
+var _stamina_bar: ProgressBar
 var _fuel_bar_label: Label
 var _vehicle_hp_bar_label: Label
-var _hp_bar_label: Label
-var _hunger_bar_label: Label
-var _thirst_bar_label: Label
+var _stamina_bar_label: Label
 var _night_result_applied := false
 @onready var backpack_button: Button = $HUD/InfoPanel/MarginContainer/VBoxContainer/BackpackButton
 @onready var status_label: Label = $HUD/InfoPanel/MarginContainer/VBoxContainer/StatusLabel
@@ -814,17 +810,14 @@ func _use_backpack_item(item_id: String) -> bool:
 	if not _backpack.has(item_id, 1):
 		return false
 	match item_id:
-		"food":
-			_backpack.remove("food", 1)
-			_survival.eat_food()
+		"supplies":
+			_backpack.remove("supplies", 1)
+			_survival.use_supplies()
 			return true
-		"water":
-			_backpack.remove("water", 1)
-			_survival.drink_water()
-			return true
-		"medkit":
-			_backpack.remove("medkit", 1)
-			_survival.use_medkit()
+		"fuel":
+			_backpack.remove("fuel", 1)
+			var fuel_recover := float(ItemDefs.get_def("fuel").get("restore_fuel", 140.0))
+			_fuel = minf(_fuel + fuel_recover, fuel_max)
 			return true
 		_:
 			return false
@@ -913,9 +906,7 @@ func _setup_stat_bars() -> void:
 
 	# 参考 Mini DayZ：顶部横排，图标 + 彩色条 + 数字
 	var specs: Array = [
-		["♥", "_hp_bar", "_hp_bar_label", Color("#e74c3c")],
-		["◆", "_thirst_bar", "_thirst_bar_label", Color("#5dade2")],
-		["▣", "_hunger_bar", "_hunger_bar_label", Color("#58d68d")],
+		["⚡", "_stamina_bar", "_stamina_bar_label", Color("#58d68d")],
 		["◎", "_fuel_bar", "_fuel_bar_label", Color("#f4d03f")],
 		["▲", "_vehicle_hp_bar", "_vehicle_hp_bar_label", Color("#bb8fce")],
 	]
@@ -925,15 +916,9 @@ func _setup_stat_bars() -> void:
 		var value_lbl: Label = slot.get_node("VBox/ValueLabel")
 		row.add_child(slot)
 		match spec[1]:
-			"_hp_bar":
-				_hp_bar = bar
-				_hp_bar_label = value_lbl
-			"_thirst_bar":
-				_thirst_bar = bar
-				_thirst_bar_label = value_lbl
-			"_hunger_bar":
-				_hunger_bar = bar
-				_hunger_bar_label = value_lbl
+			"_stamina_bar":
+				_stamina_bar = bar
+				_stamina_bar_label = value_lbl
 			"_fuel_bar":
 				_fuel_bar = bar
 				_fuel_bar_label = value_lbl
@@ -999,13 +984,9 @@ func _apply_vital_bar_theme(bar: ProgressBar, fill_color: Color) -> void:
 
 
 func _update_stat_bars() -> void:
-	_set_bar(_hp_bar, _hp_bar_label, _survival.hp, PlayerSurvival.HP_MAX)
-	_set_bar(_thirst_bar, _thirst_bar_label, _survival.thirst, PlayerSurvival.THIRST_MAX)
-	_set_bar(_hunger_bar, _hunger_bar_label, _survival.hunger, PlayerSurvival.HUNGER_MAX)
+	_set_bar(_stamina_bar, _stamina_bar_label, _survival.stamina, PlayerSurvival.STAMINA_MAX)
 	_set_bar(_fuel_bar, _fuel_bar_label, _fuel, fuel_max)
 	_set_bar(_vehicle_hp_bar, _vehicle_hp_bar_label, _vehicle_hp, _vehicle_hp_max)
-	if is_instance_valid(_hp_bar_label) and _survival.should_bleed_hp():
-		_hp_bar_label.add_theme_color_override("font_color", Color("#ff9a9a"))
 
 
 func _set_bar(bar: ProgressBar, label: Label, current: float, maximum: float) -> void:
@@ -1155,7 +1136,7 @@ func _build_run_summary_text() -> String:
 	lines.append("生存天数: %d" % day_n)
 	lines.append("车辆耐久: %.0f / %.0f" % [_vehicle_hp, _vehicle_hp_max])
 	lines.append("背包: %s  |  燃料: %.1f" % [_inventory_summary(), _fuel])
-	lines.append("生命 %.0f | 饥饿 %.0f | 口渴 %.0f" % [_survival.hp, _survival.hunger, _survival.thirst])
+	lines.append("体力 %.0f" % _survival.stamina)
 	lines.append("地图探索: %d / %d 格" % [_map.explored_count(), _map.cells.size()])
 	if not _last_night_losses.is_empty():
 		lines.append("夜间物资损耗: %s" % "、".join(_last_night_losses))
@@ -1165,7 +1146,7 @@ func _build_run_summary_text() -> String:
 		lines.append("昆仑程序将判定本次勘探失败，新的克隆体即将被派遣。")
 	elif _run_end_reason == "player_collapsed":
 		lines.append("")
-		lines.append("饥饿、脱水或伤势导致乘员无法继续行动。")
+		lines.append("体力耗尽，乘员已无法继续行动。")
 		lines.append("本局勘探失败，新的克隆体即将被派遣。")
 	elif _run_end_reason == "strike":
 		lines.append("")

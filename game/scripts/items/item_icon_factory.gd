@@ -24,13 +24,15 @@ static func _draw_item_icon(img: Image, item_id: String, size: int) -> void:
 	var dark := main_color.darkened(0.35)
 	var light := main_color.lightened(0.2)
 	var half := size >> 1
-	match item_id:
-		"water":
+	var normalized := ItemDefs.normalize_item_id(item_id)
+	match normalized:
+		"fuel":
+			_fill_round_rect(img, Rect2i(7, 5, size - 14, size - 10), main_color, dark)
+			_fill_rect(img, Rect2i(10, 9, size - 20, 4), light)
+			_fill_rect(img, Rect2i(half - 2, 3, 4, 6), dark)
+		"supplies":
 			_fill_circle(img, half, half + 2, size / 3, main_color)
 			_fill_rect(img, Rect2i(half - 3, 4, 6, size / 3), light)
-		"food":
-			_fill_round_rect(img, Rect2i(6, 8, size - 12, size - 14), main_color, dark)
-			_fill_rect(img, Rect2i(8, 10, size - 16, 4), light)
 		"wood":
 			_fill_rect(img, Rect2i(5, 12, size - 10, 8), dark)
 			_fill_rect(img, Rect2i(7, 8, size - 14, 10), main_color)
@@ -46,10 +48,6 @@ static func _draw_item_icon(img: Image, item_id: String, size: int) -> void:
 			_fill_rect(img, Rect2i(9, size - 12, size - 18, 3), dark)
 			# 扳手形条
 			_fill_rect(img, Rect2i(half - 2, 5, 4, size - 10), light)
-		"medkit":
-			_fill_round_rect(img, Rect2i(5, 7, size - 10, size - 12), Color("#f2f4f8"), Color("#c8d0dc"))
-			_fill_rect(img, Rect2i(half - 2, 10, 4, size - 16), main_color)
-			_fill_rect(img, Rect2i(10, half - 2, size - 20, 4), main_color)
 		_:
 			_fill_circle(img, half, half, size / 3, main_color)
 

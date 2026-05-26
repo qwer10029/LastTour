@@ -150,7 +150,7 @@ text = "燃料: 0 / 0"
 text = "背包: 空"
 
 [node name="VitalsLabel" type="Label" parent="HUD/InfoPanel/MarginContainer/VBoxContainer"]
-text = "生命 100 | 饥饿 100 | 口渴 100"
+text = "体力 100 | 车辆燃料 999"
 
 [node name="BackpackButton" type="Button" parent="HUD/InfoPanel/MarginContainer/VBoxContainer"]
 text = "打开背包 (B)"

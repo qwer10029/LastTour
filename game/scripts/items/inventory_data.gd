@@ -11,15 +11,18 @@ func clear() -> void:
 func add(item_id: String, amount: int = 1) -> int:
 	if amount <= 0:
 		return 0
-	var def: Dictionary = ItemDefs.get_def(item_id)
+	var normalized := ItemDefs.normalize_item_id(item_id)
+	if normalized == "":
+		return 0
+	var def: Dictionary = ItemDefs.get_def(normalized)
 	if def.is_empty():
 		return 0
 	var max_stack := int(def.get("stack_max", 99))
-	var current := int(items.get(item_id, 0))
+	var current := int(items.get(normalized, 0))
 	var room := max_stack - current
 	var added := mini(amount, room)
 	if added > 0:
-		items[item_id] = current + added
+		items[normalized] = current + added
 	return added
 
 
@@ -74,7 +77,7 @@ func load_from_dictionary(data: Variant) -> void:
 		for key in data.keys():
 			var qty := int(data[key])
 			if qty > 0:
-				items[str(key)] = qty
+				add(str(key), qty)
 
 
 func apply_starting_items(starting: Dictionary) -> void:

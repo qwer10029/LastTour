@@ -1,102 +1,65 @@
 class_name PlayerSurvival
 extends RefCounted
 
-const HP_MAX := 100.0
-const HUNGER_MAX := 100.0
-const THIRST_MAX := 100.0
-## 低于此值才开始扣生命（饥饿 / 口渴）
-const CRITICAL_VITAL_THRESHOLD := 20.0
+const CONFIG_PATH := "res://data/survival_config.json"
 
-var hp: float = HP_MAX
-var hunger: float = HUNGER_MAX
-var thirst: float = THIRST_MAX
-## 昨夜布防失利（部分失守 / 失守 / 车辆被破）时为 true，成功守夜后清除
-var night_defense_wounded: bool = false
+static var STAMINA_MAX := 100.0
+static var STAMINA_DECAY_PER_SEC := 0.45
 
-var hunger_decay_per_sec: float = 0.35
-var thirst_decay_per_sec: float = 0.5
-var critical_hp_loss_per_sec: float = 1.2
-var night_wound_hp_loss_per_sec: float = 0.9
+var stamina: float = STAMINA_MAX
+
+
+static func _static_init() -> void:
+	if not FileAccess.file_exists(CONFIG_PATH):
+		return
+	var file := FileAccess.open(CONFIG_PATH, FileAccess.READ)
+	if file == null:
+		return
+	var parsed := JSON.parse_string(file.get_as_text())
+	file.close()
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return
+	var cfg: Dictionary = parsed
+	STAMINA_MAX = maxf(float(cfg.get("stamina_max", STAMINA_MAX)), 1.0)
+	STAMINA_DECAY_PER_SEC = maxf(float(cfg.get("stamina_decay_per_sec", STAMINA_DECAY_PER_SEC)), 0.0)
 
 
 func reset_for_new_run() -> void:
-	hp = HP_MAX
-	hunger = HUNGER_MAX
-	thirst = THIRST_MAX
-	night_defense_wounded = false
-
-
-func is_hunger_critical() -> bool:
-	return hunger < CRITICAL_VITAL_THRESHOLD
-
-
-func is_thirst_critical() -> bool:
-	return thirst < CRITICAL_VITAL_THRESHOLD
-
-
-func should_bleed_hp() -> bool:
-	return is_hunger_critical() or is_thirst_critical() or night_defense_wounded
+	stamina = STAMINA_MAX
 
 
 func tick(delta: float) -> void:
 	if delta <= 0.0:
 		return
-	hunger = maxf(hunger - hunger_decay_per_sec * delta, 0.0)
-	thirst = maxf(thirst - thirst_decay_per_sec * delta, 0.0)
-	if not should_bleed_hp():
-		return
-	var hp_loss := 0.0
-	if is_hunger_critical() or is_thirst_critical():
-		hp_loss += critical_hp_loss_per_sec * delta
-	if night_defense_wounded:
-		hp_loss += night_wound_hp_loss_per_sec * delta
-	hp = maxf(hp - hp_loss, 0.0)
+	stamina = maxf(stamina - STAMINA_DECAY_PER_SEC * delta, 0.0)
 
 
 func apply_night_defense_outcome(outcome: String) -> void:
-	match outcome:
-		"success":
-			night_defense_wounded = false
-		"partial", "fail", "vehicle_destroyed":
-			night_defense_wounded = true
-		_:
-			pass
+	# 保留接口以兼容现有调用，生命值倒计时已移除。
+	_ = outcome
 
 
 func is_alive() -> bool:
-	return hp > 0.0
+	return stamina > 0.0
 
 
-func eat_food(amount: float = -1.0) -> void:
+func use_supplies(amount: float = -1.0) -> void:
 	if amount < 0.0:
-		amount = float(ItemDefs.get_def("food").get("restore_hunger", 35.0))
-	hunger = minf(hunger + amount, HUNGER_MAX)
-
-
-func drink_water(amount: float = -1.0) -> void:
-	if amount < 0.0:
-		amount = float(ItemDefs.get_def("water").get("restore_thirst", 40.0))
-	thirst = minf(thirst + amount, THIRST_MAX)
-
-
-func use_medkit(amount: float = -1.0) -> void:
-	if amount < 0.0:
-		amount = float(ItemDefs.get_def("medkit").get("restore_hp", 45.0))
-	hp = minf(hp + amount, HP_MAX)
+		amount = float(ItemDefs.get_def("supplies").get("restore_stamina", 45.0))
+	stamina = minf(stamina + amount, STAMINA_MAX)
 
 
 func to_dictionary() -> Dictionary:
 	return {
-		"hp": hp,
-		"hunger": hunger,
-		"thirst": thirst,
-		"night_defense_wounded": night_defense_wounded,
+		"stamina": stamina,
 	}
 
 
 func load_from_dictionary(data: Variant) -> void:
 	if data is Dictionary:
-		hp = clampf(float(data.get("hp", HP_MAX)), 0.0, HP_MAX)
-		hunger = clampf(float(data.get("hunger", HUNGER_MAX)), 0.0, HUNGER_MAX)
-		thirst = clampf(float(data.get("thirst", THIRST_MAX)), 0.0, THIRST_MAX)
-		night_defense_wounded = bool(data.get("night_defense_wounded", false))
+		if data.has("stamina"):
+			stamina = clampf(float(data.get("stamina", STAMINA_MAX)), 0.0, STAMINA_MAX)
+			return
+		var hunger := clampf(float(data.get("hunger", STAMINA_MAX)), 0.0, STAMINA_MAX)
+		var thirst := clampf(float(data.get("thirst", STAMINA_MAX)), 0.0, STAMINA_MAX)
+		stamina = clampf((hunger + thirst) * 0.5, 0.0, STAMINA_MAX)
