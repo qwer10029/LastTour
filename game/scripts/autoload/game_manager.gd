@@ -9,13 +9,13 @@ const SCENE_DIFFICULTY := "res://scenes/menu/difficulty_select.tscn"
 const SCENE_SQUAD := "res://scenes/menu/squad_select.tscn"
 const SCENE_GAME := "res://scenes/main.tscn"
 
-var DIFFICULTY_NAMES := {
+var _difficulty_names := {
 	Difficulty.EASY: "简单",
 	Difficulty.NORMAL: "普通",
 	Difficulty.HARD: "困难",
 }
 
-var SQUAD_DEFS := {
+var _squad_defs := {
 	"scavenger": {
 		"name": "拾荒者",
 		"description": "开箱与拾取时更容易获得额外资源。",
@@ -57,14 +57,14 @@ func _load_run_config() -> void:
 	_run_config = cfg
 	var names: Dictionary = cfg.get("difficulty_names", {})
 	if not names.is_empty():
-		DIFFICULTY_NAMES = {
-			Difficulty.EASY: str(names.get("easy", DIFFICULTY_NAMES[Difficulty.EASY])),
-			Difficulty.NORMAL: str(names.get("normal", DIFFICULTY_NAMES[Difficulty.NORMAL])),
-			Difficulty.HARD: str(names.get("hard", DIFFICULTY_NAMES[Difficulty.HARD])),
+		_difficulty_names = {
+			Difficulty.EASY: str(names.get("easy", _difficulty_names[Difficulty.EASY])),
+			Difficulty.NORMAL: str(names.get("normal", _difficulty_names[Difficulty.NORMAL])),
+			Difficulty.HARD: str(names.get("hard", _difficulty_names[Difficulty.HARD])),
 		}
 	var squads: Dictionary = cfg.get("squads", {})
 	if not squads.is_empty():
-		SQUAD_DEFS = squads.duplicate(true)
+		_squad_defs = squads.duplicate(true)
 
 
 func go_to_main_menu() -> void:
@@ -110,18 +110,18 @@ func start_run() -> void:
 func get_difficulty_name(value: int = -1) -> String:
 	if value < 0:
 		value = difficulty
-	return DIFFICULTY_NAMES.get(value, "未知")
+	return _difficulty_names.get(value, "未知")
 
 
 func get_squad_name(id: String = "") -> String:
 	var key := id if id != "" else squad_id
-	var def: Dictionary = SQUAD_DEFS.get(key, {})
+	var def: Dictionary = _squad_defs.get(key, {})
 	return str(def.get("name", "未知分队"))
 
 
 func get_squad_description(id: String = "") -> String:
 	var key := id if id != "" else squad_id
-	var def: Dictionary = SQUAD_DEFS.get(key, {})
+	var def: Dictionary = _squad_defs.get(key, {})
 	return str(def.get("description", ""))
 
 
@@ -148,13 +148,13 @@ func get_elevator_repair_cost(base: int) -> int:
 			cost = maxi(cost - 1, 1)
 		Difficulty.HARD:
 			cost += 1
-	var squad_def: Dictionary = SQUAD_DEFS.get(squad_id, {})
+	var squad_def: Dictionary = _squad_defs.get(squad_id, {})
 	cost = maxi(cost - int(squad_def.get("repair_discount", 0)), 1)
 	return cost
 
 
 func get_starting_inventory() -> int:
-	var squad_def: Dictionary = SQUAD_DEFS.get(squad_id, {})
+	var squad_def: Dictionary = _squad_defs.get(squad_id, {})
 	return int(squad_def.get("inventory_bonus", 0))
 
 

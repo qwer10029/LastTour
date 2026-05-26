@@ -60,6 +60,6 @@ func load_from_dictionary(data: Variant) -> void:
 		if data.has("stamina"):
 			stamina = clampf(float(data.get("stamina", STAMINA_MAX)), 0.0, STAMINA_MAX)
 			return
-		var hunger := clampf(float(data.get("hunger", STAMINA_MAX)), 0.0, STAMINA_MAX)
-		var thirst := clampf(float(data.get("thirst", STAMINA_MAX)), 0.0, STAMINA_MAX)
+		var hunger := clampf(float(data.get("hunger", 100.0)), 0.0, 100.0)
+		var thirst := clampf(float(data.get("thirst", 100.0)), 0.0, 100.0)
 		stamina = clampf((hunger + thirst) * 0.5, 0.0, STAMINA_MAX)

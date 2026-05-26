@@ -109,6 +109,8 @@ static func _load_data() -> void:
 
 
 static func normalize_item_id(item_id: String) -> String:
+	if item_id.is_empty():
+		return ""
 	match item_id:
 		"food", "water":
 			return "supplies"
