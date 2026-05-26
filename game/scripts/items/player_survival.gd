@@ -10,8 +10,6 @@ var stamina: float = STAMINA_MAX
 
 
 static func _static_init() -> void:
-	if not FileAccess.file_exists(CONFIG_PATH):
-		return
 	var file := FileAccess.open(CONFIG_PATH, FileAccess.READ)
 	if file == null:
 		printerr("[PlayerSurvival] Failed to open config: %s" % CONFIG_PATH)

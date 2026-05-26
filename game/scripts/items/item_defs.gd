@@ -67,8 +67,6 @@ static func _load_data() -> void:
 		"default": ["wood", "parts", "supplies", "fuel"],
 	}
 
-	if not FileAccess.file_exists(DATA_PATH):
-		return
 	var file := FileAccess.open(DATA_PATH, FileAccess.READ)
 	if file == null:
 		printerr("[ItemDefs] Failed to open item defs: %s" % DATA_PATH)
@@ -95,8 +93,7 @@ static func _load_data() -> void:
 			var raw: Variant = loaded_items[item_id]
 			if typeof(raw) != TYPE_DICTIONARY:
 				continue
-			var normalized: Dictionary = raw
-			normalized = normalized.duplicate()
+			var normalized: Dictionary = raw.duplicate()
 			if normalized.has("color"):
 				normalized["color"] = Color(str(normalized.get("color", "#ffffff")))
 			_items[str(item_id)] = normalized

@@ -44,8 +44,6 @@ func _ready() -> void:
 
 
 func _load_run_config() -> void:
-	if not FileAccess.file_exists(RUN_CONFIG_PATH):
-		return
 	var file := FileAccess.open(RUN_CONFIG_PATH, FileAccess.READ)
 	if file == null:
 		push_warning("无法打开运行配置文件：%s，将使用默认配置。" % RUN_CONFIG_PATH)
