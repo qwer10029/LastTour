@@ -7,6 +7,7 @@ static var REPAIR_PARTS_EACH := 1
 static var REPAIR_SCRAP_EACH := 2
 static var REPAIR_WOOD_EACH := 2
 static var REPAIR_SCRAP_ALT_EACH := 1
+static var LOOT_FALLBACK_ITEM := "scrap"
 
 static var _items: Dictionary = {}
 static var _loot_by_building: Dictionary = {}
@@ -81,6 +82,9 @@ static func _load_data() -> void:
 	REPAIR_SCRAP_EACH = maxi(int(repair_costs.get("scrap_each", REPAIR_SCRAP_EACH)), 1)
 	REPAIR_WOOD_EACH = maxi(int(repair_costs.get("wood_each", REPAIR_WOOD_EACH)), 1)
 	REPAIR_SCRAP_ALT_EACH = maxi(int(repair_costs.get("scrap_alt_each", REPAIR_SCRAP_ALT_EACH)), 1)
+	LOOT_FALLBACK_ITEM = normalize_item_id(str(data.get("loot_fallback_item", LOOT_FALLBACK_ITEM)))
+	if LOOT_FALLBACK_ITEM == "" or get_def(LOOT_FALLBACK_ITEM).is_empty():
+		LOOT_FALLBACK_ITEM = "scrap"
 
 	var loaded_items: Dictionary = data.get("items", {})
 	if not loaded_items.is_empty():
@@ -199,5 +203,5 @@ static func pick_loot_for_building(building_type: String, rng: RandomNumberGener
 	if pool.is_empty():
 		pool = default_pool
 	if pool.is_empty():
-		return "scrap"
+		return LOOT_FALLBACK_ITEM
 	return str(pool[rng.randi_range(0, pool.size() - 1)])

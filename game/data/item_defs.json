@@ -1,4 +1,5 @@
 {
+	"loot_fallback_item": "scrap",
 	"repair_costs": {
 		"parts_each": 1,
 		"scrap_each": 2,
