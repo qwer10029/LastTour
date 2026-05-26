@@ -3,6 +3,7 @@ extends Node
 enum Difficulty { EASY, NORMAL, HARD }
 
 const SCENE_MAIN_MENU := "res://scenes/menu/main_menu.tscn"
+const SCENE_OPENING_PROLOGUE := "res://scenes/menu/opening_prologue.tscn"
 const SCENE_DIFFICULTY := "res://scenes/menu/difficulty_select.tscn"
 const SCENE_SQUAD := "res://scenes/menu/squad_select.tscn"
 const SCENE_GAME := "res://scenes/main.tscn"
@@ -61,6 +62,10 @@ func begin_new_game_flow() -> void:
 	_pending_new_game = true
 	difficulty = Difficulty.NORMAL
 	squad_id = "scavenger"
+	get_tree().change_scene_to_file(SCENE_OPENING_PROLOGUE)
+
+
+func go_to_difficulty_select() -> void:
 	get_tree().change_scene_to_file(SCENE_DIFFICULTY)
 
 

@@ -1,0 +1,85 @@
+[gd_scene load_steps=2 format=3 uid="uid://opening_prologue_scene"]
+
+[ext_resource type="Script" path="res://scripts/menu/opening_prologue.gd" id="1_script"]
+
+[node name="OpeningPrologue" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+
+[node name="BackgroundImage" type="TextureRect" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+expand_mode = 1
+stretch_mode = 6
+
+[node name="Vignette" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0, 0, 0, 0.15)
+
+[node name="NarrationBar" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -280.0
+grow_horizontal = 2
+grow_vertical = 0
+
+[node name="Margin" type="MarginContainer" parent="NarrationBar"]
+layout_mode = 2
+theme_override_constants/margin_left = 48
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 48
+theme_override_constants/margin_bottom = 20
+
+[node name="VBox" type="VBoxContainer" parent="NarrationBar/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="NarrationLabel" type="Label" parent="NarrationBar/Margin/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.847059, 0.894118, 0.941176, 1)
+theme_override_font_sizes/font_size = 22
+autowrap_mode = 3
+text = "旁白"
+
+[node name="Footer" type="HBoxContainer" parent="NarrationBar/Margin/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="PageLabel" type="Label" parent="NarrationBar/Margin/VBox/Footer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.560784, 0.639216, 0.721569, 1)
+text = "1 / 4"
+
+[node name="SkipButton" type="Button" parent="NarrationBar/Margin/VBox/Footer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(120, 44)
+layout_mode = 2
+text = "跳过"
+
+[node name="NextButton" type="Button" parent="NarrationBar/Margin/VBox/Footer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(160, 44)
+layout_mode = 2
+text = "下一段  ▶"
