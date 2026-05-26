@@ -75,18 +75,24 @@ func load_from_dictionary(data: Variant) -> void:
 	items.clear()
 	if data is Dictionary:
 		var normalized_totals: Dictionary = {}
+		var converted_legacy_count := 0
 		for key in data.keys():
 			var qty := int(data[key])
 			if qty <= 0:
 				continue
-			var normalized := ItemDefs.normalize_item_id(str(key))
+			var source_id := str(key)
+			var normalized := ItemDefs.normalize_item_id(source_id)
 			if normalized == "":
 				continue
 			if ItemDefs.get_def(normalized).is_empty():
 				continue
+			if normalized != source_id:
+				converted_legacy_count += qty
 			normalized_totals[normalized] = int(normalized_totals.get(normalized, 0)) + qty
 		for item_id in normalized_totals.keys():
 			items[str(item_id)] = int(normalized_totals[item_id])
+		if converted_legacy_count > 0:
+			print("[InventoryData] Converted %d legacy items into current item IDs while loading save." % converted_legacy_count)
 
 
 func apply_starting_items(starting: Dictionary) -> void:

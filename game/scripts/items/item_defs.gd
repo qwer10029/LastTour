@@ -71,10 +71,12 @@ static func _load_data() -> void:
 		return
 	var file := FileAccess.open(DATA_PATH, FileAccess.READ)
 	if file == null:
+		printerr("[ItemDefs] Failed to open item defs: %s" % DATA_PATH)
 		return
 	var parsed := JSON.parse_string(file.get_as_text())
 	file.close()
 	if typeof(parsed) != TYPE_DICTIONARY:
+		printerr("[ItemDefs] Invalid item defs JSON, using defaults: %s" % DATA_PATH)
 		return
 	var data: Dictionary = parsed
 	var repair_costs: Dictionary = data.get("repair_costs", {})

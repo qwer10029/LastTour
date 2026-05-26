@@ -14,10 +14,12 @@ static func _static_init() -> void:
 		return
 	var file := FileAccess.open(CONFIG_PATH, FileAccess.READ)
 	if file == null:
+		printerr("[PlayerSurvival] Failed to open config: %s" % CONFIG_PATH)
 		return
 	var parsed := JSON.parse_string(file.get_as_text())
 	file.close()
 	if typeof(parsed) != TYPE_DICTIONARY:
+		printerr("[PlayerSurvival] Invalid survival config JSON, using defaults: %s" % CONFIG_PATH)
 		return
 	var cfg: Dictionary = parsed
 	STAMINA_MAX = maxf(float(cfg.get("stamina_max", STAMINA_MAX)), 1.0)

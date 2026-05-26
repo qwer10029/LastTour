@@ -48,10 +48,12 @@ func _load_run_config() -> void:
 		return
 	var file := FileAccess.open(RUN_CONFIG_PATH, FileAccess.READ)
 	if file == null:
+		push_warning("无法打开运行配置文件：%s，将使用默认配置。" % RUN_CONFIG_PATH)
 		return
 	var parsed := JSON.parse_string(file.get_as_text())
 	file.close()
 	if typeof(parsed) != TYPE_DICTIONARY:
+		push_warning("运行配置 JSON 无效：%s，将使用默认配置。" % RUN_CONFIG_PATH)
 		return
 	var cfg: Dictionary = parsed
 	_run_config = cfg
