@@ -1,0 +1,57 @@
+{
+	"loot_fallback_item": "scrap",
+	"repair_costs": {
+		"parts_each": 1,
+		"scrap_each": 2,
+		"wood_each": 2,
+		"scrap_alt_each": 1
+	},
+	"items": {
+		"supplies": {
+			"name": "补给",
+			"desc": "可补充体力的综合补给包。",
+			"stack_max": 40,
+			"color": "#8ddf8a",
+			"usable": true,
+			"restore_stamina": 45.0
+		},
+		"fuel": {
+			"name": "燃料桶",
+			"desc": "为车辆补充燃料。",
+			"stack_max": 20,
+			"color": "#f4d03f",
+			"usable": true,
+			"restore_fuel": 140.0
+		},
+		"wood": {
+			"name": "木材",
+			"desc": "基础建材，可用于应急修补电梯。",
+			"stack_max": 30,
+			"color": "#a67c52",
+			"usable": false
+		},
+		"parts": {
+			"name": "零件",
+			"desc": "机械零件，修电梯的首选材料。",
+			"stack_max": 20,
+			"color": "#b0b8c8",
+			"usable": false
+		},
+		"scrap": {
+			"name": "废料",
+			"desc": "回收金属碎料，可应急代替零件修电梯。",
+			"stack_max": 40,
+			"color": "#8a9aa8",
+			"usable": false
+		}
+	},
+	"loot_by_building": {
+		"warehouse": ["wood", "parts", "scrap", "supplies", "fuel"],
+		"market": ["supplies", "fuel", "scrap"],
+		"garage": ["parts", "scrap", "wood", "fuel"],
+		"archive": ["scrap", "supplies", "fuel"],
+		"elevator": ["parts", "scrap"],
+		"hub": ["supplies", "fuel", "scrap"],
+		"default": ["wood", "parts", "supplies", "fuel"]
+	}
+}

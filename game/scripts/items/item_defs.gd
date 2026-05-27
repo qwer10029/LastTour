@@ -1,72 +1,131 @@
 class_name ItemDefs
 extends RefCounted
 
-const REPAIR_PARTS_EACH := 1
-const REPAIR_SCRAP_EACH := 2
-const REPAIR_WOOD_EACH := 2
-const REPAIR_SCRAP_ALT_EACH := 1
+const DATA_PATH := "res://data/item_defs.json"
 
-const ITEMS := {
-	"water": {
-		"name": "净水",
-		"desc": "饮用后恢复口渴度。",
-		"stack_max": 20,
-		"color": Color("#6ec8ff"),
-		"usable": true,
-		"restore_thirst": 40.0,
-	},
-	"food": {
-		"name": "干粮",
-		"desc": "食用后恢复饥饿度。",
-		"stack_max": 20,
-		"color": Color("#e8b86a"),
-		"usable": true,
-		"restore_hunger": 35.0,
-	},
-	"wood": {
-		"name": "木材",
-		"desc": "基础建材，可用于应急修补电梯。",
-		"stack_max": 30,
-		"color": Color("#a67c52"),
-		"usable": false,
-	},
-	"parts": {
-		"name": "零件",
-		"desc": "机械零件，修电梯的首选材料。",
-		"stack_max": 20,
-		"color": Color("#b0b8c8"),
-		"usable": false,
-	},
-	"scrap": {
-		"name": "废料",
-		"desc": "回收金属碎料，可应急代替零件修电梯。",
-		"stack_max": 40,
-		"color": Color("#8a9aa8"),
-		"usable": false,
-	},
-	"medkit": {
-		"name": "急救包",
-		"desc": "包扎伤口，恢复生命值。",
-		"stack_max": 10,
-		"color": Color("#ff6b7a"),
-		"usable": true,
-		"restore_hp": 45.0,
-	},
-}
+static var REPAIR_PARTS_EACH := 1
+static var REPAIR_SCRAP_EACH := 2
+static var REPAIR_WOOD_EACH := 2
+static var REPAIR_SCRAP_ALT_EACH := 1
+static var LOOT_FALLBACK_ITEM := "scrap"
 
-const LOOT_BY_BUILDING := {
-	"warehouse": ["wood", "parts", "scrap", "food", "water"],
-	"market": ["food", "water", "scrap"],
-	"garage": ["parts", "scrap", "wood"],
-	"archive": ["scrap", "medkit", "water"],
-	"elevator": ["parts", "scrap"],
-	"hub": ["food", "water", "scrap"],
-	"default": ["wood", "parts", "food", "water"],
-}
+static var _items: Dictionary = {}
+static var _loot_by_building: Dictionary = {}
+
+
+static func _static_init() -> void:
+	_load_data()
+
+
+static func _load_data() -> void:
+	_items = {
+		"supplies": {
+			"name": "补给",
+			"desc": "可补充体力的综合补给包。",
+			"stack_max": 40,
+			"color": Color("#8ddf8a"),
+			"usable": true,
+			"restore_stamina": 45.0,
+		},
+		"fuel": {
+			"name": "燃料桶",
+			"desc": "为车辆补充燃料。",
+			"stack_max": 20,
+			"color": Color("#f4d03f"),
+			"usable": true,
+			"restore_fuel": 140.0,
+		},
+		"wood": {
+			"name": "木材",
+			"desc": "基础建材，可用于应急修补电梯。",
+			"stack_max": 30,
+			"color": Color("#a67c52"),
+			"usable": false,
+		},
+		"parts": {
+			"name": "零件",
+			"desc": "机械零件，修电梯的首选材料。",
+			"stack_max": 20,
+			"color": Color("#b0b8c8"),
+			"usable": false,
+		},
+		"scrap": {
+			"name": "废料",
+			"desc": "回收金属碎料，可应急代替零件修电梯。",
+			"stack_max": 40,
+			"color": Color("#8a9aa8"),
+			"usable": false,
+		},
+	}
+	_loot_by_building = {
+		"warehouse": ["wood", "parts", "scrap", "supplies", "fuel"],
+		"market": ["supplies", "fuel", "scrap"],
+		"garage": ["parts", "scrap", "wood", "fuel"],
+		"archive": ["scrap", "supplies", "fuel"],
+		"elevator": ["parts", "scrap"],
+		"hub": ["supplies", "fuel", "scrap"],
+		"default": ["wood", "parts", "supplies", "fuel"],
+	}
+
+	var file := FileAccess.open(DATA_PATH, FileAccess.READ)
+	if file == null:
+		printerr("[ItemDefs] Failed to open item defs: %s" % DATA_PATH)
+		return
+	var parsed := JSON.parse_string(file.get_as_text())
+	file.close()
+	if typeof(parsed) != TYPE_DICTIONARY:
+		printerr("[ItemDefs] Invalid item defs JSON, using defaults: %s" % DATA_PATH)
+		return
+	var data: Dictionary = parsed
+	var repair_costs: Dictionary = data.get("repair_costs", {})
+	REPAIR_PARTS_EACH = maxi(int(repair_costs.get("parts_each", REPAIR_PARTS_EACH)), 1)
+	REPAIR_SCRAP_EACH = maxi(int(repair_costs.get("scrap_each", REPAIR_SCRAP_EACH)), 1)
+	REPAIR_WOOD_EACH = maxi(int(repair_costs.get("wood_each", REPAIR_WOOD_EACH)), 1)
+	REPAIR_SCRAP_ALT_EACH = maxi(int(repair_costs.get("scrap_alt_each", REPAIR_SCRAP_ALT_EACH)), 1)
+	LOOT_FALLBACK_ITEM = normalize_item_id(str(data.get("loot_fallback_item", LOOT_FALLBACK_ITEM)))
+	if LOOT_FALLBACK_ITEM == "" or get_def(LOOT_FALLBACK_ITEM).is_empty():
+		LOOT_FALLBACK_ITEM = "scrap"
+
+	var loaded_items: Dictionary = data.get("items", {})
+	if not loaded_items.is_empty():
+		_items.clear()
+		for item_id in loaded_items.keys():
+			var raw: Variant = loaded_items[item_id]
+			if typeof(raw) != TYPE_DICTIONARY:
+				continue
+			var normalized: Dictionary = raw.duplicate()
+			if normalized.has("color"):
+				normalized["color"] = Color(str(normalized.get("color", "#ffffff")))
+			_items[str(item_id)] = normalized
+
+	var loaded_loot: Dictionary = data.get("loot_by_building", {})
+	if not loaded_loot.is_empty():
+		_loot_by_building.clear()
+		for building_type in loaded_loot.keys():
+			var pool_raw: Variant = loaded_loot[building_type]
+			if typeof(pool_raw) != TYPE_ARRAY:
+				continue
+			var pool: Array[String] = []
+			for item in pool_raw:
+				pool.append(str(item))
+			_loot_by_building[str(building_type)] = pool
+
+
+static func normalize_item_id(item_id: String) -> String:
+	if item_id.is_empty():
+		return ""
+	match item_id:
+		"food", "water":
+			return "supplies"
+		"medkit":
+			return "supplies"
+		_:
+			return item_id
 
 
 static func get_def(item_id: String) -> Dictionary:
-	return ITEMS.get(item_id, {})
+	var normalized := normalize_item_id(item_id)
+	return _items.get(normalized, {})
 
 
 static func get_item_name(item_id: String) -> String:
@@ -81,22 +140,18 @@ static func get_detail_text(item_id: String, inventory: InventoryData = null) ->
 	var def: Dictionary = get_def(item_id)
 	if def.is_empty():
 		return item_id
+	var normalized := normalize_item_id(item_id)
 	var lines: PackedStringArray = []
-	lines.append(str(def.get("name", item_id)))
+	lines.append(str(def.get("name", normalized)))
 	lines.append(str(def.get("desc", "")))
 	lines.append("")
-	match item_id:
-		"water":
-			var amt := float(def.get("restore_thirst", 40.0))
-			lines.append("【使用效果】口渴 +%.0f（上限 100）" % amt)
-			lines.append("适合口渴低于 20 时使用。")
-		"food":
-			var amt_f := float(def.get("restore_hunger", 35.0))
-			lines.append("【使用效果】饥饿 +%.0f（上限 100）" % amt_f)
-			lines.append("适合饥饿低于 20 时使用。")
-		"medkit":
-			var amt_h := float(def.get("restore_hp", 45.0))
-			lines.append("【使用效果】生命 +%.0f（上限 100）" % amt_h)
+	match normalized:
+		"supplies":
+			var amt := float(def.get("restore_stamina", 45.0))
+			lines.append("【使用效果】体力 +%.0f（上限 100）" % amt)
+		"fuel":
+			var fuel_amt := float(def.get("restore_fuel", 140.0))
+			lines.append("【使用效果】车辆燃料 +%.0f" % fuel_amt)
 		"parts":
 			lines.append("【用途】修复电梯：每次进度消耗 零件×%d（优先）。" % REPAIR_PARTS_EACH)
 		"scrap":
@@ -106,7 +161,7 @@ static func get_detail_text(item_id: String, inventory: InventoryData = null) ->
 			lines.append("【用途】与废料组合修电梯：木材×%d + 废料×%d = 1 次进度。" % [REPAIR_WOOD_EACH, REPAIR_SCRAP_ALT_EACH])
 			lines.append("有零件时请优先用零件，不必消耗木材。")
 	if inventory != null:
-		var have := inventory.count(item_id)
+		var have := inventory.count(normalized)
 		lines.append("")
 		lines.append("背包持有：%d 个" % have)
 	return "\n".join(lines)
@@ -142,7 +197,10 @@ static func can_repair_with_inventory(inventory: InventoryData) -> bool:
 
 
 static func pick_loot_for_building(building_type: String, rng: RandomNumberGenerator) -> String:
-	var pool: Array = LOOT_BY_BUILDING.get(building_type, LOOT_BY_BUILDING["default"])
+	var default_pool: Array = _loot_by_building.get("default", [])
+	var pool: Array = _loot_by_building.get(building_type, default_pool)
 	if pool.is_empty():
-		pool = LOOT_BY_BUILDING["default"]
+		pool = default_pool
+	if pool.is_empty():
+		return LOOT_FALLBACK_ITEM
 	return str(pool[rng.randi_range(0, pool.size() - 1)])

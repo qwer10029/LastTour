@@ -11,15 +11,18 @@ func clear() -> void:
 func add(item_id: String, amount: int = 1) -> int:
 	if amount <= 0:
 		return 0
-	var def: Dictionary = ItemDefs.get_def(item_id)
+	var normalized := ItemDefs.normalize_item_id(item_id)
+	if normalized == "":
+		return 0
+	var def: Dictionary = ItemDefs.get_def(normalized)
 	if def.is_empty():
 		return 0
 	var max_stack := int(def.get("stack_max", 99))
-	var current := int(items.get(item_id, 0))
+	var current := int(items.get(normalized, 0))
 	var room := max_stack - current
 	var added := mini(amount, room)
 	if added > 0:
-		items[item_id] = current + added
+		items[normalized] = current + added
 	return added
 
 
@@ -71,10 +74,25 @@ func to_dictionary() -> Dictionary:
 func load_from_dictionary(data: Variant) -> void:
 	items.clear()
 	if data is Dictionary:
+		var normalized_totals: Dictionary = {}
+		var converted_legacy_count := 0
 		for key in data.keys():
 			var qty := int(data[key])
-			if qty > 0:
-				items[str(key)] = qty
+			if qty <= 0:
+				continue
+			var source_id := str(key)
+			var normalized := ItemDefs.normalize_item_id(source_id)
+			if normalized == "":
+				continue
+			if ItemDefs.get_def(normalized).is_empty():
+				continue
+			if normalized != source_id:
+				converted_legacy_count += qty
+			normalized_totals[normalized] = int(normalized_totals.get(normalized, 0)) + qty
+		for item_id in normalized_totals.keys():
+			items[str(item_id)] = int(normalized_totals[item_id])
+		if converted_legacy_count > 0:
+			print("[InventoryData] Converted %d legacy items into current item IDs while loading save." % converted_legacy_count)
 
 
 func apply_starting_items(starting: Dictionary) -> void:

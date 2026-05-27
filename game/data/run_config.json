@@ -1,0 +1,51 @@
+{
+	"difficulty_names": {
+		"easy": "简单",
+		"normal": "普通",
+		"hard": "困难"
+	},
+	"squads": {
+		"scavenger": {
+			"name": "拾荒者",
+			"description": "开箱与拾取时更容易获得额外资源。",
+			"inventory_bonus": 1,
+			"repair_discount": 0,
+			"fuel_multiplier": 1.0
+		},
+		"logistics": {
+			"name": "后勤型",
+			"description": "修复电梯时消耗的资源更少。",
+			"inventory_bonus": 0,
+			"repair_discount": 1,
+			"fuel_multiplier": 1.0
+		}
+	},
+	"starting_items": {
+		"default": {
+			"supplies": 4,
+			"wood": 1,
+			"parts": 1,
+			"scrap": 1
+		},
+		"squad_overrides": {
+			"logistics": {
+				"parts": 3,
+				"wood": 2,
+				"supplies": 3
+			},
+			"scavenger": {
+				"scrap": 3,
+				"supplies": 5
+			}
+		},
+		"difficulty_adjustments": {
+			"easy_add": {
+				"supplies": 1,
+				"fuel": 1
+			},
+			"hard_reduce": {
+				"supplies": 1
+			}
+		}
+	}
+}
