@@ -14,7 +14,7 @@ static func _static_init() -> void:
 	if file == null:
 		printerr("[PlayerSurvival] Failed to open config: %s" % CONFIG_PATH)
 		return
-	var parsed := JSON.parse_string(file.get_as_text())
+	var parsed: Variant = JSON.parse_string(file.get_as_text())
 	file.close()
 	if typeof(parsed) != TYPE_DICTIONARY:
 		printerr("[PlayerSurvival] Invalid survival config JSON, using defaults: %s" % CONFIG_PATH)
