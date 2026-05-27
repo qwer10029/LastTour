@@ -34,9 +34,9 @@ func tick(delta: float) -> void:
 	stamina = maxf(stamina - STAMINA_DECAY_PER_SEC * delta, 0.0)
 
 
-func apply_night_defense_outcome(outcome: String) -> void:
+func apply_night_defense_outcome(_outcome: String) -> void:
 	# 保留接口以兼容现有调用，生命值倒计时已移除。
-	_ = outcome
+	pass
 
 
 func is_alive() -> bool:

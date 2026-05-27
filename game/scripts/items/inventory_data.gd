@@ -29,19 +29,21 @@ func add(item_id: String, amount: int = 1) -> int:
 func remove(item_id: String, amount: int = 1) -> bool:
 	if amount <= 0:
 		return true
-	var current := int(items.get(item_id, 0))
+	var normalized := ItemDefs.normalize_item_id(item_id)
+	var current := int(items.get(normalized, 0))
 	if current < amount:
 		return false
 	current -= amount
 	if current <= 0:
-		items.erase(item_id)
+		items.erase(normalized)
 	else:
-		items[item_id] = current
+		items[normalized] = current
 	return true
 
 
 func count(item_id: String) -> int:
-	return int(items.get(item_id, 0))
+	var normalized := ItemDefs.normalize_item_id(item_id)
+	return int(items.get(normalized, 0))
 
 
 func has(item_id: String, amount: int = 1) -> bool:
