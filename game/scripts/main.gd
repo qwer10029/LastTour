@@ -17,6 +17,7 @@ enum TravelMode { DRIVE, FOOT }
 @export var drive_speed: float = 160.0
 @export var total_layers: int = 3
 @export var base_elevator_repair_cost: int = 3
+@export var war_fog_enabled: bool = true
 
 var _map: WorldMapData = WorldMapData.new()
 var _mode: int = TravelMode.DRIVE
@@ -60,6 +61,7 @@ var _game_paused := false
 var _pause_layer: CanvasLayer
 var _pause_panel: PanelContainer
 var _pause_confirm: ConfirmationDialog
+var _war_fog_checkbox: CheckBox
 
 @onready var time_system: TimeSystem = $Systems/TimeSystem
 @onready var night_defense: NightDefenseSystem = $Systems/NightDefenseSystem
@@ -132,6 +134,7 @@ func _start_new_run() -> void:
 	_spawn_resources()
 	if is_instance_valid(minimap_view):
 		minimap_view.set_world_map(_map)
+		minimap_view.set_war_fog_enabled(war_fog_enabled)
 	if _map.start_node_index >= 0:
 		_enter_node(_map.start_node_index, true)
 	if is_instance_valid(time_system):
@@ -141,7 +144,7 @@ func _ensure_input_actions() -> void:
 	for action_name in ["move_up", "move_down", "move_left", "move_right", "interact", "repair", "pause", "enter_defense_mode", "toggle_backpack"]:
 		if not InputMap.has_action(action_name):
 			InputMap.add_action(action_name)
-	# 步行：WASD；驾车/选路：方向键（↑北 ↓南 ←西 →东）
+	# 步行与驾车/选路均支持 WASD 与方向键（↑北 ↓南 ←西 →东）
 	_reset_action_keys("move_up")
 	_reset_action_keys("move_down")
 	_reset_action_keys("move_left")
@@ -376,9 +379,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if _segment_target_index >= 0:
 		return
-	if not (event is InputEventKey and event.pressed and not event.is_echo()):
+	if not event.is_pressed() or event.is_echo():
 		return
-	var direction := _direction_from_keycode(event.physical_keycode)
+	var direction := _direction_from_move_event(event)
 	if direction == "" or not _exit_options.has(direction):
 		return
 	_begin_drive_segment(_current_node_index, int(_exit_options[direction]))
@@ -459,28 +462,26 @@ func _take_back_at_node() -> void:
 		_begin_drive_segment(_current_node_index, back_index)
 
 
-func _direction_from_keycode(keycode: Key) -> String:
-	match keycode:
-		KEY_UP:
-			return "up"
-		KEY_DOWN:
-			return "down"
-		KEY_LEFT:
-			return "left"
-		KEY_RIGHT:
-			return "right"
-		_:
-			return ""
+func _direction_from_move_event(event: InputEvent) -> String:
+	if event.is_action_pressed("move_up"):
+		return "up"
+	if event.is_action_pressed("move_down"):
+		return "down"
+	if event.is_action_pressed("move_left"):
+		return "left"
+	if event.is_action_pressed("move_right"):
+		return "right"
+	return ""
 
 
 func _pressed_drive_direction() -> String:
-	if Input.is_physical_key_pressed(KEY_UP):
+	if Input.is_action_pressed("move_up"):
 		return "up"
-	if Input.is_physical_key_pressed(KEY_DOWN):
+	if Input.is_action_pressed("move_down"):
 		return "down"
-	if Input.is_physical_key_pressed(KEY_LEFT):
+	if Input.is_action_pressed("move_left"):
 		return "left"
-	if Input.is_physical_key_pressed(KEY_RIGHT):
+	if Input.is_action_pressed("move_right"):
 		return "right"
 	return ""
 
@@ -665,6 +666,19 @@ func _refresh_focus() -> void:
 	if is_instance_valid(minimap_view):
 		minimap_view.set_focus_position(_current_focus_position())
 
+func _map_cell_visible_for_player(index: int) -> bool:
+	if not war_fog_enabled:
+		return true
+	if not _map.is_valid_index(index):
+		return false
+	return bool(_map.get_cell(index)["explored"])
+
+func _on_war_fog_toggled(enabled: bool) -> void:
+	war_fog_enabled = enabled
+	if is_instance_valid(minimap_view):
+		minimap_view.set_war_fog_enabled(enabled)
+	queue_redraw()
+
 func _setup_pause_ui() -> void:
 	_pause_layer = CanvasLayer.new()
 	_pause_layer.layer = 120
@@ -682,7 +696,7 @@ func _setup_pause_ui() -> void:
 	_pause_panel.offset_left = -190.0
 	_pause_panel.offset_top = -150.0
 	_pause_panel.offset_right = 190.0
-	_pause_panel.offset_bottom = 150.0
+	_pause_panel.offset_bottom = 178.0
 	_pause_layer.add_child(_pause_panel)
 
 	var margin := MarginContainer.new()
@@ -705,6 +719,12 @@ func _setup_pause_ui() -> void:
 	hint.text = "Esc / P 继续"
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(hint)
+
+	_war_fog_checkbox = CheckBox.new()
+	_war_fog_checkbox.text = "战争黑雾（关闭可显示全图，便于调试）"
+	_war_fog_checkbox.button_pressed = war_fog_enabled
+	_war_fog_checkbox.toggled.connect(_on_war_fog_toggled)
+	box.add_child(_war_fog_checkbox)
 
 	var resume_btn := Button.new()
 	resume_btn.text = "继续游戏"
@@ -1314,6 +1334,7 @@ func _apply_save_data(data: Dictionary) -> void:
 	_refresh_resource_pickups()
 	if is_instance_valid(minimap_view):
 		minimap_view.set_world_map(_map)
+		minimap_view.set_war_fog_enabled(war_fog_enabled)
 
 	if _mode == TravelMode.FOOT:
 		_restore_foot_mode_from_save(data.get("foot", {}))
@@ -1788,13 +1809,13 @@ func _update_prompts() -> void:
 		if _segment_target_index >= 0:
 			var axis := _map.get_segment_axis(_segment_from_index, _segment_target_index)
 			if axis == "ns":
-				prompt_label.text = "南北路段：↑ 前进  ↓ 后退（←→ 无效）"
+				prompt_label.text = "南北路段：W/↑ 前进  S/↓ 后退（A/D、←→ 无效）"
 			elif axis == "ew":
-				prompt_label.text = "东西路段：→ 前进  ← 后退（↑↓ 无效）"
+				prompt_label.text = "东西路段：D/→ 前进  A/← 后退（W/S、↑↓ 无效）"
 			else:
-				prompt_label.text = "沿当前路段用方向键前进/后退"
+				prompt_label.text = "沿当前路段用 WASD 或方向键前进/后退"
 		else:
-			prompt_label.text = "查看地图，在岔口用方向键选路（↑北 ↓南 ←西 →东）"
+			prompt_label.text = "查看地图，在岔口选路（WASD 或方向键：↑北 ↓南 ←西 →东）"
 
 func _halt_prompt_text() -> String:
 	var parts: PackedStringArray = []
@@ -1802,7 +1823,7 @@ func _halt_prompt_text() -> String:
 		if _exit_options.has(direction):
 			parts.append(_direction_label(direction))
 	var exits := "、".join(parts) if not parts.is_empty() else "无"
-	return "岔口选路（方向键，与地图一致）：%s" % exits
+	return "岔口选路（WASD/方向键，与地图一致）：%s" % exits
 
 func _exit_directions_array() -> Array[String]:
 	var result: Array[String] = []
@@ -2021,9 +2042,9 @@ func _draw_drive_background() -> void:
 
 	var axis := _map.get_segment_axis(_segment_from_index, _segment_target_index)
 	if axis == "ns":
-		draw_string(ThemeDB.fallback_font, Vector2(left + 16.0, top + 16.0), "南北路段：↑ 前进  ↓ 后退", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#9ec9ff"))
+		draw_string(ThemeDB.fallback_font, Vector2(left + 16.0, top + 16.0), "南北路段：W/↑ 前进  S/↓ 后退", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#9ec9ff"))
 	elif axis == "ew":
-		draw_string(ThemeDB.fallback_font, Vector2(left + 16.0, top + 16.0), "东西路段：→ 前进  ← 后退", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#f0d080"))
+		draw_string(ThemeDB.fallback_font, Vector2(left + 16.0, top + 16.0), "东西路段：D/→ 前进  A/← 后退", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#f0d080"))
 
 func _drive_view_anchor() -> Vector2:
 	if _segment_target_index >= 0 and _map.is_valid_index(_segment_from_index) and _map.is_valid_index(_segment_target_index):
@@ -2050,38 +2071,57 @@ func _draw_world_map_background() -> void:
 			continue
 		var rect := _map.cell_rect(index)
 		var screen_rect := xform * rect
+		if not _map_cell_visible_for_player(index):
+			draw_rect(screen_rect, Color("#000000"), true)
+			continue
 		var explored := bool(cell["explored"])
 		var kind := str(cell["kind"])
 		var fill := Color("#1a2430")
-		match kind:
-			"district":
-				fill = Color("#587349") if explored else Color("#314233")
-			"hub":
-				fill = Color("#4f6673") if explored else Color("#2b3943")
-			"junction":
-				fill = Color("#465f73") if explored else Color("#273441")
-			_:
-				fill = Color("#29313c")
+		if war_fog_enabled:
+			match kind:
+				"district":
+					fill = Color("#587349")
+				"hub":
+					fill = Color("#4f6673")
+				"junction":
+					fill = Color("#465f73")
+				_:
+					fill = Color("#29313c")
+		else:
+			match kind:
+				"district":
+					fill = Color("#587349") if explored else Color("#314233")
+				"hub":
+					fill = Color("#4f6673") if explored else Color("#2b3943")
+				"junction":
+					fill = Color("#465f73") if explored else Color("#273441")
+				_:
+					fill = Color("#29313c")
 		draw_rect(screen_rect, fill, true)
-		draw_rect(screen_rect, Color("#9ec9ff") if explored else Color("#35485a"), false, 2.0)
+		var border_bright := explored or not war_fog_enabled
+		draw_rect(screen_rect, Color("#9ec9ff") if border_bright else Color("#35485a"), false, 2.0)
 		if kind == "junction":
 			var junction_center := screen_rect.position + screen_rect.size * 0.5
-			draw_circle(junction_center, 10.0, Color("#f0c168") if explored else Color(0.95, 0.78, 0.43, 0.65))
+			draw_circle(junction_center, 10.0, Color("#f0c168"))
 			draw_string(ThemeDB.fallback_font, junction_center + Vector2(-8, -18), "路口", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#f6e7b0"))
 
 	for index in range(_map.cells.size()):
 		var cell := _map.get_cell(index)
 		if str(cell["kind"]) == "empty":
 			continue
+		if not _map_cell_visible_for_player(index):
+			continue
 		var center := xform * _map.cell_center(index)
 		for direction in _map.get_available_directions(index):
 			var other := _map.get_neighbor_index(index, direction)
 			if other < 0 or other < index:
 				continue
+			if not _map_cell_visible_for_player(other):
+				continue
 			var other_center := xform * _map.cell_center(other)
 			var is_ns := direction == "up" or direction == "down"
 			var road_color := Color("#6eb5e8") if is_ns else Color("#e8c66e")
-			if not bool(cell["explored"]) or not bool(_map.get_cell(other)["explored"]):
+			if not war_fog_enabled and (not bool(cell["explored"]) or not bool(_map.get_cell(other)["explored"])):
 				road_color = Color(road_color.r, road_color.g, road_color.b, 0.28)
 			draw_line(center, other_center, road_color, 8.0 if is_ns else 6.0)
 			draw_line(center, other_center, Color(0.0, 0.0, 0.0, 0.18), 2.0)
@@ -2192,6 +2232,7 @@ func _advance_layer() -> void:
 		_player.set_active(false)
 	if is_instance_valid(minimap_view):
 		minimap_view.set_world_map(_map)
+		minimap_view.set_war_fog_enabled(war_fog_enabled)
 	_spawn_resources()
 	if _map.start_node_index >= 0:
 		_enter_node(_map.start_node_index, true)

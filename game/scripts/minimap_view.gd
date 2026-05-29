@@ -6,9 +6,14 @@ var focus_position: Vector2 = Vector2.ZERO
 var focus_node_index: int = -1
 var exit_hint_directions: Array[String] = []
 var active_segment_axis: String = ""
+var war_fog_enabled: bool = true
 
 func set_world_map(map_data: WorldMapData) -> void:
 	world_map = map_data
+	queue_redraw()
+
+func set_war_fog_enabled(enabled: bool) -> void:
+	war_fog_enabled = enabled
 	queue_redraw()
 
 func set_focus_position(position: Vector2) -> void:
@@ -72,6 +77,13 @@ func _draw_exit_hint_arrows(node_index: int) -> void:
 		draw_line(tail, tip, Color("#7dffb2"), 3.0)
 		draw_circle(tip, 2.5, Color("#ffffff"))
 
+func _cell_visible(index: int) -> bool:
+	if not war_fog_enabled:
+		return true
+	if world_map == null or not world_map.is_valid_index(index):
+		return false
+	return bool(world_map.get_cell(index)["explored"])
+
 func _draw() -> void:
 	if world_map == null or world_map.columns <= 0 or world_map.rows <= 0:
 		draw_rect(Rect2(Vector2.ZERO, size), Color("#090d12"), true)
@@ -88,10 +100,13 @@ func _draw() -> void:
 		var cell_rect := Rect2(Vector2(coord.x * cell_width, coord.y * cell_height), Vector2(cell_width, cell_height))
 		if cell.is_empty():
 			continue
+		if not _cell_visible(index):
+			draw_rect(cell_rect, Color("#000000"), true)
+			continue
 		var explored := bool(cell["explored"])
 		var kind := str(cell["kind"])
 		var fill := Color("#121820")
-		if explored:
+		if explored or not war_fog_enabled:
 			match kind:
 				"district":
 					fill = Color("#647b50")
@@ -101,14 +116,17 @@ func _draw() -> void:
 					fill = Color("#51697d")
 				_:
 					fill = Color("#36424d")
-		elif kind != "empty":
+		else:
 			fill = Color("#151b24")
 		draw_rect(cell_rect, fill, true)
-		draw_rect(cell_rect, Color("#243040") if explored else Color("#141a22"), false, 1.0)
+		var border_bright := explored or not war_fog_enabled
+		draw_rect(cell_rect, Color("#243040") if border_bright else Color("#141a22"), false, 1.0)
 
 		for direction in world_map.get_available_directions(index):
 			var other := world_map.get_neighbor_index(index, direction)
 			if other < 0 or other < index:
+				continue
+			if not _cell_visible(other):
 				continue
 			var other_coord := world_map.coord_from_index(other)
 			var other_center := Vector2(
@@ -121,18 +139,19 @@ func _draw() -> void:
 			)
 			var is_ns := direction == "up" or direction == "down"
 			var road_color := Color("#6eb5e8") if is_ns else Color("#e8c66e")
-			if not explored:
+			if not war_fog_enabled and not explored:
 				road_color = road_color.darkened(0.55)
 			draw_line(center, other_center, road_color, 3.0 if is_ns else 2.0)
 
-		if explored and int(cell["resource_remaining"]) > 0:
+		if (explored or not war_fog_enabled) and int(cell["resource_remaining"]) > 0:
 			draw_circle(cell_rect.position + cell_rect.size * 0.5, 3.0, Color("#f3d34a"))
 
 		if kind == "district":
 			var building_rect := cell_rect.grow(-cell_width * 0.22)
-			draw_rect(building_rect, Color("#9e8564") if explored else Color("#2a2f36"), true)
+			var building_bright := explored or not war_fog_enabled
+			draw_rect(building_rect, Color("#9e8564") if building_bright else Color("#2a2f36"), true)
 			if bool(cell["has_elevator"]):
-				draw_rect(building_rect.grow(-cell_width * 0.18), Color("#6ed08b") if explored else Color("#1a2a22"), false, 2.0)
+				draw_rect(building_rect.grow(-cell_width * 0.18), Color("#6ed08b") if building_bright else Color("#1a2a22"), false, 2.0)
 
 	if world_map.is_valid_index(focus_node_index):
 		var focus_rect := Rect2(
