@@ -187,6 +187,26 @@
 					"route_id": "route_e_line",
 					"spawn_point": "E9",
 					"alternate_routes": ["route_e_line_b", "route_e_line_c"]
+				},
+				{
+					"enemy": "armored",
+					"count": 2,
+					"spawn_interval": 3.5,
+					"pre_delay": 18.0,
+					"move_speed": 30,
+					"route_id": "route_d_rush",
+					"spawn_point": "D8",
+					"alternate_routes": ["route_d_rush_b"]
+				},
+				{
+					"enemy": "saboteur",
+					"count": 3,
+					"spawn_interval": 1.2,
+					"pre_delay": 22.0,
+					"move_speed": 64,
+					"route_id": "route_f_line",
+					"spawn_point": "F8",
+					"alternate_routes": ["route_f_line_b", "route_f_line_c"]
 				}
 			]
 		}

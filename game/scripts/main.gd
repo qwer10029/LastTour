@@ -57,6 +57,7 @@ var _run_squad_name: String = "拾荒者"
 var _saved_travel_mode: int = TravelMode.DRIVE
 var _evening_tint: float = 0.0
 var _last_night_losses: Array[String] = []
+var _last_night_salvage: String = ""
 var _game_paused := false
 var _pause_layer: CanvasLayer
 var _pause_panel: PanelContainer
@@ -1160,6 +1161,8 @@ func _build_run_summary_text() -> String:
 	lines.append("地图探索: %d / %d 格" % [_map.explored_count(), _map.cells.size()])
 	if not _last_night_losses.is_empty():
 		lines.append("夜间物资损耗: %s" % "、".join(_last_night_losses))
+	if _last_night_salvage != "":
+		lines.append(_last_night_salvage)
 	if _run_end_reason == "vehicle_destroyed":
 		lines.append("")
 		lines.append("车辆在夜间防线崩溃后失去作战能力。")
@@ -1398,7 +1401,7 @@ func _restore_time_phase_after_load() -> void:
 			_force_return_to_vehicle_for_night()
 			if is_instance_valid(night_defense):
 				night_defense.start_td_session(
-					_backpack.total_count(), GameManager.difficulty, time_system.day_index, true, _vehicle_hp, _vehicle_hp_max
+					_backpack.total_count(), GameManager.difficulty, time_system.day_index, true, _vehicle_hp, _vehicle_hp_max, _backpack
 				)
 			time_system.pause()
 		TimeSystem.Phase.NIGHT_RESOLVE:
@@ -1497,7 +1500,7 @@ func _on_night_setup_started(day_index: int, manual_setup: bool) -> void:
 		evening_notice.hide_notice()
 	if is_instance_valid(night_defense):
 		night_defense.start_td_session(
-			_backpack.total_count(), GameManager.difficulty, day_index, manual_setup, _vehicle_hp, _vehicle_hp_max
+			_backpack.total_count(), GameManager.difficulty, day_index, manual_setup, _vehicle_hp, _vehicle_hp_max, _backpack
 		)
 	_refresh_ui()
 
@@ -1547,9 +1550,36 @@ func _apply_night_result(result: Dictionary) -> void:
 	var outcome: String = str(result.get("outcome", "success"))
 	if outcome == "vehicle_destroyed":
 		severity = "total"
-	var inv_loss: int = int(result.get("inventory_loss", 0))
-	if severity != "none" or inv_loss > 0:
-		_remove_backpack_items_for_night(inv_loss, severity)
+	var breach_losses: Variant = result.get("breach_losses", {})
+	var breach_total: int = int(result.get("breach_total", 0))
+	if breach_total > 0 and breach_losses is Dictionary:
+		# TD 已在夜里实时拖走物资；这里只记录明细用于汇报，不再二次扣除。
+		for item_id: String in (breach_losses as Dictionary).keys():
+			var n := int((breach_losses as Dictionary)[item_id])
+			if n > 0:
+				_last_night_losses.append("%s×%d" % [ItemDefs.get_item_name(str(item_id)), n])
+	else:
+		var inv_loss: int = int(result.get("inventory_loss", 0))
+		if severity != "none" or inv_loss > 0:
+			_remove_backpack_items_for_night(inv_loss, severity)
+	# 夜末回收入袋（P6.3）：幸存塔退还、残骸废料、敌人掉落。
+	_apply_night_salvage(result.get("salvage", {}))
+
+
+## 把夜末结算的回收物资加入背包，并记录用于结算文本。
+func _apply_night_salvage(salvage: Variant) -> void:
+	if not (salvage is Dictionary) or (salvage as Dictionary).is_empty():
+		return
+	var added: Array[String] = []
+	for item_id: String in (salvage as Dictionary).keys():
+		var amount := int((salvage as Dictionary)[item_id])
+		if amount <= 0:
+			continue
+		var got := _backpack.add(str(item_id), amount)
+		if got > 0:
+			added.append("%s×%d" % [ItemDefs.get_item_name(str(item_id)), got])
+	if not added.is_empty():
+		_last_night_salvage = "夜末回收：" + "、".join(added)
 
 
 func _remove_backpack_items_for_night(loss_count: int, severity: String) -> void:

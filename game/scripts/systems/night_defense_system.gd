@@ -22,11 +22,12 @@ func start_td_session(
 	allow_placement: bool = true,
 	vehicle_hp: float = -1.0,
 	vehicle_hp_max: float = -1.0,
+	backpack: InventoryData = null,
 ) -> void:
 	if _td == null:
 		return
 	_last_result = {}
-	_td.start_session(inventory, difficulty, day_index, allow_placement, vehicle_hp, vehicle_hp_max)
+	_td.start_session(inventory, difficulty, day_index, allow_placement, vehicle_hp, vehicle_hp_max, backpack)
 
 
 func hide_td_session() -> void:

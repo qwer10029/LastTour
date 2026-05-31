@@ -1,0 +1,81 @@
+{
+	"enemies": {
+		"drone": {
+			"name": "巡逻无人机",
+			"hp": 28.0,
+			"speed": 58.0,
+			"base_damage": 6.0,
+			"color": "#9ec9ff",
+			"radius": 14.0,
+			"armor": 0.0,
+			"hack_resist": 1.0,
+			"is_shepherd": false
+		},
+		"scout": {
+			"name": "回收侦察机",
+			"hp": 52.0,
+			"speed": 42.0,
+			"base_damage": 10.0,
+			"color": "#ff7b6b",
+			"radius": 16.0,
+			"armor": 0.0,
+			"hack_resist": 1.0,
+			"is_shepherd": false
+		},
+		"swarm": {
+			"name": "集群微型机",
+			"hp": 14.0,
+			"speed": 72.0,
+			"base_damage": 4.0,
+			"color": "#b8e86a",
+			"radius": 10.0,
+			"armor": 0.0,
+			"hack_resist": 1.0,
+			"is_shepherd": false
+		},
+		"heavy": {
+			"name": "重装破障机",
+			"hp": 120.0,
+			"speed": 32.0,
+			"base_damage": 18.0,
+			"color": "#c97bff",
+			"radius": 20.0,
+			"armor": 0.0,
+			"hack_resist": 1.0,
+			"is_shepherd": false
+		},
+		"shepherd": {
+			"name": "牧羊者指挥机",
+			"hp": 90.0,
+			"speed": 38.0,
+			"base_damage": 8.0,
+			"color": "#ffd24a",
+			"radius": 18.0,
+			"armor": 0.0,
+			"hack_resist": 2.2,
+			"is_shepherd": true
+		},
+		"armored": {
+			"name": "装甲清道机",
+			"hp": 80.0,
+			"speed": 30.0,
+			"base_damage": 14.0,
+			"color": "#b0b0c0",
+			"radius": 18.0,
+			"armor": 0.4,
+			"hack_resist": 1.4,
+			"is_shepherd": false
+		},
+		"saboteur": {
+			"name": "破障突击机",
+			"hp": 40.0,
+			"speed": 64.0,
+			"base_damage": 16.0,
+			"color": "#ff9a3c",
+			"radius": 14.0,
+			"armor": 0.0,
+			"hack_resist": 1.0,
+			"is_shepherd": false
+		}
+	}
+}

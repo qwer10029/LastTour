@@ -3,16 +3,18 @@ class_name NightTdField
 
 signal cell_clicked(cell: Vector2i)
 signal cell_right_clicked(cell: Vector2i)
+signal cell_combat_clicked(cell: Vector2i)
 
-@export var grid_cols: int = 14
-@export var grid_rows: int = 10
+@export var grid_cols: int = 28
+@export var grid_rows: int = 18
 @export var tile_size: int = 48
 @export var field_origin: Vector2 = Vector2(120, 70)
 @export var top_reserved_px: float = 112.0
 @export var right_reserved_px: float = 176.0
 @export var outer_margin_px: float = 24.0
 
-var vehicle_cells: Array[Vector2i] = [Vector2i(6, 7), Vector2i(7, 7), Vector2i(6, 8), Vector2i(7, 8)]
+# 基地居中（敌人从四面边缘涌入）。
+var vehicle_cells: Array[Vector2i] = [Vector2i(13, 8), Vector2i(14, 8), Vector2i(13, 9), Vector2i(14, 9)]
 var base_local_pos: Vector2 = Vector2.ZERO
 var _layout_tile_size: float = 48.0
 var _controller: NightTdController
@@ -49,7 +51,7 @@ func _reflow_layout() -> void:
 		(play_rect.size.x - outer_margin_px * 2.0) / float(grid_cols),
 		(play_rect.size.y - outer_margin_px * 2.0) / float(grid_rows)
 	))
-	_layout_tile_size = clampf(fitted_tile, 44.0, 56.0)
+	_layout_tile_size = clampf(fitted_tile, 22.0, 56.0)
 	var vehicle_offset := _vehicle_center_offset()
 	var target_center := view_size * Vector2(0.5, 0.54)
 	field_origin = target_center - vehicle_offset * _layout_tile_size
@@ -117,7 +119,8 @@ func is_vehicle_cell(cell: Vector2i) -> bool:
 
 
 func is_spawn_lane(cell: Vector2i) -> bool:
-	return cell.y <= 1
+	# 四面边缘的最外两格为敌人涌入带。
+	return cell.x <= 1 or cell.y <= 1 or cell.x >= grid_cols - 2 or cell.y >= grid_rows - 2
 
 
 func can_place_tower(cell: Vector2i, occupied: Dictionary) -> bool:
@@ -131,19 +134,26 @@ func can_place_tower(cell: Vector2i, occupied: Dictionary) -> bool:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if _controller == null or _controller.phase != NightTdController.Phase.PLACE:
+	if _controller == null:
 		return
 	if _is_pointer_over_ui():
 		return
-	if event is InputEventMouseButton and event.pressed:
-		var cell := world_to_cell(get_global_mouse_position())
-		if not is_inside_grid(cell):
-			return
+	if not (event is InputEventMouseButton and event.pressed):
+		return
+	var cell := world_to_cell(get_global_mouse_position())
+	if not is_inside_grid(cell):
+		return
+	if _controller.phase == NightTdController.Phase.PLACE:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			cell_clicked.emit(cell)
 			get_viewport().set_input_as_handled()
 		elif event.button_index == MOUSE_BUTTON_RIGHT:
 			cell_right_clicked.emit(cell)
+			get_viewport().set_input_as_handled()
+	elif _controller.phase == NightTdController.Phase.COMBAT:
+		# 战斗中左键点选设施（功率调度 / 黑入指派）。
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			cell_combat_clicked.emit(cell)
 			get_viewport().set_input_as_handled()
 
 
@@ -178,11 +188,12 @@ func _draw() -> void:
 		draw_line(Vector2(field_origin.x, py), Vector2(field_origin.x + grid_cols * _layout_tile_size, py), line_color, 1.5)
 
 	for x in range(grid_cols):
-		for y in range(2):
+		for y in range(grid_rows):
+			if not is_spawn_lane(Vector2i(x, y)):
+				continue
 			var r := Rect2(field_origin + Vector2(x * _layout_tile_size, y * _layout_tile_size), Vector2(_layout_tile_size, _layout_tile_size))
 			draw_rect(r, spawn_color, true)
 			draw_rect(r.grow(-4.0), Color(1.0, 0.9, 0.9, 0.35), false, 1.0)
-			draw_string(ThemeDB.fallback_font, r.position + Vector2(8, 20), "敌", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#fff4f4"))
 
 	for x in range(grid_cols):
 		for y in range(grid_rows):
@@ -192,7 +203,7 @@ func _draw() -> void:
 			var checker := 0.10 if (x + y) % 2 == 0 else 0.18
 			draw_rect(build_rect, Color(0.14, 0.52, 0.28, checker), true)
 			draw_rect(build_rect, buildable_border, false, 1.0)
-			if y == 0 or y == 1:
+			if is_spawn_lane(Vector2i(x, y)):
 				draw_rect(build_rect, Color(0.82, 0.26, 0.26, 0.08), true)
 
 	for cell in vehicle_cells:
@@ -212,9 +223,10 @@ func _draw() -> void:
 		if (
 			_controller.show_route_overlay
 			and _controller.debug_draw_routes
-			and _controller.wave_plan != null
+			and _controller._flow != null
+			and _controller._flow.cols > 0
 		):
-			_draw_wave_design_overlay()
+			_draw_flow_overlay()
 		_draw_placed_towers()
 		_draw_combat_entities()
 		_draw_placement_preview()
@@ -230,83 +242,54 @@ func _draw_arrow_head(tip: Vector2, direction: Vector2, size: float, color: Colo
 	draw_colored_polygon(PackedVector2Array([tip, base + wing, base - wing]), color)
 
 
-func _draw_wave_design_overlay() -> void:
-	var plan: NightTdWavePlan = _controller.wave_plan
-	if plan == null:
+func _draw_flow_overlay() -> void:
+	# Draw a cyan gradient-arrow overlay showing the flow-field direction for each reachable cell.
+	# Replaces the old red route-line overlay; routes in the wave plan are now unused for pathing.
+	var ff: NightTdFlowField = _controller._flow
+	if ff == null or ff.cols == 0:
 		return
-	var route_color := Color(0.95, 0.28, 0.28, 0.75)
-	var arrow_color := Color(1.0, 0.55, 0.35, 0.95)
-	var spawn_color := Color(0.95, 0.2, 0.2, 0.9)
-	var standby_color := Color(1.0, 0.55, 0.2, 0.85)
 	draw_string(
 		ThemeDB.fallback_font,
 		field_origin + Vector2(8, -28),
-		"敌人行进方向 →",
+		"流场方向 →",
 		HORIZONTAL_ALIGNMENT_LEFT,
 		-1,
 		12,
-		Color("#ffc9a8"),
+		Color(0.55, 0.85, 0.95, 0.75),
 	)
-	for route_id in plan.routes.keys():
-		var waypoints := plan.get_route_waypoints(str(route_id))
-		var prev: Vector2 = Vector2.ZERO
-		var has_prev := false
-		for idx in range(waypoints.size()):
-			var wp: Dictionary = waypoints[idx]
-			var cell: Vector2i = wp["cell"]
-			if not is_inside_grid(cell):
+	var arrow_len := _layout_tile_size * 0.3
+	# Integration value range for brightness tinting: sample a rough max from corners.
+	var int_max := maxf(
+		ff.integration_at(Vector2i(0, 0)),
+		maxf(
+			ff.integration_at(Vector2i(ff.cols - 1, 0)),
+			maxf(
+				ff.integration_at(Vector2i(0, ff.rows - 1)),
+				ff.integration_at(Vector2i(ff.cols - 1, ff.rows - 1))
+			)
+		)
+	)
+	if int_max >= NightTdFlowField.INF:
+		int_max = float(ff.cols + ff.rows)  # fallback scale
+	int_max = maxf(int_max, 1.0)
+	for y in range(ff.rows):
+		for x in range(ff.cols):
+			var cell := Vector2i(x, y)
+			if is_vehicle_cell(cell):
 				continue
-			var local_pos := _cell_to_local(cell)
-			var standby := float(wp.get("standby_sec", 0.0))
-			if has_prev:
-				draw_line(prev, local_pos, route_color, 3.0)
-				var seg := local_pos - prev
-				if seg.length_squared() > 4.0:
-					var mid := prev + seg * 0.55
-					_draw_arrow_head(mid + seg.normalized() * 10.0, seg, 14.0, arrow_color)
-			prev = local_pos
-			has_prev = true
-			if standby > 0.0:
-				draw_circle(local_pos, 10.0, standby_color)
-				draw_string(
-					ThemeDB.fallback_font,
-					local_pos + Vector2(-16, -14),
-					"%.0fs" % standby,
-					HORIZONTAL_ALIGNMENT_LEFT,
-					-1,
-					10,
-					Color("#ffe8c8"),
-				)
-			draw_string(
-				ThemeDB.fallback_font,
-				local_pos + Vector2(-10, 6),
-				NightTdWavePlan.cell_label(cell),
-				HORIZONTAL_ALIGNMENT_LEFT,
-				-1,
-				9,
-				Color("#ffd0d0"),
-			)
-	for sp_id in plan.spawn_points.keys():
-		for label in plan.spawn_points[sp_id]:
-			var cell := NightTdWavePlan.parse_cell_label(str(label))
-			if not is_inside_grid(cell):
+			if not ff.is_reachable(cell):
 				continue
-			var local_pos := _cell_to_local(cell)
-			draw_rect(
-				Rect2(local_pos.x - 12, local_pos.y - 12, 24, 24),
-				spawn_color,
-				false,
-				2.5,
-			)
-			draw_string(
-				ThemeDB.fallback_font,
-				local_pos + Vector2(-14, -18),
-				str(label),
-				HORIZONTAL_ALIGNMENT_LEFT,
-				-1,
-				10,
-				Color("#ffcccc"),
-			)
+			var dir := ff.sample_dir(cell)
+			if dir.length_squared() < 0.0001:
+				continue
+			var center := _cell_to_local(cell)
+			# Tint: cells closer to base (lower integration) are slightly brighter.
+			var t := clampf(ff.integration_at(cell) / int_max, 0.0, 1.0)
+			var alpha := lerpf(0.72, 0.32, t)  # near=bright, far=dim
+			var color := Color(0.55, 0.85, 0.95, alpha)
+			var tip := center + dir * arrow_len
+			draw_line(center - dir * arrow_len * 0.4, tip, color, 1.5)
+			_draw_arrow_head(tip, dir, arrow_len * 0.55, color)
 
 
 func _draw_combat_entities() -> void:
@@ -318,26 +301,28 @@ func _draw_combat_entities() -> void:
 		var color: Color = enemy.get("color", Color.WHITE)
 		var edef: Dictionary = NightTdDefs.get_enemy_def(str(enemy.get("type", "")))
 		var label: String = str(edef.get("name", "敌")).left(2)
-		draw_circle(local_pos, radius + 6.0, Color(1.0, 0.35, 0.35, 0.35))
+		var is_ally := str(enemy.get("faction", "enemy")) == "ally"
+		var is_hacked := int(enemy.get("hacked_by", -1)) >= 0
+		# 阵营配色：友军青绿光环，敌军红光环；正在被黑入的敌人闪烁青色描边。
+		var halo := Color(0.35, 0.95, 0.7, 0.35) if is_ally else Color(1.0, 0.35, 0.35, 0.35)
+		var ring := Color("#5ce0a8") if is_ally else Color("#ff8b7a")
+		if is_hacked and not is_ally:
+			ring = Color("#5ac8e0")
+		draw_circle(local_pos, radius + 6.0, halo)
 		draw_circle(local_pos, radius + 3.0, Color("#ffffff"))
 		draw_circle(local_pos, radius, color)
-		draw_arc(local_pos, radius + 5.0, 0.0, TAU, 32, Color("#ff8b7a"), 2.5)
+		draw_arc(local_pos, radius + 5.0, 0.0, TAU, 32, ring, 2.5)
+		if is_ally:
+			label = "友" + label.left(1)
 		draw_string(ThemeDB.fallback_font, local_pos + Vector2(-14, -20), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#fff8f8"))
+		# 牧羊者：加一圈金色指挥光环
+		if bool(enemy.get("is_shepherd", false)) and not is_ally:
+			draw_arc(local_pos, radius + 10.0, 0.0, TAU, 40, Color(1.0, 0.82, 0.29, 0.7), 2.0)
 		if _controller.phase == NightTdController.Phase.COMBAT:
 			var move_dir: Vector2 = enemy.get("move_dir", Vector2.ZERO)
 			if move_dir.length_squared() > 0.0001:
 				var arrow_tip := local_pos + move_dir * (radius + 14.0)
 				_draw_arrow_head(arrow_tip, move_dir, 11.0, Color(1.0, 0.45, 0.35, 0.95))
-		if float(enemy.get("wait_remaining", 0.0)) > 0.0:
-			draw_string(
-				ThemeDB.fallback_font,
-				local_pos + Vector2(-10, 8),
-				"停",
-				HORIZONTAL_ALIGNMENT_LEFT,
-				-1,
-				10,
-				Color("#ffe0a0"),
-			)
 		var hp_ratio: float = clampf(float(enemy["hp"]) / maxf(float(enemy["max_hp"]), 1.0), 0.0, 1.0)
 		draw_rect(Rect2(local_pos.x - 18, local_pos.y - 28, 36, 5), Color(0.05, 0.05, 0.05, 0.95), true)
 		draw_rect(Rect2(local_pos.x - 18, local_pos.y - 28, 36 * hp_ratio, 5), Color("#ff5f57"), true)
@@ -408,6 +393,44 @@ func _draw_placed_towers() -> void:
 					local_pos + Vector2(-14, 12),
 				])
 				draw_colored_polygon(points, tdef.get("color", Color.WHITE))
+			"hacker":
+				var hk_color: Color = tdef.get("color", Color("#5ac8e0"))
+				draw_arc(local_pos, float(tdef.get("range", 150)), 0.0, TAU, 48, Color(0.35, 0.78, 0.88, 0.18), 2.0)
+				draw_circle(local_pos, radius, hk_color)
+				draw_circle(local_pos, radius * 0.5, Color("#0a2030"))
+				# 选中高亮：等待玩家指派目标
+				if _controller.phase == NightTdController.Phase.COMBAT and int(tower.get("id", -1)) == _controller._selected_hacker_id:
+					draw_arc(local_pos, radius + 6.0, 0.0, TAU, 40, Color("#9af0ff"), 2.5)
+				# 黑入进度条
+				var prog := float(tower.get("hack_progress", 0.0))
+				if prog > 0.0:
+					var ratio := clampf(prog / 100.0, 0.0, 1.0)
+					draw_rect(Rect2(local_pos.x - 16, local_pos.y - 24, 32, 4), Color(0.05, 0.1, 0.12, 0.9), true)
+					draw_rect(Rect2(local_pos.x - 16, local_pos.y - 24, 32 * ratio, 4), Color("#5ac8e0"), true)
+				# 引导光束：连到当前目标敌人
+				var teid := int(tower.get("target_eid", -1))
+				if teid >= 0:
+					for e in _controller._enemies:
+						if int(e.get("eid", -1)) == teid:
+							draw_line(local_pos, to_local(e["pos"]), Color(0.35, 0.82, 0.95, 0.6), 2.0)
+							break
+			"sniper":
+				var sn_color: Color = tdef.get("color", Color("#7aa6ff"))
+				# 细长射程环：体现超远狙击范围
+				draw_arc(local_pos, float(tdef.get("range", 220)), 0.0, TAU, 64, Color(0.48, 0.65, 1.0, 0.18), 1.5)
+				draw_circle(local_pos, radius, sn_color)
+				# 内圆十字准星暗示
+				draw_circle(local_pos, radius * 0.35, Color("#0a1830"))
+			"splash":
+				var sp_color: Color = tdef.get("color", Color("#e0a23a"))
+				# 溅射半径：淡填充圆提示范围
+				var splash_r := float(tdef.get("splash_radius", 56.0))
+				draw_circle(local_pos, splash_r, Color(0.88, 0.64, 0.23, 0.10))
+				draw_arc(local_pos, splash_r, 0.0, TAU, 48, Color(0.88, 0.64, 0.23, 0.28), 1.5)
+				# 射程环
+				draw_arc(local_pos, float(tdef.get("range", 120)), 0.0, TAU, 48, Color(0.88, 0.64, 0.23, 0.22), 2.0)
+				draw_circle(local_pos, radius, sp_color)
+				draw_circle(local_pos, radius * 0.45, Color("#1a0e00"))
 			_:
 				draw_circle(local_pos, radius, tdef.get("color", Color.WHITE))
 

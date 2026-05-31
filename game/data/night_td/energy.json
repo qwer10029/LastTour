@@ -1,0 +1,12 @@
+{
+	"reactor": {
+		"production_rate": 4.0,
+		"capacity": 60.0,
+		"starting": 20.0
+	},
+	"difficulty_danger_weight": {
+		"0": 0.0,
+		"1": 6.0,
+		"2": 14.0
+	}
+}

@@ -3,6 +3,7 @@ class_name BackpackUI
 
 signal item_use_requested(item_id: String)
 signal item_discard_requested(item_id: String)
+signal craft_parts_requested
 signal closed
 
 @export var panel_size: Vector2 = Vector2(540, 440)
@@ -13,6 +14,7 @@ var _item_list: ItemList
 var _detail_label: Label
 var _use_btn: Button
 var _discard_btn: Button
+var _craft_btn: Button
 var _selected_id: String = ""
 var _inventory: InventoryData
 var _tab_bar: TabBar
@@ -118,6 +120,11 @@ func _build_ui() -> void:
 	_discard_btn.disabled = true
 	_discard_btn.pressed.connect(_on_discard_pressed)
 	side.add_child(_discard_btn)
+
+	_craft_btn = Button.new()
+	_craft_btn.text = "合成零件"
+	_craft_btn.pressed.connect(func(): craft_parts_requested.emit())
+	side.add_child(_craft_btn)
 
 	var close_btn := Button.new()
 	close_btn.text = "关闭 (B / Esc)"

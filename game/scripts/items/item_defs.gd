@@ -9,6 +9,11 @@ static var REPAIR_WOOD_EACH := 2
 static var REPAIR_SCRAP_ALT_EACH := 1
 static var LOOT_FALLBACK_ITEM := "scrap"
 
+# 背包内合成：废料 + 燃料 → 零件（缓解前期造塔资源短缺）
+static var CRAFT_PARTS_SCRAP_COST := 3
+static var CRAFT_PARTS_FUEL_COST := 1
+static var CRAFT_PARTS_OUT := 1
+
 static var _items: Dictionary = {}
 static var _loot_by_building: Dictionary = {}
 
@@ -85,6 +90,11 @@ static func _load_data() -> void:
 	LOOT_FALLBACK_ITEM = normalize_item_id(str(data.get("loot_fallback_item", LOOT_FALLBACK_ITEM)))
 	if LOOT_FALLBACK_ITEM == "" or get_def(LOOT_FALLBACK_ITEM).is_empty():
 		LOOT_FALLBACK_ITEM = "scrap"
+
+	var craft: Dictionary = data.get("craft_parts", {})
+	CRAFT_PARTS_SCRAP_COST = maxi(int(craft.get("scrap_cost", CRAFT_PARTS_SCRAP_COST)), 1)
+	CRAFT_PARTS_FUEL_COST = maxi(int(craft.get("fuel_cost", CRAFT_PARTS_FUEL_COST)), 0)
+	CRAFT_PARTS_OUT = maxi(int(craft.get("parts_out", CRAFT_PARTS_OUT)), 1)
 
 	var loaded_items: Dictionary = data.get("items", {})
 	if not loaded_items.is_empty():

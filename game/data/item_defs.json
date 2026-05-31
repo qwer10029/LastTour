@@ -6,6 +6,11 @@
 		"wood_each": 2,
 		"scrap_alt_each": 1
 	},
+	"craft_parts": {
+		"scrap_cost": 3,
+		"fuel_cost": 1,
+		"parts_out": 1
+	},
 	"items": {
 		"supplies": {
 			"name": "补给",
