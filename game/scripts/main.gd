@@ -2310,7 +2310,14 @@ func _draw_day_overworld() -> void:
 			if war_fog_enabled and not segment_in_view and not (cell_explored and other_explored):
 				continue
 			var explored_road := _overworld_road_lit(cell_explored and other_explored, segment_in_view)
-			DayTopdownRender.draw_road_line(self, center, other_center, _map.cell_size, explored_road)
+			var cross_trim := DayTopdownRender.cross_trim_world()
+			var from_kind := str(cell.get("kind", ""))
+			var to_kind := str(_map.get_cell(other).get("kind", ""))
+			var trim_from := cross_trim if from_kind == "hub" or from_kind == "junction" else 0.0
+			var trim_to := cross_trim if to_kind == "hub" or to_kind == "junction" else 0.0
+			DayTopdownRender.draw_road_line(
+				self, center, other_center, _map.cell_size, explored_road, trim_from, trim_to
+			)
 
 	for index in range(_map.cells.size()):
 		if not _map.is_drive_node(index):

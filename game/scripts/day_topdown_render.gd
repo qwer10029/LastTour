@@ -5,6 +5,11 @@ const PIXEL := 16
 const VEHICLE_PIXEL := 3.0
 const VEHICLE_BODY_UNITS := 14.0
 const ROAD_TILE_DIR := "res://assets/tiles/road/"
+const TILE_OVERLAP_WORLD := 1.5
+const CROSS_TRIM_INSET := 0.92
+# 路口贴图里单条臂的路面宽度（像素），与直路 world road_width 对齐
+const CROSS_ARM_TEX_WIDTH := 213.0
+const CROSS_ARM_TEX_HALF_LENGTH := 113.0
 
 static var _road_textures_ready := false
 static var _tex_road_ns: Texture2D
@@ -100,10 +105,22 @@ static func _has_road_textures() -> bool:
 	return _tex_road_ns != null and _tex_road_ew != null
 
 
-static func _road_surface_scale(texture: Texture2D, is_ns: bool) -> float:
+static func _segment_scale(texture: Texture2D, is_ns: bool) -> float:
 	var tex_size := texture.get_size()
 	var cross := tex_size.x if is_ns else tex_size.y
 	return road_width() / cross
+
+
+static func _cross_scale() -> float:
+	return road_width() / CROSS_ARM_TEX_WIDTH
+
+
+static func cross_trim_world() -> float:
+	return CROSS_ARM_TEX_HALF_LENGTH * _cross_scale() * CROSS_TRIM_INSET
+
+
+static func _road_surface_scale(texture: Texture2D, is_ns: bool) -> float:
+	return _segment_scale(texture, is_ns)
 
 
 static func _segment_metrics(texture: Texture2D, is_ns: bool) -> Vector3:
@@ -123,12 +140,13 @@ static func _draw_segment_piece(
 	full_step: float,
 	is_ns: bool,
 	modulate: Color,
+	scale: float = -1.0,
 ) -> void:
 	if texture == null or seg_len <= 0.01:
 		return
+	if scale < 0.0:
+		scale = _segment_scale(texture, is_ns)
 	var tex_size := texture.get_size()
-	var metrics := _segment_metrics(texture, is_ns)
-	var scale: float = metrics.y
 	var rotation := atan2(-dir.x, dir.y) if is_ns else dir.angle()
 	var center := origin + dir * (seg_len * 0.5)
 	var frac := clampf(seg_len / full_step, 0.01, 1.0)
@@ -155,6 +173,8 @@ static func _draw_tiled_road_strip(
 	from_pos: Vector2,
 	to_pos: Vector2,
 	explored: bool,
+	trim_from: float = 0.0,
+	trim_to: float = 0.0,
 ) -> void:
 	var delta := to_pos - from_pos
 	var length := delta.length()
@@ -165,22 +185,41 @@ static func _draw_tiled_road_strip(
 	var texture := _tex_road_ns if is_ns else _tex_road_ew
 	if texture == null:
 		return
+	var trim_start := clampf(trim_from, 0.0, length * 0.45)
+	var trim_end := clampf(trim_to, 0.0, length * 0.45)
+	var draw_start := from_pos + dir * trim_start
+	var draw_end := to_pos - dir * trim_end
+	var draw_len := draw_start.distance_to(draw_end)
+	if draw_len <= 0.01:
+		return
 	var metrics := _segment_metrics(texture, is_ns)
 	var tile_step: float = metrics.x
+	var scale: float = metrics.y
 	var modulate := _road_modulate(explored)
-	var tile_count := maxi(1, int(ceil(length / tile_step)))
+	var overlap := TILE_OVERLAP_WORLD
+	var tile_count := maxi(1, int(ceil((draw_len + overlap) / tile_step)))
 	for i in range(tile_count):
 		var start_dist := float(i) * tile_step
-		if start_dist >= length:
+		if i > 0:
+			start_dist -= overlap
+		if start_dist >= draw_len:
 			break
-		var seg_len := minf(tile_step, length - start_dist)
-		var origin := from_pos + dir * start_dist
-		_draw_segment_piece(canvas, texture, origin, dir, seg_len, tile_step, is_ns, modulate)
+		var seg_len := minf(tile_step + (overlap if i > 0 else 0.0), draw_len - start_dist)
+		var origin := draw_start + dir * start_dist
+		_draw_segment_piece(canvas, texture, origin, dir, seg_len, tile_step, is_ns, modulate, scale)
 
 
-static func draw_road_connector(canvas: CanvasItem, from_pos: Vector2, to_pos: Vector2, cell_size: Vector2, explored: bool) -> void:
+static func draw_road_connector(
+	canvas: CanvasItem,
+	from_pos: Vector2,
+	to_pos: Vector2,
+	cell_size: Vector2,
+	explored: bool,
+	trim_from: float = 0.0,
+	trim_to: float = 0.0,
+) -> void:
 	if _has_road_textures():
-		_draw_tiled_road_strip(canvas, from_pos, to_pos, explored)
+		_draw_tiled_road_strip(canvas, from_pos, to_pos, explored, trim_from, trim_to)
 		return
 	var half_w := _road_strip_half_width(cell_size)
 	var dir := to_pos - from_pos
@@ -201,16 +240,22 @@ static func draw_road_connector(canvas: CanvasItem, from_pos: Vector2, to_pos: V
 		canvas.draw_rect(Rect2(mid - Vector2(1.5, dash_len), Vector2(3.0, dash_len * 2.0)), dash_color, true)
 
 
-static func draw_road_line(canvas: CanvasItem, from_pos: Vector2, to_pos: Vector2, cell_size: Vector2, explored: bool) -> void:
-	draw_road_connector(canvas, from_pos, to_pos, cell_size, explored)
+static func draw_road_line(
+	canvas: CanvasItem,
+	from_pos: Vector2,
+	to_pos: Vector2,
+	cell_size: Vector2,
+	explored: bool,
+	trim_from: float = 0.0,
+	trim_to: float = 0.0,
+) -> void:
+	draw_road_connector(canvas, from_pos, to_pos, cell_size, explored, trim_from, trim_to)
 
 
 static func draw_road_node_cap(canvas: CanvasItem, center: Vector2, cell_size: Vector2, explored: bool, hub: bool = false) -> void:
 	if hub and _has_road_textures() and _tex_road_cross != null:
 		var tex_size := _tex_road_cross.get_size()
-		# 与直路一致：贴图里实际路面宽约 247px，对应同一 world road_width
-		const CROSS_ROAD_TEX_WIDTH := 247.0
-		var scale := road_width() / CROSS_ROAD_TEX_WIDTH
+		var scale := _cross_scale()
 		var modulate := _road_modulate(explored)
 		canvas.draw_set_transform(center, 0.0, Vector2(scale, scale))
 		canvas.draw_texture(_tex_road_cross, -tex_size * 0.5, modulate)
