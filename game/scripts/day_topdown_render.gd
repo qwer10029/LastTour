@@ -2,6 +2,14 @@ class_name DayTopdownRender
 extends RefCounted
 
 const PIXEL := 16
+const VEHICLE_PIXEL := 3.0
+const VEHICLE_BODY_UNITS := 14.0
+const ROAD_TILE_DIR := "res://assets/tiles/road/"
+
+static var _road_textures_ready := false
+static var _tex_road_ns: Texture2D
+static var _tex_road_ew: Texture2D
+static var _tex_road_cross: Texture2D
 
 static func hash_cell(seed: int, gx: int, gy: int) -> float:
 	return fmod(sin(float(seed * 1271 + gx * 3117 + gy * 7493)) * 43758.5453, 1.0)
@@ -53,10 +61,17 @@ static func _base_color(kind: String, explored: bool) -> Color:
 			return Color("#1a1f24")
 
 
-# 星露谷式窄路：约为宏观格宽度的 22%
-static func _road_strip_half_width(cell_size: Vector2) -> float:
-	var sz := Vector2(cell_size)
-	return minf(sz.x, sz.y) * 0.11
+# 路面宽度约为车辆宽度的两倍；车辆居中行驶
+static func vehicle_display_width() -> float:
+	return VEHICLE_BODY_UNITS * VEHICLE_PIXEL
+
+
+static func road_width() -> float:
+	return vehicle_display_width() * 2.0
+
+
+static func _road_strip_half_width(_cell_size: Vector2) -> float:
+	return road_width() * 0.5
 
 
 static func _road_surface_color(explored: bool) -> Color:
@@ -67,7 +82,106 @@ static func _road_edge_color(explored: bool) -> Color:
 	return Color("#7a6a52") if explored else Color("#403830")
 
 
+static func _road_modulate(explored: bool) -> Color:
+	return Color.WHITE if explored else Color(0.58, 0.54, 0.5, 1.0)
+
+
+static func _ensure_road_textures() -> void:
+	if _road_textures_ready:
+		return
+	_road_textures_ready = true
+	_tex_road_ns = ArtAssetLoader.load_texture(ROAD_TILE_DIR + "road_ns_segment.png")
+	_tex_road_ew = ArtAssetLoader.load_texture(ROAD_TILE_DIR + "road_ew_segment.png")
+	_tex_road_cross = ArtAssetLoader.load_texture(ROAD_TILE_DIR + "road_cross.png")
+
+
+static func _has_road_textures() -> bool:
+	_ensure_road_textures()
+	return _tex_road_ns != null and _tex_road_ew != null
+
+
+static func _road_surface_scale(texture: Texture2D, is_ns: bool) -> float:
+	var tex_size := texture.get_size()
+	var cross := tex_size.x if is_ns else tex_size.y
+	return road_width() / cross
+
+
+static func _segment_metrics(texture: Texture2D, is_ns: bool) -> Vector3:
+	var tex_size := texture.get_size()
+	var cross := tex_size.x if is_ns else tex_size.y
+	var along := tex_size.y if is_ns else tex_size.x
+	var scale := _road_surface_scale(texture, is_ns)
+	return Vector3(along * scale, scale, cross)
+
+
+static func _draw_segment_piece(
+	canvas: CanvasItem,
+	texture: Texture2D,
+	origin: Vector2,
+	dir: Vector2,
+	seg_len: float,
+	full_step: float,
+	is_ns: bool,
+	modulate: Color,
+) -> void:
+	if texture == null or seg_len <= 0.01:
+		return
+	var tex_size := texture.get_size()
+	var metrics := _segment_metrics(texture, is_ns)
+	var scale: float = metrics.y
+	var rotation := atan2(-dir.x, dir.y) if is_ns else dir.angle()
+	var center := origin + dir * (seg_len * 0.5)
+	var frac := clampf(seg_len / full_step, 0.01, 1.0)
+	var region_len := (tex_size.y if is_ns else tex_size.x) * frac
+	var region := Rect2(
+		0.0,
+		0.0,
+		tex_size.x if is_ns else region_len,
+		region_len if is_ns else tex_size.y,
+	)
+	var dest := Rect2(
+		-tex_size.x * 0.5 if is_ns else -region_len * 0.5,
+		-region_len * 0.5 if is_ns else -tex_size.y * 0.5,
+		region.size.x,
+		region.size.y,
+	)
+	canvas.draw_set_transform(center, rotation, Vector2(scale, scale))
+	canvas.draw_texture_rect_region(texture, dest, region, modulate)
+	canvas.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+static func _draw_tiled_road_strip(
+	canvas: CanvasItem,
+	from_pos: Vector2,
+	to_pos: Vector2,
+	explored: bool,
+) -> void:
+	var delta := to_pos - from_pos
+	var length := delta.length()
+	if length <= 0.01:
+		return
+	var dir := delta / length
+	var is_ns := absf(dir.y) >= absf(dir.x)
+	var texture := _tex_road_ns if is_ns else _tex_road_ew
+	if texture == null:
+		return
+	var metrics := _segment_metrics(texture, is_ns)
+	var tile_step: float = metrics.x
+	var modulate := _road_modulate(explored)
+	var tile_count := maxi(1, int(ceil(length / tile_step)))
+	for i in range(tile_count):
+		var start_dist := float(i) * tile_step
+		if start_dist >= length:
+			break
+		var seg_len := minf(tile_step, length - start_dist)
+		var origin := from_pos + dir * start_dist
+		_draw_segment_piece(canvas, texture, origin, dir, seg_len, tile_step, is_ns, modulate)
+
+
 static func draw_road_connector(canvas: CanvasItem, from_pos: Vector2, to_pos: Vector2, cell_size: Vector2, explored: bool) -> void:
+	if _has_road_textures():
+		_draw_tiled_road_strip(canvas, from_pos, to_pos, explored)
+		return
 	var half_w := _road_strip_half_width(cell_size)
 	var dir := to_pos - from_pos
 	if dir.length_squared() < 0.01:
@@ -92,11 +206,23 @@ static func draw_road_line(canvas: CanvasItem, from_pos: Vector2, to_pos: Vector
 
 
 static func draw_road_node_cap(canvas: CanvasItem, center: Vector2, cell_size: Vector2, explored: bool, hub: bool = false) -> void:
+	if hub and _has_road_textures() and _tex_road_cross != null:
+		var tex_size := _tex_road_cross.get_size()
+		# 与直路一致：贴图里实际路面宽约 247px，对应同一 world road_width
+		const CROSS_ROAD_TEX_WIDTH := 247.0
+		var scale := road_width() / CROSS_ROAD_TEX_WIDTH
+		var modulate := _road_modulate(explored)
+		canvas.draw_set_transform(center, 0.0, Vector2(scale, scale))
+		canvas.draw_texture(_tex_road_cross, -tex_size * 0.5, modulate)
+		canvas.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		return
+	if not hub:
+		return
 	var half_w := _road_strip_half_width(cell_size)
-	var radius := half_w * (1.35 if hub else 1.05)
+	var radius := half_w * 1.35
 	canvas.draw_circle(center, radius + 2.0, _road_edge_color(explored))
 	canvas.draw_circle(center, radius, _road_surface_color(explored))
-	if hub and explored:
+	if explored:
 		canvas.draw_circle(center, radius * 0.35, Color("#d8c898", 0.5))
 
 

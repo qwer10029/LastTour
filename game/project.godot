@@ -15,20 +15,6 @@ run/main_scene="res://scenes/menu/main_menu.tscn"
 config/features=PackedStringArray("4.6", "GL Compatibility")
 config/icon="res://icon.svg"
 
-[global_script_classes]
-
-global_script_classes=[{
-"base": &"RefCounted",
-"class": &"DayTopdownRender",
-"icon": "",
-"language": &"GDScript",
-"path": "res://scripts/day_topdown_render.gd"
-}]
-
-[global_script_class_icons]
-
-DayTopdownRender=""
-
 [autoload]
 
 GameManager="*res://scripts/autoload/game_manager.gd"
@@ -42,6 +28,20 @@ window/size/mode=2
 window/size/initial_position_type=0
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
+
+[global_script_class_icons]
+
+DayTopdownRender=""
+
+[global_script_classes]
+
+global_script_classes=[{
+"base": &"RefCounted",
+"class": &"DayTopdownRender",
+"icon": "",
+"language": &"GDScript",
+"path": "res://scripts/day_topdown_render.gd"
+}]
 
 [physics]
 

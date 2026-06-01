@@ -315,6 +315,7 @@ func _physics_process(delta: float) -> void:
 		var buildings := _get_enterable_buildings()
 		if buildings.size() > 1 and Input.is_action_just_pressed("cycle_building"):
 			_building_pick_index = (_building_pick_index + 1) % buildings.size()
+		_try_begin_drive_from_input()
 	if Input.is_action_just_pressed("repair"):
 		_attempt_repair_elevator()
 
@@ -598,18 +599,39 @@ func _pressed_drive_direction() -> String:
 func _get_segment_drive_axis() -> float:
 	if _segment_target_index < 0 or not _map.is_valid_index(_segment_from_index):
 		return 0.0
+	var forward_dir := _map.direction_between(_segment_from_index, _segment_target_index)
 	var input_dir := _pressed_drive_direction()
 	if input_dir == "":
-		return 0.0
+		return 1.0
 	var allowed := _map.allowed_input_directions_for_segment(_segment_from_index, _segment_target_index)
 	if input_dir not in allowed:
-		return 0.0
-	var forward_dir := _map.direction_between(_segment_from_index, _segment_target_index)
+		return 1.0
 	if input_dir == forward_dir:
 		return 1.0
 	if input_dir == _map.opposite_direction(forward_dir):
 		return -1.0
-	return 0.0
+	return 1.0
+
+
+func _just_pressed_drive_direction() -> String:
+	if Input.is_action_just_pressed("move_up"):
+		return "up"
+	if Input.is_action_just_pressed("move_down"):
+		return "down"
+	if Input.is_action_just_pressed("move_left"):
+		return "left"
+	if Input.is_action_just_pressed("move_right"):
+		return "right"
+	return ""
+
+
+func _try_begin_drive_from_input() -> void:
+	if _segment_target_index >= 0:
+		return
+	var direction := _just_pressed_drive_direction()
+	if direction == "" or not _exit_options.has(direction):
+		return
+	_begin_drive_segment(_current_node_index, int(_exit_options[direction]))
 
 
 func _enter_node(node_index: int, is_run_start: bool = false) -> void:
@@ -2222,6 +2244,17 @@ func _draw_evening_tint_screen_overlay() -> void:
 	draw_colored_polygon(corners, Color(0.05, 0.08, 0.18, _evening_tint))
 
 
+func _viewport_shows_road_segment(from_pos: Vector2, to_pos: Vector2, view_rect: Rect2) -> bool:
+	var min_p := from_pos.min(to_pos)
+	var max_p := from_pos.max(to_pos)
+	var seg_rect := Rect2(min_p, max_p - min_p).grow(DayTopdownRender.road_width() * 0.55)
+	return view_rect.intersects(seg_rect)
+
+
+func _overworld_road_lit(explored: bool, in_viewport: bool) -> bool:
+	return not war_fog_enabled or explored or in_viewport
+
+
 func _draw_day_overworld() -> void:
 	var view_rect := _camera_world_view_rect().grow(360.0)
 	var world_bounds := Rect2(Vector2.ZERO, _map.get_world_size())
@@ -2253,10 +2286,11 @@ func _draw_day_overworld() -> void:
 		var rect := _map.cell_rect(index)
 		if not view_rect.intersects(rect):
 			continue
-		if war_fog_enabled and not bool(cell["explored"]):
+		var in_viewport := view_rect.intersects(rect)
+		if war_fog_enabled and not bool(cell["explored"]) and not in_viewport:
 			draw_rect(rect, Color("#06080c"), true)
 			continue
-		var explored := bool(cell["explored"]) or not war_fog_enabled
+		var explored := _overworld_road_lit(bool(cell["explored"]), in_viewport)
 		var cell_seed := int(cell.get("seed", index + 1))
 		DayTopdownRender.draw_road_cell(self, rect, explored, cell_seed)
 
@@ -2264,31 +2298,29 @@ func _draw_day_overworld() -> void:
 		var cell := _map.get_cell(index)
 		if str(cell["kind"]) == "empty":
 			continue
-		if war_fog_enabled and not bool(cell["explored"]):
-			continue
-		var rect := _map.cell_rect(index)
-		if not view_rect.intersects(rect):
-			continue
 		var center := _map.cell_center(index)
+		var cell_explored := bool(cell["explored"])
 		for direction in _map.get_available_directions(index):
 			var other := _map.get_neighbor_index(index, direction)
 			if other < 0 or other < index:
 				continue
-			if war_fog_enabled and not bool(_map.get_cell(other).get("explored", false)):
-				continue
 			var other_center := _map.cell_center(other)
-			var explored_road := bool(cell["explored"]) and bool(_map.get_cell(other).get("explored", false))
-			DayTopdownRender.draw_road_line(self, center, other_center, _map.cell_size, explored_road or not war_fog_enabled)
+			var other_explored := bool(_map.get_cell(other).get("explored", false))
+			var segment_in_view := _viewport_shows_road_segment(center, other_center, view_rect)
+			if war_fog_enabled and not segment_in_view and not (cell_explored and other_explored):
+				continue
+			var explored_road := _overworld_road_lit(cell_explored and other_explored, segment_in_view)
+			DayTopdownRender.draw_road_line(self, center, other_center, _map.cell_size, explored_road)
 
 	for index in range(_map.cells.size()):
 		if not _map.is_drive_node(index):
 			continue
-		if war_fog_enabled and not bool(_map.get_cell(index).get("explored", false)):
-			continue
 		var center := _map.cell_center(index)
-		if not view_rect.has_point(center):
+		var node_in_view := view_rect.grow(DayTopdownRender.road_width()).has_point(center)
+		if not node_in_view:
 			continue
-		var explored := bool(_map.get_cell(index).get("explored", false)) or not war_fog_enabled
+		var cell_explored := bool(_map.get_cell(index).get("explored", false))
+		var explored := _overworld_road_lit(cell_explored, node_in_view)
 		var is_hub := _map.get_kind(index) == "hub" or _map.get_kind(index) == "junction"
 		DayTopdownRender.draw_road_node_cap(self, center, _map.cell_size, explored, is_hub)
 
