@@ -137,11 +137,8 @@ func _draw() -> void:
 				(float(coord.x) + 0.5) * cell_width,
 				(float(coord.y) + 0.5) * cell_height
 			)
-			var is_ns := direction == "up" or direction == "down"
-			var road_color := Color("#6eb5e8") if is_ns else Color("#e8c66e")
-			if not war_fog_enabled and not explored:
-				road_color = road_color.darkened(0.55)
-			draw_line(center, other_center, road_color, 3.0 if is_ns else 2.0)
+			var road_color := Color("#a89472") if explored or not war_fog_enabled else Color("#5c5448")
+			draw_line(center, other_center, road_color, 2.0)
 
 		if (explored or not war_fog_enabled) and int(cell["resource_remaining"]) > 0:
 			draw_circle(cell_rect.position + cell_rect.size * 0.5, 3.0, Color("#f3d34a"))

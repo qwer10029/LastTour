@@ -22,7 +22,7 @@ vehicle_scene = ExtResource("4_vehicle")
 [node name="TimeSystem" type="Node" parent="Systems"]
 script = ExtResource("6_time")
 auto_start = false
-day_duration_sec = 90.0
+day_duration_sec = 180.0
 evening_warning_sec = 25.0
 
 [node name="NightDefenseSystem" type="Node" parent="Systems"]
@@ -187,7 +187,7 @@ custom_minimum_size = Vector2(248, 160)
 script = ExtResource("5_minimap")
 
 [node name="MapInfoLabel" type="Label" parent="HUD/MapPanel/MarginContainer/VBoxContainer"]
-text = "迷你地图: 已探索亮起 / 未探索变黑 / 红点是当前位置"
+text = "右下角小地图：已探索亮起 / 未探索为暗"
 autowrap_mode = 3
 
 [node name="ActionPanel" type="Panel" parent="HUD"]
@@ -214,7 +214,7 @@ offset_right = 596.0
 offset_bottom = 110.0
 
 [node name="PromptLabel" type="Label" parent="HUD/ActionPanel/MarginContainer/VBoxContainer"]
-text = "沿道路驾驶，遇到十字路口会切换到俯视选择"
+text = "俯视废墟路网驾驶；停靠后 E 进入建筑"
 autowrap_mode = 3
 
 [node name="ActionButtons" type="HBoxContainer" parent="HUD/ActionPanel/MarginContainer/VBoxContainer"]

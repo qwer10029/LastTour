@@ -3,7 +3,7 @@ class_name PlayerCharacter
 
 signal moved
 
-@export var move_speed: float = 240.0
+@export var move_speed: float = 96.0
 @export var world_bounds: Rect2 = Rect2(Vector2.ZERO, Vector2(1280, 720))
 
 var _hud_callback: Callable = Callable()
@@ -24,7 +24,7 @@ func _load_texture() -> void:
 		sprite.texture = tex
 		# Auto-scale large PNG/SVG so player icon fits expected size on screen
 		if tex != null:
-			var desired_px := 48.0
+			var desired_px := 16.0
 			var sz: Vector2i = tex.get_size()
 			if sz.x > 0 and sz.y > 0:
 				var factor: float = minf(minf(desired_px / float(sz.x), desired_px / float(sz.y)), 1.0)

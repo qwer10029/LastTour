@@ -15,6 +15,20 @@ run/main_scene="res://scenes/menu/main_menu.tscn"
 config/features=PackedStringArray("4.6", "GL Compatibility")
 config/icon="res://icon.svg"
 
+[global_script_classes]
+
+global_script_classes=[{
+"base": &"RefCounted",
+"class": &"DayTopdownRender",
+"icon": "",
+"language": &"GDScript",
+"path": "res://scripts/day_topdown_render.gd"
+}]
+
+[global_script_class_icons]
+
+DayTopdownRender=""
+
 [autoload]
 
 GameManager="*res://scripts/autoload/game_manager.gd"

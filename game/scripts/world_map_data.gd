@@ -1,9 +1,12 @@
 class_name WorldMapData
 extends RefCounted
 
-const FOOT_TILE_SIZE := 48
+const FOOT_TILE_SIZE := 24
+const INTERIOR_COLS := 20
+const INTERIOR_ROWS := 14
 ## 各资源区固定障碍格（网格坐标，通常为正中格）
-const FOOT_ANCHOR_OBSTACLE := Vector2i(2, 2)
+const FOOT_ANCHOR_OBSTACLE := Vector2i(9, 6)
+const FOOT_DOOR_TILE := Vector2i(10, 13)
 
 const DIRECTIONS := {
 	"up": Vector2i(0, -1),
@@ -60,10 +63,15 @@ func generate(new_columns: int, new_rows: int, new_cell_size: Vector2i, rng_seed
 		cells[index]["foot_grid_cols"] = foot_layout["cols"]
 		cells[index]["foot_grid_rows"] = foot_layout["rows"]
 		cells[index]["foot_blocked"] = foot_layout["blocked"]
+		var foot_area := Vector2(
+			float(int(foot_layout["cols"]) * FOOT_TILE_SIZE),
+			float(int(foot_layout["rows"]) * FOOT_TILE_SIZE),
+		)
+		var foot_origin_offset := (Vector2(cell_size) - foot_area) * 0.5
 		cells[index]["resource_total"] = rng.randi_range(2, 6)
 		cells[index]["resource_remaining"] = cells[index]["resource_total"]
 		cells[index]["resource_spawns"] = _generate_resource_spawns_on_walkable(
-			rng, int(cells[index]["resource_total"]), building_type, foot_layout
+			rng, int(cells[index]["resource_total"]), building_type, foot_layout, foot_origin_offset
 		)
 		district_indices.append(index)
 
@@ -92,6 +100,7 @@ func generate(new_columns: int, new_rows: int, new_cell_size: Vector2i, rng_seed
 				_link_coords(c, Vector2i(x, y + 1))
 
 	_finalize_cell_kinds()
+	_setup_district_roadside(rng)
 	_mark_start_node()
 
 func get_world_size() -> Vector2:
@@ -146,6 +155,51 @@ func is_road(index: int) -> bool:
 
 func is_junction(index: int) -> bool:
 	return get_kind(index) == "junction"
+
+
+func is_drive_node(index: int) -> bool:
+	return is_valid_index(index) and not is_district(index)
+
+
+func get_roadside_districts(road_index: int) -> Array[int]:
+	var result: Array[int] = []
+	if not is_valid_index(road_index) or is_district(road_index):
+		return result
+	for neighbor in get_connected_indices(road_index):
+		if is_district(neighbor):
+			result.append(neighbor)
+	return result
+
+
+func get_building_entrance_world_pos(district_index: int) -> Vector2:
+	if not is_valid_index(district_index) or not is_district(district_index):
+		return Vector2.ZERO
+	var approach := int(cells[district_index].get("approach_road_index", -1))
+	if not is_valid_index(approach):
+		return cell_center(district_index)
+	var road_rect := cell_rect(approach)
+	var road_center := cell_center(approach)
+	var district_center := cell_center(district_index)
+	var side := district_center - road_center
+	if side.length_squared() < 0.001:
+		return road_center
+	var unit := minf(road_rect.size.x, road_rect.size.y)
+	var side_dir := side.normalized()
+	var facade_depth := unit * 0.14
+	var edge := road_center + side_dir * (unit * 0.32)
+	return edge + side_dir * (facade_depth * 0.42)
+
+
+func get_roadside_parking_world_pos(road_index: int, district_index: int) -> Vector2:
+	if not is_valid_index(road_index) or not is_district(district_index):
+		return cell_center(road_index)
+	var road_center := cell_center(road_index)
+	var district_center := cell_center(district_index)
+	var offset := district_center - road_center
+	if offset.length_squared() < 0.001:
+		return road_center
+	var inset := minf(cell_rect(road_index).size.x, cell_rect(road_index).size.y) * 0.34
+	return road_center + offset.normalized() * inset
 
 func mark_explored(index: int) -> void:
 	if not is_valid_index(index):
@@ -322,6 +376,8 @@ func _create_empty_cell(coord: Vector2i) -> Dictionary:
 			"right": -1,
 		},
 		"seed": 0,
+		"approach_road_index": -1,
+		"entry_from_road": "",
 	}
 
 func _pick_cells(rng: RandomNumberGenerator, count: int) -> Array[Vector2i]:
@@ -427,9 +483,9 @@ func _pick_building_type(rng: RandomNumberGenerator) -> String:
 	var options := ["warehouse", "elevator", "garage", "archive", "warehouse", "market"]
 	return options[rng.randi_range(0, options.size() - 1)]
 
-func _build_foot_layout(rng: RandomNumberGenerator, district_size: Vector2i) -> Dictionary:
-	var cols := maxi(int(district_size.x / FOOT_TILE_SIZE), 4)
-	var rows := maxi(int(district_size.y / FOOT_TILE_SIZE), 4)
+func _build_foot_layout(rng: RandomNumberGenerator, _district_size: Vector2i) -> Dictionary:
+	var cols := INTERIOR_COLS
+	var rows := INTERIOR_ROWS
 	var center := Vector2i(cols / 2, rows / 2)
 	var blocked: Array[Vector2i] = []
 	# 固定障碍：正中格 (2,2)，各区块一致
@@ -542,6 +598,7 @@ func _generate_resource_spawns_on_walkable(
 	amount: int,
 	building_type: String,
 	foot_layout: Dictionary,
+	foot_origin_offset: Vector2 = Vector2.ZERO,
 ) -> Array:
 	var walkable := _get_walkable_tiles(foot_layout)
 	if walkable.is_empty():
@@ -561,22 +618,33 @@ func _generate_resource_spawns_on_walkable(
 			float(tile.y) * FOOT_TILE_SIZE + FOOT_TILE_SIZE * 0.5
 		)
 		result.append({
-			"x": center.x + rng.randf_range(-10.0, 10.0),
-			"y": center.y + rng.randf_range(-10.0, 10.0),
+			"x": foot_origin_offset.x + center.x + rng.randf_range(-4.0, 4.0),
+			"y": foot_origin_offset.y + center.y + rng.randf_range(-4.0, 4.0),
 			"item_id": ItemDefs.pick_loot_for_building(building_type, rng),
 		})
 	return result
 
 
-func get_foot_area_rect(index: int) -> Rect2:
+func get_foot_origin(index: int) -> Vector2:
 	ensure_foot_layout(index)
 	if not is_valid_index(index):
-		return Rect2()
+		return Vector2.ZERO
 	var district_rect := cell_rect(index)
 	var cell := cells[index]
 	var cols: int = maxi(int(cell.get("foot_grid_cols", 1)), 1)
 	var rows: int = maxi(int(cell.get("foot_grid_rows", 1)), 1)
-	return Rect2(district_rect.position, Vector2(cols * FOOT_TILE_SIZE, rows * FOOT_TILE_SIZE))
+	var area_size := Vector2(float(cols * FOOT_TILE_SIZE), float(rows * FOOT_TILE_SIZE))
+	return district_rect.position + (district_rect.size - area_size) * 0.5
+
+
+func get_foot_area_rect(index: int) -> Rect2:
+	var origin := get_foot_origin(index)
+	if origin == Vector2.ZERO and not is_valid_index(index):
+		return Rect2()
+	var cell := get_cell(index)
+	var cols: int = maxi(int(cell.get("foot_grid_cols", 1)), 1)
+	var rows: int = maxi(int(cell.get("foot_grid_rows", 1)), 1)
+	return Rect2(origin, Vector2(float(cols * FOOT_TILE_SIZE), float(rows * FOOT_TILE_SIZE)))
 
 
 func get_foot_play_rect(index: int, margin: float = 12.0) -> Rect2:
@@ -587,8 +655,8 @@ func get_foot_play_rect(index: int, margin: float = 12.0) -> Rect2:
 	return Rect2(area.position + Vector2(margin, margin), area.size - inset)
 
 
-func is_foot_tile_blocked(cell: Dictionary, district_rect: Rect2, world_pos: Vector2) -> bool:
-	var local := world_pos - district_rect.position
+func is_foot_tile_blocked(cell: Dictionary, foot_origin: Vector2, world_pos: Vector2) -> bool:
+	var local := world_pos - foot_origin
 	var cols: int = maxi(int(cell.get("foot_grid_cols", 1)), 1)
 	var rows: int = maxi(int(cell.get("foot_grid_rows", 1)), 1)
 	var area := Vector2(cols * FOOT_TILE_SIZE, rows * FOOT_TILE_SIZE)
@@ -662,8 +730,9 @@ func get_walkable_world_positions(index: int) -> Array[Vector2]:
 	}
 	var positions: Array[Vector2] = []
 	for tile in _get_walkable_tiles(layout):
+		var foot_origin := get_foot_origin(index)
 		positions.append(
-			district_rect.position
+			foot_origin
 			+ Vector2(
 				float(tile.x) * FOOT_TILE_SIZE + FOOT_TILE_SIZE * 0.5,
 				float(tile.y) * FOOT_TILE_SIZE + FOOT_TILE_SIZE * 0.5,
@@ -672,15 +741,53 @@ func get_walkable_world_positions(index: int) -> Array[Vector2]:
 	return positions
 
 
-func get_foot_spawn_world_pos(cell: Dictionary, district_rect: Rect2) -> Vector2:
+func get_foot_door_tile(index: int) -> Vector2i:
+	ensure_foot_layout(index)
+	if not is_valid_index(index):
+		return Vector2i.ZERO
+	var cell := cells[index]
 	var cols: int = maxi(int(cell.get("foot_grid_cols", 1)), 1)
 	var rows: int = maxi(int(cell.get("foot_grid_rows", 1)), 1)
-	var center := Vector2i(cols / 2, rows / 2)
-	var spawn_tile := _pick_foot_spawn_tile(cols, rows, center, cell.get("foot_blocked", []))
-	return district_rect.position + Vector2(
-		float(spawn_tile.x) * FOOT_TILE_SIZE + FOOT_TILE_SIZE * 0.5,
-		float(spawn_tile.y) * FOOT_TILE_SIZE + FOOT_TILE_SIZE * 0.5,
+	var blocked: Array = cell.get("foot_blocked", [])
+	var door_tile := Vector2i(
+		clampi(FOOT_DOOR_TILE.x, 0, cols - 1),
+		clampi(FOOT_DOOR_TILE.y, 0, rows - 1),
 	)
+	if _tile_blocked(door_tile, blocked):
+		door_tile = _pick_foot_spawn_tile(cols, rows, door_tile, blocked)
+	for row in range(door_tile.y, maxi(door_tile.y - 3, -1), -1):
+		var candidate := Vector2i(door_tile.x, row)
+		if not _tile_blocked(candidate, blocked):
+			door_tile = candidate
+			break
+	return door_tile
+
+
+func get_foot_door_world_pos(index: int) -> Vector2:
+	if not is_valid_index(index):
+		return Vector2.ZERO
+	var foot_origin := get_foot_origin(index)
+	var door_tile := get_foot_door_tile(index)
+	return foot_origin + Vector2(
+		float(door_tile.x) * FOOT_TILE_SIZE + FOOT_TILE_SIZE * 0.5,
+		float(door_tile.y) * FOOT_TILE_SIZE + FOOT_TILE_SIZE * 0.5,
+	)
+
+
+func _tile_blocked(tile: Vector2i, blocked: Array) -> bool:
+	for raw in blocked:
+		var blocked_tile := Vector2i.ZERO
+		if raw is Vector2i:
+			blocked_tile = raw
+		elif raw is Dictionary:
+			blocked_tile = Vector2i(int(raw.get("x", 0)), int(raw.get("y", 0)))
+		if blocked_tile == tile:
+			return true
+	return false
+
+
+func get_foot_spawn_world_pos(cell: Dictionary, district_rect: Rect2) -> Vector2:
+	return get_foot_door_world_pos(index_from_position(district_rect.position + district_rect.size * 0.5))
 
 func _finalize_cell_kinds() -> void:
 	for index in range(cells.size()):
@@ -695,23 +802,44 @@ func _finalize_cell_kinds() -> void:
 		elif connection_count >= 1:
 			cells[index]["kind"] = "road"
 
+func _setup_district_roadside(rng: RandomNumberGenerator) -> void:
+	for district_index in district_indices:
+		var road_neighbors: Array[int] = []
+		for neighbor in get_connected_indices(district_index):
+			if not is_district(neighbor):
+				road_neighbors.append(neighbor)
+		if road_neighbors.is_empty():
+			continue
+		var approach_index: int = road_neighbors[rng.randi_range(0, road_neighbors.size() - 1)]
+		for neighbor in get_connected_indices(district_index).duplicate():
+			if neighbor != approach_index:
+				_disconnect_cells(district_index, neighbor)
+		cells[district_index]["approach_road_index"] = approach_index
+		cells[district_index]["entry_from_road"] = direction_between(approach_index, district_index)
+
+
+func _disconnect_cells(from_index: int, to_index: int) -> void:
+	var dir := direction_between(from_index, to_index)
+	if dir == "":
+		return
+	var rev := opposite_direction(dir)
+	cells[from_index]["connections"][dir] = -1
+	cells[to_index]["connections"][rev] = -1
+
+
 func _mark_start_node() -> void:
 	if district_indices.is_empty():
 		return
-	var first_district := district_indices[0]
-	var connected := get_connected_indices(first_district)
-	if connected.is_empty():
-		start_node_index = first_district
+	var first_district: int = district_indices[0]
+	var approach := int(cells[first_district].get("approach_road_index", -1))
+	if is_valid_index(approach) and is_drive_node(approach):
+		start_node_index = approach
 		return
-	# 优先从连接数最多的邻格出发，便于开局即进入路口选择
-	var best_index := connected[0]
-	var best_degree := -1
-	for neighbor in connected:
-		var degree := connected_count(neighbor)
-		if degree > best_degree:
-			best_degree = degree
-			best_index = neighbor
-	start_node_index = best_index
+	for index in range(cells.size()):
+		if is_drive_node(index) and connected_count(index) > 0:
+			start_node_index = index
+			return
+	start_node_index = first_district
 
 func _ensure_elevator_district() -> void:
 	if district_indices.is_empty():
@@ -755,6 +883,11 @@ func load_from_dictionary(data: Dictionary) -> void:
 	for raw_index in data.get("hub_indices", []):
 		hub_indices.append(int(raw_index))
 	start_node_index = int(data.get("start_node_index", -1))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(columns * 9176 + rows * 131)
+	_setup_district_roadside(rng)
+	if not is_valid_index(start_node_index) or not is_drive_node(start_node_index):
+		_mark_start_node()
 
 
 func _serialize_cell(cell: Dictionary) -> Dictionary:
@@ -786,6 +919,8 @@ func _serialize_cell(cell: Dictionary) -> Dictionary:
 		"foot_blocked": _serialize_foot_blocked(cell.get("foot_blocked", [])),
 		"connections": connections,
 		"seed": int(cell.get("seed", 0)),
+		"approach_road_index": int(cell.get("approach_road_index", -1)),
+		"entry_from_road": str(cell.get("entry_from_road", "")),
 	}
 
 
@@ -822,6 +957,8 @@ func _deserialize_cell(data: Dictionary) -> Dictionary:
 		"foot_blocked": _deserialize_foot_blocked(data.get("foot_blocked", [])),
 		"connections": connections,
 		"seed": int(data.get("seed", 0)),
+		"approach_road_index": int(data.get("approach_road_index", -1)),
+		"entry_from_road": str(data.get("entry_from_road", "")),
 	}
 
 

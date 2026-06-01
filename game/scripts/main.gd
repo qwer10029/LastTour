@@ -3,6 +3,9 @@ extends Node2D
 const RunEndOverlayScript = preload("res://scripts/ui/run_end_overlay.gd")
 const CommunicationTerminalScript = preload("res://scripts/ui/communication_terminal.gd")
 const EndingOutcomeOverlayScript = preload("res://scripts/ui/ending_outcome_overlay.gd")
+const DayTopdownRender = preload("res://scripts/day_topdown_render.gd")
+var _building_pick_index: int = 0
+var _foot_local_pos: Vector2 = Vector2.ZERO
 
 enum TravelMode { DRIVE, FOOT }
 
@@ -11,7 +14,12 @@ enum TravelMode { DRIVE, FOOT }
 @export var resource_scene: PackedScene
 @export var map_columns: int = 8
 @export var map_rows: int = 6
-@export var cell_size: Vector2i = Vector2i(240, 240)
+@export var cell_size: Vector2i = Vector2i(720, 720)
+@export var interior_tile_scale: float = 1.45
+@export var world_camera_zoom: float = 0.88
+@export var world_camera_smoothing: float = 10.0
+
+var _world_camera: Camera2D
 @export var fuel_max: float = 999.0
 @export var fuel_per_pixel: float = 0.01
 @export var drive_speed: float = 160.0
@@ -105,6 +113,7 @@ func _ready() -> void:
 	_setup_backpack_ui()
 	_setup_run_end_ui()
 	_setup_stat_bars()
+	_setup_world_camera()
 	_spawn_vehicle()
 	_spawn_player()
 	_setup_day_night()
@@ -120,6 +129,7 @@ func _ready() -> void:
 	else:
 		_start_new_run()
 	_sync_view_cameras()
+	_sync_day_entity_visibility()
 	_refresh_ui()
 	queue_redraw()
 
@@ -142,7 +152,7 @@ func _start_new_run() -> void:
 		time_system.start_day(1)
 
 func _ensure_input_actions() -> void:
-	for action_name in ["move_up", "move_down", "move_left", "move_right", "interact", "repair", "pause", "enter_defense_mode", "toggle_backpack"]:
+	for action_name in ["move_up", "move_down", "move_left", "move_right", "interact", "repair", "pause", "enter_defense_mode", "toggle_backpack", "cycle_building"]:
 		if not InputMap.has_action(action_name):
 			InputMap.add_action(action_name)
 	# 步行与驾车/选路均支持 WASD 与方向键（↑北 ↓南 ←西 →东）
@@ -165,6 +175,7 @@ func _ensure_input_actions() -> void:
 	_register_key_action("pause", KEY_P)
 	_register_key_action("enter_defense_mode", KEY_F)
 	_register_key_action("toggle_backpack", KEY_B)
+	_register_key_action("cycle_building", KEY_Q)
 
 func _reset_action_keys(action_name: String) -> void:
 	for event in InputMap.action_get_events(action_name):
@@ -193,6 +204,7 @@ func _spawn_vehicle() -> void:
 	if vehicle_scene == null:
 		vehicle_scene = load("res://scenes/vehicle.tscn")
 	_vehicle = vehicle_scene.instantiate()
+	_vehicle.z_index = 20
 	add_child(_vehicle)
 
 func _spawn_player() -> void:
@@ -274,14 +286,15 @@ func _physics_process(delta: float) -> void:
 		return
 	if _game_paused or _backpack_open:
 		return
-	_sync_view_cameras()
 	_update_evening_tint(delta)
 	if _is_night_phase():
+		_sync_view_cameras()
 		_refresh_ui()
 		queue_redraw()
 		return
 
 	if not _is_exploration_allowed():
+		_sync_view_cameras()
 		_refresh_ui()
 		queue_redraw()
 		return
@@ -291,12 +304,17 @@ func _physics_process(delta: float) -> void:
 	_check_player_vitals_failure()
 
 	if Input.is_action_just_pressed("interact"):
-		if _mode == TravelMode.DRIVE and _segment_target_index < 0:
-			_take_back_at_node()
-		elif _mode == TravelMode.DRIVE and _can_disembark():
-			_begin_foot_mode()
-		elif _mode == TravelMode.FOOT:
+		if _mode == TravelMode.FOOT:
 			_return_to_vehicle()
+		elif _mode == TravelMode.DRIVE and _segment_target_index < 0:
+			if not _get_enterable_buildings().is_empty():
+				_enter_selected_building()
+			else:
+				_take_back_at_node()
+	if _mode == TravelMode.DRIVE and _segment_target_index < 0:
+		var buildings := _get_enterable_buildings()
+		if buildings.size() > 1 and Input.is_action_just_pressed("cycle_building"):
+			_building_pick_index = (_building_pick_index + 1) % buildings.size()
 	if Input.is_action_just_pressed("repair"):
 		_attempt_repair_elevator()
 
@@ -306,23 +324,63 @@ func _physics_process(delta: float) -> void:
 		TravelMode.FOOT:
 			_process_foot(delta)
 
+	_sync_view_cameras()
 	_refresh_focus()
 	_refresh_ui()
 	queue_redraw()
 
+func _setup_world_camera() -> void:
+	_world_camera = Camera2D.new()
+	_world_camera.name = "WorldCamera"
+	_world_camera.enabled = false
+	_world_camera.zoom = Vector2(world_camera_zoom, world_camera_zoom)
+	_world_camera.position_smoothing_enabled = true
+	_world_camera.position_smoothing_speed = world_camera_smoothing
+	add_child(_world_camera)
+
+
 func _sync_view_cameras() -> void:
 	var night_phase := _is_night_phase()
-	var use_player_camera := _mode == TravelMode.FOOT and not night_phase
-	# Keep junction map fixed on screen: disable follow camera while selecting exits.
-	var use_vehicle_camera := _mode == TravelMode.DRIVE and _segment_target_index >= 0 and not night_phase
+	if night_phase:
+		if is_instance_valid(_world_camera):
+			_world_camera.enabled = false
+		var use_player_camera := _mode == TravelMode.FOOT
+		if is_instance_valid(_player) and is_instance_valid(_player.camera):
+			_player.camera.enabled = use_player_camera
+			if use_player_camera:
+				_player.camera.make_current()
+		if is_instance_valid(_vehicle) and is_instance_valid(_vehicle.camera):
+			_vehicle.camera.enabled = false
+		return
+	if _mode == TravelMode.FOOT:
+		if is_instance_valid(_world_camera):
+			_world_camera.enabled = false
+		if is_instance_valid(_player) and is_instance_valid(_player.camera):
+			_player.camera.enabled = false
+		if is_instance_valid(_vehicle) and is_instance_valid(_vehicle.camera):
+			_vehicle.camera.enabled = false
+		return
+	# 白天驾驶：大地图世界坐标 + 相机跟随车辆
+	if is_instance_valid(_world_camera):
+		_world_camera.enabled = true
+		_world_camera.zoom = Vector2(world_camera_zoom, world_camera_zoom)
+		_world_camera.global_position = _vehicle_world_position()
+		_world_camera.make_current()
 	if is_instance_valid(_player) and is_instance_valid(_player.camera):
-		_player.camera.enabled = use_player_camera
-		if use_player_camera:
-			_player.camera.make_current()
+		_player.camera.enabled = false
 	if is_instance_valid(_vehicle) and is_instance_valid(_vehicle.camera):
-		_vehicle.camera.enabled = use_vehicle_camera
-		if use_vehicle_camera:
-			_vehicle.camera.make_current()
+		_vehicle.camera.enabled = false
+
+
+func _camera_world_view_rect() -> Rect2:
+	if not is_instance_valid(_world_camera) or not _world_camera.enabled:
+		return Rect2(Vector2(-4000, -4000), Vector2(8000, 8000))
+	var vp := get_viewport_rect().size
+	if vp == Vector2.ZERO:
+		vp = Vector2(1280.0, 720.0)
+	var half := (vp / _world_camera.zoom) * 0.5
+	var center := _world_camera.global_position
+	return Rect2(center - half, half * 2.0)
 
 func _process_drive(delta: float) -> void:
 	if _segment_target_index < 0 or not _map.is_valid_index(_segment_target_index):
@@ -343,9 +401,47 @@ func _process_drive(delta: float) -> void:
 		_segment_progress = 0.0
 		_halt_at_node(_segment_from_index)
 
-func _process_foot(_delta: float) -> void:
-	if is_instance_valid(_player):
-		_player.global_position = _clamp_to_cell(_player.global_position, _current_district_index)
+func _process_foot(delta: float) -> void:
+	if _current_district_index < 0:
+		return
+	var foot_area := _map.get_foot_area_rect(_current_district_index)
+	if foot_area.size == Vector2.ZERO:
+		return
+	var input_vector := Input.get_vector("move_left", "move_right", "move_up", "move_down")
+	if input_vector == Vector2.ZERO:
+		return
+	var next_local := _foot_local_pos + input_vector * 96.0 * delta
+	next_local.x = clampf(next_local.x, 8.0, foot_area.size.x - 8.0)
+	next_local.y = clampf(next_local.y, 8.0, foot_area.size.y - 8.0)
+	var foot_origin := _map.get_foot_origin(_current_district_index)
+	var world_next := foot_origin + next_local
+	if not _is_foot_blocked_at(world_next):
+		_foot_local_pos = next_local
+		_apply_foot_world_position()
+		_refresh_focus()
+	_try_collect_interior_pickups()
+
+
+func _try_collect_interior_pickups() -> void:
+	if _current_district_index < 0:
+		return
+	var player_world := _map.get_foot_origin(_current_district_index) + _foot_local_pos
+	for node in _resource_nodes:
+		if not is_instance_valid(node):
+			continue
+		if int(node.get_meta("district_index", -1)) != _current_district_index:
+			continue
+		if node.global_position.distance_to(player_world) > 28.0:
+			continue
+		var loot_id := str(node.get_meta("item_id", "scrap"))
+		if node.has_signal("collected"):
+			node.collected.emit(loot_id)
+
+
+func _apply_foot_world_position() -> void:
+	if not is_instance_valid(_player) or _current_district_index < 0:
+		return
+	_player.global_position = _map.get_foot_origin(_current_district_index) + _foot_local_pos
 
 func _input(event: InputEvent) -> void:
 	if _run_ended:
@@ -355,6 +451,15 @@ func _input(event: InputEvent) -> void:
 			_toggle_backpack()
 			get_viewport().set_input_as_handled()
 			return
+		if not _game_paused and not _backpack_open and _mode == TravelMode.DRIVE and _segment_target_index < 0:
+			var buildings := _get_enterable_buildings()
+			for i in range(mini(9, buildings.size())):
+				var key := Key.KEY_1 + i
+				if event.keycode == key or event.physical_keycode == key:
+					_building_pick_index = i
+					_enter_selected_building()
+					get_viewport().set_input_as_handled()
+					return
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -399,8 +504,7 @@ func _arrive_at_node(node_index: int) -> void:
 	_map.mark_explored(node_index)
 	var degree := _map.connected_count(node_index)
 	# Record current district for possible disembark options, but do not force stop driving.
-	if _map.is_district(node_index):
-		_current_district_index = node_index
+	_current_district_index = -1
 	_halt_at_node(node_index)
 
 func _pick_auto_next(node_index: int) -> int:
@@ -414,7 +518,7 @@ func _build_exit_options(node_index: int) -> Dictionary:
 	var options: Dictionary = {}
 	for direction in _map.get_available_directions(node_index):
 		var neighbor := _map.get_neighbor_index(node_index, direction)
-		if neighbor >= 0:
+		if neighbor >= 0 and _map.is_drive_node(neighbor):
 			options[direction] = neighbor
 	return options
 
@@ -429,9 +533,13 @@ func _halt_at_node(node_index: int) -> void:
 	_segment_progress = 0.0
 	_exit_options = _build_exit_options(node_index)
 	_ensure_back_exit_option()
+	_building_pick_index = 0
+	for district_index in _map.get_roadside_districts(node_index):
+		_map.mark_explored(district_index)
+	_sync_day_entity_visibility()
 	if is_instance_valid(_vehicle):
 		_vehicle.set_active(true)
-		_vehicle.global_position = _map.cell_center(node_index)
+		_vehicle.global_position = _road_center(node_index)
 	if get_viewport() != null:
 		get_viewport().gui_release_focus()
 	_sync_minimap_navigation()
@@ -512,8 +620,7 @@ func _enter_node(node_index: int, is_run_start: bool = false) -> void:
 		_arrived_from_index = -1
 		_previous_node_index = -1
 	_map.mark_explored(node_index)
-	if _map.is_district(node_index):
-		_current_district_index = node_index
+	_current_district_index = -1
 	var degree := _map.connected_count(node_index)
 	if degree >= 1:
 		_halt_at_node(node_index)
@@ -527,23 +634,55 @@ func _enter_node(node_index: int, is_run_start: bool = false) -> void:
 func _begin_drive_segment(from_index: int, to_index: int) -> void:
 	if not _map.is_valid_index(from_index) or not _map.is_valid_index(to_index):
 		return
+	if not _map.is_drive_node(to_index):
+		return
 	_mode = TravelMode.DRIVE
 	_current_node_index = from_index
 	_segment_from_index = from_index
 	_segment_target_index = to_index
 	_segment_progress = 0.0
-	_segment_length = maxf(_map.cell_center(from_index).distance_to(_map.cell_center(to_index)), 1.0)
+	_segment_length = maxf(_road_center(from_index).distance_to(_road_center(to_index)), 1.0)
 	if is_instance_valid(_vehicle):
 		_vehicle.set_active(true)
 		_vehicle.global_position = _map.cell_center(from_index)
+	_sync_day_entity_visibility()
 	for node in _resource_nodes:
 		if is_instance_valid(node):
 			node.visible = false
 	_sync_minimap_navigation()
 
-func _begin_foot_mode() -> void:
-	if _current_district_index < 0:
+func _get_enterable_buildings() -> Array:
+	var result: Array = []
+	if not _map.is_valid_index(_current_node_index) or _segment_target_index >= 0:
+		return result
+	if not _map.is_drive_node(_current_node_index):
+		return result
+	for district_index in _map.get_roadside_districts(_current_node_index):
+		var cell := _map.get_cell(district_index)
+		result.append({
+			"district_index": district_index,
+			"label": _map.building_label(district_index),
+			"building_type": str(cell.get("building_type", "")),
+			"remaining": int(cell.get("resource_remaining", 0)),
+		})
+	return result
+
+
+func _enter_selected_building() -> void:
+	var buildings := _get_enterable_buildings()
+	if buildings.is_empty():
 		return
+	_building_pick_index = clampi(_building_pick_index, 0, buildings.size() - 1)
+	var entry: Dictionary = buildings[_building_pick_index]
+	_begin_foot_mode(int(entry.get("district_index", -1)))
+
+
+func _begin_foot_mode(district_index: int = -1) -> void:
+	if district_index < 0:
+		district_index = _current_district_index
+	if district_index < 0 or not _map.is_district(district_index):
+		return
+	_current_district_index = district_index
 	_map.ensure_foot_layout(_current_district_index)
 	_mode = TravelMode.FOOT
 	_segment_target_index = -1
@@ -551,24 +690,30 @@ func _begin_foot_mode() -> void:
 		_vehicle.set_active(false)
 	if is_instance_valid(_player):
 		_player.set_active(true)
-		var district_rect := _map.cell_rect(_current_district_index)
-		_player.world_bounds = _map.get_foot_play_rect(_current_district_index)
-		_player.set_blocked_checker(Callable(self, "_is_foot_blocked_at"))
-		_player.global_position = _map.get_foot_spawn_world_pos(_map.get_cell(_current_district_index), district_rect)
-		_player.global_position = _clamp_to_walkable(_player.global_position)
+		_player.set_physics_process(false)
+		_player.set_blocked_checker(Callable())
+		_player.world_bounds = Rect2()
+		var door_world := _map.get_foot_door_world_pos(_current_district_index)
+		var foot_origin := _map.get_foot_origin(_current_district_index)
+		_foot_local_pos = door_world - foot_origin
+		_apply_foot_world_position()
+	_sync_day_entity_visibility()
 	_fix_district_pickup_positions(_current_district_index)
 	for node in _resource_nodes:
 		if is_instance_valid(node):
-			node.visible = int(node.get_meta("district_index", -1)) == _current_district_index
+			node.visible = false
 
 func _return_to_vehicle() -> void:
 	_mode = TravelMode.DRIVE
 	if is_instance_valid(_player):
 		_player.set_blocked_checker(Callable())
+		_player.set_physics_process(true)
 		_player.set_active(false)
 	if is_instance_valid(_vehicle):
 		_vehicle.set_active(true)
-		_vehicle.global_position = _map.cell_center(maxi(_current_district_index, 0))
+		if _map.is_valid_index(_current_node_index):
+			_vehicle.global_position = _road_center(_current_node_index)
+	_sync_day_entity_visibility()
 	for node in _resource_nodes:
 		if is_instance_valid(node):
 			node.visible = false
@@ -576,8 +721,8 @@ func _return_to_vehicle() -> void:
 		_halt_at_node(_current_node_index)
 
 func _on_disembark_pressed() -> void:
-	if _mode == TravelMode.DRIVE and _can_disembark():
-		_begin_foot_mode()
+	if _mode == TravelMode.DRIVE and not _get_enterable_buildings().is_empty():
+		_enter_selected_building()
 
 func _on_return_pressed() -> void:
 	if _mode == TravelMode.FOOT:
@@ -587,7 +732,28 @@ func _on_repair_pressed() -> void:
 	_attempt_repair_elevator()
 
 func _can_disembark() -> bool:
-	return _current_district_index >= 0 and _map.is_district(_current_district_index)
+	return _mode == TravelMode.DRIVE and _segment_target_index < 0 and not _get_enterable_buildings().is_empty()
+
+
+func _sync_day_entity_visibility() -> void:
+	if _is_night_phase():
+		return
+	if _mode == TravelMode.FOOT:
+		if is_instance_valid(_player):
+			_player.visible = true
+			var player_sprite := _player.get_node_or_null("Sprite2D") as Sprite2D
+			if player_sprite != null:
+				player_sprite.visible = true
+		if is_instance_valid(_vehicle):
+			_vehicle.visible = false
+		return
+	if is_instance_valid(_player):
+		_player.visible = false
+	if is_instance_valid(_vehicle):
+		_vehicle.visible = false
+		var vehicle_sprite := _vehicle.get_node_or_null("Sprite2D") as Sprite2D
+		if vehicle_sprite != null:
+			vehicle_sprite.visible = false
 
 func _can_repair_elevator() -> bool:
 	return _mode == TravelMode.FOOT and _current_district_index >= 0 and _map.district_has_elevator(_current_district_index) and not _run_ended
@@ -650,8 +816,8 @@ func _show_evidence_pickup_toast(evidence_id: String) -> void:
 	print("[Evidence] 拾取：%s" % title)
 
 func _current_focus_position() -> Vector2:
-	if _mode == TravelMode.FOOT and is_instance_valid(_player):
-		return _player.global_position
+	if _mode == TravelMode.FOOT and _current_district_index >= 0:
+		return _map.get_foot_origin(_current_district_index) + _foot_local_pos
 	if _mode == TravelMode.DRIVE and _segment_target_index >= 0:
 		return _vehicle_world_position()
 	if _mode == TravelMode.DRIVE and _segment_target_index < 0 and _map.is_valid_index(_current_node_index):
@@ -1348,6 +1514,7 @@ func _apply_save_data(data: Dictionary) -> void:
 			_vehicle.set_active(true)
 		_restore_drive_state_after_load()
 
+	_sync_day_entity_visibility()
 	_restore_time_phase_after_load()
 	_sync_minimap_navigation()
 	_refresh_ui()
@@ -1363,12 +1530,16 @@ func _restore_foot_mode_from_save(foot: Dictionary) -> void:
 		_vehicle.set_active(false)
 	if is_instance_valid(_player):
 		_player.set_active(true)
+		_player.set_physics_process(false)
 		_map.ensure_foot_layout(_current_district_index)
-		var district_rect := _map.cell_rect(_current_district_index)
-		_player.world_bounds = _map.get_foot_play_rect(_current_district_index)
-		_player.set_blocked_checker(Callable(self, "_is_foot_blocked_at"))
-		_player.global_position = Vector2(float(foot.get("player_x", 0.0)), float(foot.get("player_y", 0.0)))
-		_player.global_position = _clamp_to_walkable(_player.global_position)
+		var foot_origin := _map.get_foot_origin(_current_district_index)
+		_foot_local_pos = Vector2(float(foot.get("player_x", 0.0)), float(foot.get("player_y", 0.0))) - foot_origin
+		if foot.has("player_x"):
+			_apply_foot_world_position()
+		else:
+			var door_world := _map.get_foot_door_world_pos(_current_district_index)
+			_foot_local_pos = door_world - foot_origin
+			_apply_foot_world_position()
 	for node in _resource_nodes:
 		if is_instance_valid(node):
 			node.visible = int(node.get_meta("district_index", -1)) == _current_district_index
@@ -1732,6 +1903,7 @@ func _ensure_vehicle_ready_for_night() -> void:
 	for node in _resource_nodes:
 		if is_instance_valid(node):
 			node.visible = false
+	_sync_day_entity_visibility()
 
 
 func _force_return_to_vehicle_for_night() -> void:
@@ -1775,14 +1947,14 @@ func _refresh_ui() -> void:
 			day_text = " | %s 第%d天" % [time_system.get_phase_name(), time_system.day_index]
 		status_label.text = "%s | %s | %s%s | 探索: %d / %d | 剩余资源: %d%s" % [run_text, layer_text, elevator_text, day_text, _map.explored_count(), _map.cells.size(), _map.total_resources_remaining(), district_text]
 	if is_instance_valid(map_info_label):
-		map_info_label.text = "地图：↑北 ↓南 ←西 →东 | 蓝=南北路 黄=东西路 | 绿箭头=可走"
+		map_info_label.text = "大地图 · 相机跟车 · 右下角缩略图 | 路边招牌建筑旁 E 进入"
 	_sync_minimap_navigation()
 
 	if is_instance_valid(prompt_label):
 		_update_prompts()
 
 func _update_prompts() -> void:
-	var can_stop := _can_disembark()
+	var can_enter_buildings := _can_disembark()
 	var in_foot := _mode == TravelMode.FOOT
 	var waiting_turn := _mode == TravelMode.DRIVE and _segment_target_index < 0
 	prompt_label.text = ""
@@ -1807,45 +1979,59 @@ func _update_prompts() -> void:
 			prompt_label.text = "傍晚：按 F 回车并进入布防模式"
 		else:
 			prompt_label.text = "傍晚提醒：按 F 进入布防模式"
-		if can_stop and _mode == TravelMode.DRIVE:
-			disembark_button.visible = true
+		if can_enter_buildings and _mode == TravelMode.DRIVE:
+			prompt_label.text = _building_menu_prompt_text()
 		elif in_foot:
 			return_button.visible = true
 		return
 
 	if waiting_turn:
-		var hint := _halt_prompt_text()
-		prompt_label.text = hint
+		var lines: PackedStringArray = [_halt_prompt_text()]
+		if can_enter_buildings:
+			lines.append(_building_menu_prompt_text())
+		prompt_label.text = "\n".join(lines)
 		var back_index := _get_back_neighbor_index()
-		if is_instance_valid(back_track_button) and back_index >= 0:
+		if is_instance_valid(back_track_button) and back_index >= 0 and not can_enter_buildings:
 			var back_dir := _map.direction_between(_current_node_index, back_index)
 			back_track_button.visible = true
 			back_track_button.text = "原路返回 %s (E)" % _direction_label(back_dir)
 	elif in_foot:
 		if _can_repair_elevator() and _current_layer >= total_layers:
-			prompt_label.text = "顶层电梯：修复完成将触发归档仪式与最终抉择"
+			prompt_label.text = "室内 · 顶层电梯：修复完成将触发归档仪式与最终抉择"
 			repair_button.visible = true
 		elif _can_repair_elevator():
-			prompt_label.text = ItemDefs.get_repair_requirement_text(_backpack) + "\n进度满后进入上层。"
+			prompt_label.text = "室内 · " + ItemDefs.get_repair_requirement_text(_backpack) + "\n进度满后进入上层。"
 			repair_button.visible = true
 			repair_button.text = _repair_button_label()
 		else:
-			prompt_label.text = "步行探索：深绿格为障碍不可通行，物资只在可走区域刷新。B 开背包。"
+			prompt_label.text = "室内搜刮：从门口出生，WASD 移动，靠近物资自动拾取。E 离开 · B 背包。"
 		return_button.visible = true
-	elif can_stop:
-		prompt_label.text = "建筑群：可以下车探索"
-		disembark_button.visible = true
-	else:
-		if _segment_target_index >= 0:
-			var axis := _map.get_segment_axis(_segment_from_index, _segment_target_index)
-			if axis == "ns":
-				prompt_label.text = "南北路段：W/↑ 前进  S/↓ 后退（A/D、←→ 无效）"
-			elif axis == "ew":
-				prompt_label.text = "东西路段：D/→ 前进  A/← 后退（W/S、↑↓ 无效）"
-			else:
-				prompt_label.text = "沿当前路段用 WASD 或方向键前进/后退"
+	elif _segment_target_index >= 0:
+		var axis := _map.get_segment_axis(_segment_from_index, _segment_target_index)
+		if axis == "ns":
+			prompt_label.text = "俯视驾驶 · 南北路：W/↑ 前进  S/↓ 后退"
+		elif axis == "ew":
+			prompt_label.text = "俯视驾驶 · 东西路：D/→ 前进  A/← 后退"
 		else:
-			prompt_label.text = "查看地图，在岔口选路（WASD 或方向键：↑北 ↓南 ←西 →东）"
+			prompt_label.text = "俯视驾驶 · 沿当前路段用 WASD 或方向键前进/后退"
+	else:
+		prompt_label.text = "沿路驾驶（WASD）· 镜头跟车 · 开到路边房子门口高亮时按 E 进入"
+
+
+func _building_menu_prompt_text() -> String:
+	var buildings := _get_enterable_buildings()
+	if buildings.is_empty():
+		return ""
+	_building_pick_index = clampi(_building_pick_index, 0, buildings.size() - 1)
+	var lines: PackedStringArray = ["路边建筑（停车后 E 进入 · Q 切换 · 1-9 快选）："]
+	for i in range(buildings.size()):
+		var entry: Dictionary = buildings[i]
+		var prefix := "▶ " if i == _building_pick_index else "  "
+		var num := "[%d] " % (i + 1) if i < 9 else ""
+		var remain := int(entry.get("remaining", 0))
+		var loot_hint := "剩余约 %d" % remain if remain > 0 else "可调查"
+		lines.append("%s%s路边 · %s · %s" % [prefix, num, str(entry.get("label", "建筑")), loot_hint])
+	return "\n".join(lines)
 
 func _halt_prompt_text() -> String:
 	var parts: PackedStringArray = []
@@ -1875,14 +2061,26 @@ func _sync_minimap_navigation() -> void:
 		hints = _exit_directions_array()
 	minimap_view.set_navigation_hints(node_index, hints, segment_axis)
 
+func _road_center(index: int) -> Vector2:
+	if not _map.is_valid_index(index):
+		return Vector2.ZERO
+	return _map.cell_center(index)
+
+
 func _vehicle_world_position() -> Vector2:
 	if _segment_target_index >= 0 and _map.is_valid_index(_segment_from_index) and _map.is_valid_index(_segment_target_index):
-		var from_pos := _map.cell_center(_segment_from_index)
-		var to_pos := _map.cell_center(_segment_target_index)
+		var from_pos := _road_center(_segment_from_index)
+		var to_pos := _road_center(_segment_target_index)
 		return from_pos.lerp(to_pos, clampf(_segment_progress, 0.0, 1.0))
 	if _current_node_index >= 0:
-		return _map.cell_center(_current_node_index)
+		return _road_center(_current_node_index)
 	return Vector2.ZERO
+
+
+func _current_travel_axis() -> String:
+	if _segment_target_index >= 0 and _map.is_valid_index(_segment_from_index) and _map.is_valid_index(_segment_target_index):
+		return _map.get_segment_axis(_segment_from_index, _segment_target_index)
+	return ""
 
 func _world_view_transform(full_map_view: bool = false) -> Transform2D:
 	var view_size := get_viewport_rect().size
@@ -1914,12 +2112,9 @@ func _route_content_rect(view_size: Vector2) -> Rect2:
 func _update_vehicle_transform() -> void:
 	if not is_instance_valid(_vehicle):
 		return
-	if _segment_target_index < 0:
-		_drive_offset = Vector2(_drive_travel_distance, 0.0)
-		_vehicle.global_position = _map.cell_center(maxi(_current_node_index, 0))
-		return
-	_drive_offset = Vector2(_drive_travel_distance + _segment_progress * _segment_length, 0.0)
-	_vehicle.global_position = _map.cell_center(maxi(_current_node_index, 0))
+	_vehicle.global_position = _vehicle_world_position()
+	if is_instance_valid(_world_camera) and _world_camera.enabled:
+		_world_camera.global_position = _vehicle.global_position
 
 func _direction_label(direction: String) -> String:
 	match direction:
@@ -1950,12 +2145,21 @@ func _clamp_to_cell(position: Vector2, district_index: int) -> Vector2:
 func _is_foot_blocked_at(world_pos: Vector2) -> bool:
 	if _current_district_index < 0 or _mode != TravelMode.FOOT:
 		return false
-	var rect := _map.cell_rect(_current_district_index)
+	var foot_origin := _map.get_foot_origin(_current_district_index)
+	var foot_area := _map.get_foot_area_rect(_current_district_index)
 	var cell := _map.get_cell(_current_district_index)
-	# Probe axis-aligned cross (collision radius ≈ 12, use ±10 to leave slight margin)
-	var probe_offsets := [Vector2.ZERO, Vector2(-10, 0), Vector2(10, 0), Vector2(0, -10), Vector2(0, 10)]
+	var local := world_pos - foot_origin
+	if local.x < 0.0 or local.y < 0.0 or local.x >= foot_area.size.x or local.y >= foot_area.size.y:
+		return true
+	var probe_offsets: Array[Vector2] = [
+		Vector2.ZERO, Vector2(-6, 0), Vector2(6, 0), Vector2(0, -6), Vector2(0, 6),
+	]
 	for offset in probe_offsets:
-		if _map.is_foot_tile_blocked(cell, rect, world_pos + offset):
+		var probe_pos: Vector2 = world_pos + offset
+		var probe_local: Vector2 = probe_pos - foot_origin
+		if probe_local.x < 0.0 or probe_local.y < 0.0 or probe_local.x >= foot_area.size.x or probe_local.y >= foot_area.size.y:
+			continue
+		if _map.is_foot_tile_blocked(cell, foot_origin, probe_pos):
 			return true
 	return false
 
@@ -1974,7 +2178,7 @@ func _fix_district_pickup_positions(district_index: int) -> void:
 			continue
 		if int(node.get_meta("district_index", -1)) != district_index:
 			continue
-		if _map.is_foot_tile_blocked(cell, rect, node.global_position):
+		if _map.is_foot_tile_blocked(cell, _map.get_foot_origin(district_index), node.global_position):
 			node.global_position = walkable[spot_idx % walkable.size()]
 			spot_idx += 1
 
@@ -1987,7 +2191,7 @@ func _clamp_to_walkable(position: Vector2) -> Vector2:
 	if not _is_foot_blocked_at(result):
 		return result
 	# 落在障碍上时退回区块中心
-	return _map.get_foot_spawn_world_pos(_map.get_cell(_current_district_index), rect)
+	return _map.get_foot_door_world_pos(_current_district_index)
 
 func _draw() -> void:
 	if _is_night_phase() and (not is_instance_valid(night_td) or not night_td.visible):
@@ -1997,231 +2201,232 @@ func _draw() -> void:
 		return
 	match _mode:
 		TravelMode.DRIVE:
-			if _segment_target_index >= 0:
-				_draw_drive_background()
-			else:
-				_draw_world_map_background()
+			_draw_day_overworld()
 		TravelMode.FOOT:
-			_draw_foot_background()
-	if _evening_tint > 0.001:
-		var view_size := get_viewport_rect().size
-		if view_size == Vector2.ZERO:
-			view_size = Vector2(1280.0, 720.0)
-		draw_rect(Rect2(Vector2.ZERO, view_size), Color(0.05, 0.08, 0.18, _evening_tint), true)
+			_draw_foot_interior()
+	if _evening_tint > 0.001 and _mode == TravelMode.DRIVE:
+		_draw_evening_tint_screen_overlay()
 
-func _draw_drive_background() -> void:
+func _draw_evening_tint_screen_overlay() -> void:
+	var xform := get_canvas_transform()
+	var inv := xform.affine_inverse()
 	var view_size := get_viewport_rect().size
 	if view_size == Vector2.ZERO:
 		view_size = Vector2(1280.0, 720.0)
-	var anchor := _drive_view_anchor()
-	var left := anchor.x - view_size.x * 0.5
-	var top := anchor.y - view_size.y * 0.5
-	var scroll := _drive_offset.x
+	var corners := PackedVector2Array([
+		inv * Vector2.ZERO,
+		inv * Vector2(view_size.x, 0.0),
+		inv * Vector2(view_size.x, view_size.y),
+		inv * Vector2(0.0, view_size.y),
+	])
+	draw_colored_polygon(corners, Color(0.05, 0.08, 0.18, _evening_tint))
 
-	draw_rect(Rect2(Vector2(left, top), view_size), Color("#0b1624"), true)
-	draw_rect(Rect2(left, top, view_size.x, view_size.y * 0.54), Color("#102133"), true)
 
-	var sun_x := left + view_size.x * 0.78
-	var sun_y := top + view_size.y * 0.18
-	var sun_color := Color("#f0c168")
-	if is_instance_valid(time_system) and time_system.phase == TimeSystem.Phase.EVENING:
-		sun_color = Color("#e87840")
-	draw_circle(Vector2(sun_x, sun_y), 42.0, sun_color)
+func _draw_day_overworld() -> void:
+	var view_rect := _camera_world_view_rect().grow(360.0)
+	var world_bounds := Rect2(Vector2.ZERO, _map.get_world_size())
+	draw_rect(world_bounds.grow(480.0), Color("#141a20"), true)
 
-	var mountain_spacing := 240.0
-	var mountain_shift := fposmod(scroll * 0.16, mountain_spacing)
-	for i in range(-2, int(view_size.x / mountain_spacing) + 5):
-		var mountain_x := left + float(i) * mountain_spacing - mountain_shift
-		draw_circle(Vector2(mountain_x, top + view_size.y * 0.50), 120.0, Color("#1a2d42"))
-		draw_rect(Rect2(mountain_x - 120.0, top + view_size.y * 0.50, 240.0, 90.0), Color("#1a2d42"), true)
-
-	var block_spacing := 160.0
-	var block_shift := fposmod(scroll * 0.34, block_spacing)
-	for i in range(-3, int(view_size.x / block_spacing) + 6):
-		var block_x := left + float(i) * block_spacing - block_shift
-		var block_height := 72.0 + float(i % 4) * 20.0
-		draw_rect(Rect2(block_x - 42.0, top + view_size.y * 0.58 - block_height, 84.0, block_height), Color("#223246"), true)
-		draw_rect(Rect2(block_x - 50.0, top + view_size.y * 0.58 - block_height - 10.0, 100.0, 10.0), Color("#31455c"), true)
-		if i % 2 == 0:
-			draw_rect(Rect2(block_x - 10.0, top + view_size.y * 0.58 - block_height - 26.0, 20.0, 16.0), Color("#3b5169"), true)
-
-	var tree_spacing := 132.0
-	var tree_shift := fposmod(scroll * 0.58, tree_spacing)
-	for i in range(-3, int(view_size.x / tree_spacing) + 6):
-		var tree_x := left + float(i) * tree_spacing - tree_shift
-		var trunk_top := top + view_size.y * 0.72
-		draw_rect(Rect2(tree_x - 3.0, trunk_top - 26.0, 6.0, 32.0), Color("#5b4430"), true)
-		draw_circle(Vector2(tree_x, trunk_top - 34.0), 18.0, Color("#3e6c53"))
-		draw_circle(Vector2(tree_x - 12.0, trunk_top - 28.0), 12.0, Color("#345d48"))
-
-	var road_top := top + view_size.y * 0.76
-	draw_rect(Rect2(left - 120.0, road_top, view_size.x + 240.0, view_size.y - (road_top - top)), Color("#2a2f36"), true)
-	draw_rect(Rect2(left - 120.0, road_top + 12.0, view_size.x + 240.0, 6.0), Color("#4d535c"), true)
-
-	var stripe_spacing := 78.0
-	var stripe_shift := fposmod(scroll * 0.92, stripe_spacing)
-	for i in range(-2, int((view_size.x + 240.0) / stripe_spacing) + 5):
-		var stripe_x := left - 120.0 + float(i) * stripe_spacing - stripe_shift
-		draw_rect(Rect2(stripe_x, road_top + 58.0, 34.0, 6.0), Color("#d6c779"), true)
-
-	if is_instance_valid(_vehicle):
-		var vpos := _vehicle.global_position
-		draw_rect(Rect2(vpos.x - 8.0, road_top + 34.0, 16.0, 12.0), Color("#1a1a1a"), true)
-		draw_rect(Rect2(vpos.x - 30.0, road_top + 18.0, 60.0, 20.0), Color("#d89246"), true)
-		draw_rect(Rect2(vpos.x - 34.0, road_top + 34.0, 68.0, 12.0), Color("#6b3f17"), true)
-
-	var axis := _map.get_segment_axis(_segment_from_index, _segment_target_index)
-	if axis == "ns":
-		draw_string(ThemeDB.fallback_font, Vector2(left + 16.0, top + 16.0), "南北路段：W/↑ 前进  S/↓ 后退", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#9ec9ff"))
-	elif axis == "ew":
-		draw_string(ThemeDB.fallback_font, Vector2(left + 16.0, top + 16.0), "东西路段：D/→ 前进  A/← 后退", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#f0d080"))
-
-func _drive_view_anchor() -> Vector2:
-	if _segment_target_index >= 0 and _map.is_valid_index(_segment_from_index) and _map.is_valid_index(_segment_target_index):
-		return _map.cell_center(_segment_from_index).lerp(_map.cell_center(_segment_target_index), 0.5)
-	if _map.is_valid_index(_current_node_index):
-		return _map.cell_center(_current_node_index)
-	if _map.is_valid_index(_current_district_index):
-		return _map.cell_center(_current_district_index)
-	return Vector2.ZERO
-
-func _draw_world_map_background() -> void:
-	var view_size := get_viewport_rect().size
-	if view_size == Vector2.ZERO:
-		view_size = Vector2(1280.0, 720.0)
-	draw_rect(Rect2(Vector2.ZERO, view_size), Color("#05070a"), true)
-	var backdrop := Rect2(Vector2(32.0, 32.0), view_size - Vector2(64.0, 64.0))
-	draw_rect(backdrop, Color(0.07, 0.09, 0.12, 0.92), true)
-	draw_rect(backdrop, Color("#d7f1ff"), false, 2.0)
-
-	var xform := _world_view_transform(true)
 	for index in range(_map.cells.size()):
 		var cell := _map.get_cell(index)
-		if str(cell["kind"]) == "empty":
+		var kind := str(cell["kind"])
+		if kind == "empty" or kind == "road" or kind == "junction" or kind == "hub":
 			continue
 		var rect := _map.cell_rect(index)
-		var screen_rect := xform * rect
-		if not _map_cell_visible_for_player(index):
-			draw_rect(screen_rect, Color("#000000"), true)
+		if not view_rect.intersects(rect):
 			continue
-		var explored := bool(cell["explored"])
-		var kind := str(cell["kind"])
-		var fill := Color("#1a2430")
-		if war_fog_enabled:
-			match kind:
-				"district":
-					fill = Color("#587349")
-				"hub":
-					fill = Color("#4f6673")
-				"junction":
-					fill = Color("#465f73")
-				_:
-					fill = Color("#29313c")
+		if war_fog_enabled and not bool(cell["explored"]):
+			draw_rect(rect, Color("#06080c"), true)
+			continue
+		var explored := bool(cell["explored"]) or not war_fog_enabled
+		var cell_seed := int(cell.get("seed", index + 1))
+		if kind == "district":
+			DayTopdownRender.draw_ruin_cell(self, rect, "empty", explored, cell_seed)
 		else:
-			match kind:
-				"district":
-					fill = Color("#587349") if explored else Color("#314233")
-				"hub":
-					fill = Color("#4f6673") if explored else Color("#2b3943")
-				"junction":
-					fill = Color("#465f73") if explored else Color("#273441")
-				_:
-					fill = Color("#29313c")
-		draw_rect(screen_rect, fill, true)
-		var border_bright := explored or not war_fog_enabled
-		draw_rect(screen_rect, Color("#9ec9ff") if border_bright else Color("#35485a"), false, 2.0)
-		if kind == "junction":
-			var junction_center := screen_rect.position + screen_rect.size * 0.5
-			draw_circle(junction_center, 10.0, Color("#f0c168"))
-			draw_string(ThemeDB.fallback_font, junction_center + Vector2(-8, -18), "路口", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#f6e7b0"))
+			DayTopdownRender.draw_ruin_cell(self, rect, kind, explored, cell_seed)
+
+	for index in range(_map.cells.size()):
+		var cell := _map.get_cell(index)
+		var kind := str(cell["kind"])
+		if kind != "road" and kind != "junction" and kind != "hub":
+			continue
+		var rect := _map.cell_rect(index)
+		if not view_rect.intersects(rect):
+			continue
+		if war_fog_enabled and not bool(cell["explored"]):
+			draw_rect(rect, Color("#06080c"), true)
+			continue
+		var explored := bool(cell["explored"]) or not war_fog_enabled
+		var cell_seed := int(cell.get("seed", index + 1))
+		DayTopdownRender.draw_road_cell(self, rect, explored, cell_seed)
 
 	for index in range(_map.cells.size()):
 		var cell := _map.get_cell(index)
 		if str(cell["kind"]) == "empty":
 			continue
-		if not _map_cell_visible_for_player(index):
+		if war_fog_enabled and not bool(cell["explored"]):
 			continue
-		var center := xform * _map.cell_center(index)
+		var rect := _map.cell_rect(index)
+		if not view_rect.intersects(rect):
+			continue
+		var center := _map.cell_center(index)
 		for direction in _map.get_available_directions(index):
 			var other := _map.get_neighbor_index(index, direction)
 			if other < 0 or other < index:
 				continue
-			if not _map_cell_visible_for_player(other):
+			if war_fog_enabled and not bool(_map.get_cell(other).get("explored", false)):
 				continue
-			var other_center := xform * _map.cell_center(other)
-			var is_ns := direction == "up" or direction == "down"
-			var road_color := Color("#6eb5e8") if is_ns else Color("#e8c66e")
-			if not war_fog_enabled and (not bool(cell["explored"]) or not bool(_map.get_cell(other)["explored"])):
-				road_color = Color(road_color.r, road_color.g, road_color.b, 0.28)
-			draw_line(center, other_center, road_color, 8.0 if is_ns else 6.0)
-			draw_line(center, other_center, Color(0.0, 0.0, 0.0, 0.18), 2.0)
+			var other_center := _map.cell_center(other)
+			var explored_road := bool(cell["explored"]) and bool(_map.get_cell(other).get("explored", false))
+			DayTopdownRender.draw_road_line(self, center, other_center, _map.cell_size, explored_road or not war_fog_enabled)
 
-	if _map.is_valid_index(_current_node_index):
-		var node_center := xform * _map.cell_center(_current_node_index)
-		var node_rect := xform * _map.cell_rect(_current_node_index)
-		draw_rect(node_rect, Color("#ff5f57", 0.25), true)
-		draw_rect(node_rect, Color("#ffd2cc"), false, 4.0)
-		draw_circle(node_center, 14.0, Color("#ff8b7a"))
-		draw_string(ThemeDB.fallback_font, node_center + Vector2(-18, -22), "当前", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#ffd8d4"))
-		for direction in _exit_options.keys():
-			var tip := node_center
-			var arm := minf(node_rect.size.x, node_rect.size.y) * 0.34
-			match str(direction):
-				"up":
-					tip += Vector2(0.0, -arm)
-				"down":
-					tip += Vector2(0.0, arm)
-				"left":
-					tip += Vector2(-arm, 0.0)
-				"right":
-					tip += Vector2(arm, 0.0)
-			draw_line(node_center, tip, Color("#7dffb2"), 5.0)
-			draw_circle(tip, 5.0, Color("#ffffff"))
-		draw_circle(node_center, 10.0, Color("#ff5f57"))
-		draw_rect(Rect2(node_center.x - 14.0, node_center.y - 8.0, 28.0, 16.0), Color("#d89246"), true)
+	for index in range(_map.cells.size()):
+		if not _map.is_drive_node(index):
+			continue
+		if war_fog_enabled and not bool(_map.get_cell(index).get("explored", false)):
+			continue
+		var center := _map.cell_center(index)
+		if not view_rect.has_point(center):
+			continue
+		var explored := bool(_map.get_cell(index).get("explored", false)) or not war_fog_enabled
+		var is_hub := _map.get_kind(index) == "hub" or _map.get_kind(index) == "junction"
+		DayTopdownRender.draw_road_node_cap(self, center, _map.cell_size, explored, is_hub)
 
-	var north_base := Vector2(view_size.x - 52.0, 28.0)
-	draw_line(north_base, north_base + Vector2(0.0, 18.0), Color("#9ec9ff"), 3.0)
-	draw_string(ThemeDB.fallback_font, north_base + Vector2(-5.0, -6.0), "北", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#9ec9ff"))
-	draw_string(ThemeDB.fallback_font, Vector2(16.0, view_size.y - 12.0), "蓝=南北路  黄=东西路  绿箭头=可选方向", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#b8c7d8"))
+	var can_enter := not _get_enterable_buildings().is_empty()
+	var enterables := _get_enterable_buildings()
+	for index in range(_map.cells.size()):
+		if not _map.is_drive_node(index):
+			continue
+		if war_fog_enabled and not bool(_map.get_cell(index).get("explored", false)):
+			continue
+		var road_rect := _map.cell_rect(index)
+		if not view_rect.intersects(road_rect):
+			continue
+		for district_index in _map.get_roadside_districts(index):
+			if war_fog_enabled and not bool(_map.get_cell(district_index).get("explored", false)):
+				_map.mark_explored(district_index)
+			var side := _map.cell_center(district_index) - _map.cell_center(index)
+			if side.length_squared() < 1.0:
+				continue
+			var highlight := false
+			if can_enter and index == _current_node_index:
+				var pick := clampi(_building_pick_index, 0, maxi(enterables.size() - 1, 0))
+				if pick < enterables.size() and int(enterables[pick].get("district_index", -1)) == district_index:
+					highlight = true
+			var dcell := _map.get_cell(district_index)
+			var entrance: Vector2 = DayTopdownRender.draw_roadside_facade(
+				self,
+				road_rect,
+				side.normalized(),
+				str(dcell.get("building_type", "")),
+				_map.building_label(district_index),
+				highlight,
+			)
+			if highlight:
+				draw_circle(entrance, 32.0, Color("#f0c168", 0.28))
+				draw_arc(entrance, 32.0, 0.0, TAU, 32, Color("#f0c168"), 4.0)
 
-func _draw_foot_background() -> void:
+	var vpos := _vehicle_world_position()
+	if view_rect.has_point(vpos):
+		DayTopdownRender.draw_pixel_vehicle(self, vpos, _current_travel_axis())
+
+	if _segment_target_index < 0 and _map.is_valid_index(_current_node_index):
+		var node_center := _map.cell_center(_current_node_index)
+		if view_rect.has_point(node_center):
+			for direction in _exit_options.keys():
+				var tip := node_center
+				var arm := 52.0
+				match str(direction):
+					"up":
+						tip += Vector2(0.0, -arm)
+					"down":
+						tip += Vector2(0.0, arm)
+					"left":
+						tip += Vector2(-arm, 0.0)
+					"right":
+						tip += Vector2(arm, 0.0)
+				draw_line(node_center, tip, Color("#7dffb2"), 6.0)
+				draw_rect(Rect2(tip - Vector2(8, 8), Vector2(16, 16)), Color("#e8fff0"), true)
+
+func _interior_panel_rect(district_index: int) -> Rect2:
+	var cell := _map.get_cell(district_index)
+	var cols: int = maxi(int(cell.get("foot_grid_cols", 1)), 1)
+	var rows: int = maxi(int(cell.get("foot_grid_rows", 1)), 1)
+	var tile_px := float(WorldMapData.FOOT_TILE_SIZE) * interior_tile_scale
+	var panel_size := Vector2(float(cols) * tile_px, float(rows) * tile_px)
+	var view_size := get_viewport_rect().size
+	if view_size == Vector2.ZERO:
+		view_size = Vector2(1280.0, 720.0)
+	return Rect2(
+		(view_size - panel_size) * 0.5 + Vector2(0.0, 36.0),
+		panel_size,
+	)
+
+
+func _foot_local_to_panel(local_pos: Vector2, district_index: int) -> Vector2:
+	var panel := _interior_panel_rect(district_index)
+	var foot_area := _map.get_foot_area_rect(district_index)
+	if foot_area.size == Vector2.ZERO:
+		return panel.position
+	var scale := panel.size / foot_area.size
+	return panel.position + local_pos * scale
+
+
+func _draw_foot_interior() -> void:
 	if _current_district_index < 0:
 		return
 	_map.ensure_foot_layout(_current_district_index)
-	var foot_rect := _map.get_foot_area_rect(_current_district_index)
-	draw_rect(foot_rect, Color("#031026"), true)
+	var view_size := get_viewport_rect().size
+	if view_size == Vector2.ZERO:
+		view_size = Vector2(1280.0, 720.0)
+	draw_rect(Rect2(Vector2.ZERO, view_size), Color(0.02, 0.04, 0.08, 0.92), true)
+
+	var panel := _interior_panel_rect(_current_district_index)
+	draw_rect(panel, Color("#020810"), true)
 	var cell := _map.get_cell(_current_district_index)
-	var tile_size := WorldMapData.FOOT_TILE_SIZE
 	var cols: int = maxi(int(cell.get("foot_grid_cols", 1)), 1)
 	var rows: int = maxi(int(cell.get("foot_grid_rows", 1)), 1)
-	for gx in range(cols):
-		for gy in range(rows):
-			var px := foot_rect.position.x + gx * tile_size
-			var py := foot_rect.position.y + gy * tile_size
-			var shade := Color("#05223a") if ((gx + gy) % 2 == 0) else Color("#022033")
-			draw_rect(Rect2(px, py, tile_size, tile_size), shade, true)
+	var tile_px := panel.size.x / float(cols)
+	var tile_py := panel.size.y / float(rows)
+	var blocked_set: Dictionary = {}
 	for raw in cell.get("foot_blocked", []):
 		var tile := Vector2i.ZERO
 		if raw is Vector2i:
 			tile = raw
 		elif raw is Dictionary:
 			tile = Vector2i(int(raw.get("x", 0)), int(raw.get("y", 0)))
-		var tile_rect := Rect2(
-			foot_rect.position + Vector2(float(tile.x), float(tile.y)) * WorldMapData.FOOT_TILE_SIZE,
-			Vector2(WorldMapData.FOOT_TILE_SIZE, WorldMapData.FOOT_TILE_SIZE),
-		)
-		draw_rect(tile_rect, Color("#2a4a32"), true)
-		draw_rect(tile_rect.grow(-3.0), Color("#39463a"), true)
-		draw_string(
-			ThemeDB.fallback_font,
-			tile_rect.position + Vector2(10, 22),
-			"障碍",
-			HORIZONTAL_ALIGNMENT_LEFT,
-			-1,
-			10,
-			Color("#8fb89a"),
-		)
+		blocked_set[tile] = true
+	for gx in range(cols):
+		for gy in range(rows):
+			var tile_coord := Vector2i(gx, gy)
+			var tile_rect := Rect2(
+				panel.position + Vector2(float(gx) * tile_px, float(gy) * tile_py),
+				Vector2(tile_px, tile_py),
+			)
+			DayTopdownRender.draw_interior_tile(self, tile_rect, blocked_set.has(tile_coord), gx, gy)
+	var door_tile := _map.get_foot_door_tile(_current_district_index)
+	var door_rect := Rect2(
+		panel.position + Vector2(float(door_tile.x) * tile_px, float(door_tile.y) * tile_py),
+		Vector2(tile_px, tile_py),
+	)
+	DayTopdownRender.draw_interior_door(self, door_rect, true)
+	draw_rect(panel, Color("#4a6070"), false, 2.0)
+	var title := _map.building_label(_current_district_index)
+	draw_string(ThemeDB.fallback_font, panel.position + Vector2(8.0, -18.0), title, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#b8d4e8"))
+	draw_string(ThemeDB.fallback_font, door_rect.position + Vector2(0.0, -4.0), "↓ 门口 · E 返回车辆", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#f0c168"))
+	var player_panel := _foot_local_to_panel(_foot_local_pos, _current_district_index)
+	DayTopdownRender.draw_player_marker(self, player_panel, 0.95)
+	var foot_origin := _map.get_foot_origin(_current_district_index)
+	for node in _resource_nodes:
+		if not is_instance_valid(node):
+			continue
+		if int(node.get_meta("district_index", -1)) != _current_district_index:
+			continue
+		var loot_local := node.global_position - foot_origin
+		var loot_panel := _foot_local_to_panel(loot_local, _current_district_index)
+		var loot_id := str(node.get_meta("item_id", "scrap"))
+		var loot_radius := maxf(tile_px, tile_py) * 0.22
+		DayTopdownRender.draw_loot_pickup(self, loot_panel, loot_id, loot_radius)
 
 func _draw_night_camp_background() -> void:
 	var view_size := get_viewport_rect().size
