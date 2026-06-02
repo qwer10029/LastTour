@@ -20,11 +20,17 @@ func _ready() -> void:
 
 func _load_texture() -> void:
 	if is_instance_valid(sprite):
-		var tex: Texture2D = ArtAssetLoader.load_texture("res://assets/dummy/player_dummy.png", "res://assets/dummy/player_dummy.svg")
+		var tex: Texture2D = ArtAssetLoader.load_texture_alpha_key(
+			"res://assets/sprites/player_foot.png",
+			0.12,
+			"res://assets/dummy/player_dummy.png",
+		)
+		if tex == null:
+			tex = ArtAssetLoader.load_texture("res://assets/dummy/player_dummy.svg")
 		sprite.texture = tex
 		# Auto-scale large PNG/SVG so player icon fits expected size on screen
 		if tex != null:
-			var desired_px := 16.0
+			var desired_px := 40.0
 			var sz: Vector2i = tex.get_size()
 			if sz.x > 0 and sz.y > 0:
 				var factor: float = minf(minf(desired_px / float(sz.x), desired_px / float(sz.y)), 1.0)

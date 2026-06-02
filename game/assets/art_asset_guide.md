@@ -58,6 +58,9 @@
 
 ### 世界与场景
 
+- `assets/tiles/interior/floor.png`：室内地面（整张铺满室内面板，无棋盘格）
+- `assets/tiles/interior/obstacle.png`：室内障碍格
+- `assets/sprites/loot/supplies.png`、`fuel.png`、`wood.png`、`parts.png`、`scrap.png`：物资拾取与背包图标
 - `assets/tiles/ground_32.png`：城市废墟地面 tile
 - `assets/tiles/road_32.png`：道路 tile
 - `assets/tiles/wall_32.png`：障碍/墙体 tile
@@ -188,6 +191,9 @@ side-view 2D game vehicle sprite, post-apocalyptic truck or rover, transparent b
 
 ### 世界与场景
 
+- `assets/tiles/interior/floor.png`：室内地面（整张铺满室内面板，无棋盘格）
+- `assets/tiles/interior/obstacle.png`：室内障碍格
+- `assets/sprites/loot/supplies.png`、`fuel.png`、`wood.png`、`parts.png`、`scrap.png`：物资拾取与背包图标
 - `assets/tiles/ground_32.png`：城市废墟地面 tile
 - `assets/tiles/road_32.png`：道路 tile
 - `assets/tiles/wall_32.png`：障碍/墙体 tile

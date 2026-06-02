@@ -2,20 +2,48 @@ class_name ItemIconFactory
 extends RefCounted
 
 const ICON_SIZE := 32
+const LOOT_SPRITE_DIR := "res://assets/sprites/loot/"
 
 static var _cache: Dictionary = {}
+static var _file_cache: Dictionary = {}
 
 
 static func get_texture(item_id: String, size: int = ICON_SIZE) -> Texture2D:
 	var key := "%s_%d" % [item_id, size]
 	if _cache.has(key):
 		return _cache[key]
+	var normalized := ItemDefs.normalize_item_id(item_id)
+	var file_tex := _load_loot_sprite(normalized)
+	if file_tex != null:
+		var scaled := _scale_texture(file_tex, size)
+		_cache[key] = scaled
+		return scaled
 	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
 	_draw_item_icon(img, item_id, size)
 	var tex := ImageTexture.create_from_image(img)
 	_cache[key] = tex
 	return tex
+
+
+static func _load_loot_sprite(item_id: String) -> Texture2D:
+	if _file_cache.has(item_id):
+		return _file_cache[item_id]
+	var path := LOOT_SPRITE_DIR + item_id + ".png"
+	var tex := ArtAssetLoader.load_texture_alpha_key(path)
+	_file_cache[item_id] = tex
+	return tex
+
+
+static func _scale_texture(tex: Texture2D, size: int) -> Texture2D:
+	var img := tex.get_image()
+	if img == null or img.is_empty():
+		return tex
+	if img.get_width() == size and img.get_height() == size:
+		return tex
+	img = img.duplicate()
+	img.resize(size, size, Image.INTERPOLATE_NEAREST)
+	return ImageTexture.create_from_image(img)
 
 
 static func _draw_item_icon(img: Image, item_id: String, size: int) -> void:
@@ -46,7 +74,6 @@ static func _draw_item_icon(img: Image, item_id: String, size: int) -> void:
 			_fill_rect(img, Rect2i(7, 7, size - 14, size - 14), main_color)
 			_fill_rect(img, Rect2i(9, 9, size - 18, 3), dark)
 			_fill_rect(img, Rect2i(9, size - 12, size - 18, 3), dark)
-			# 扳手形条
 			_fill_rect(img, Rect2i(half - 2, 5, 4, size - 10), light)
 		_:
 			_fill_circle(img, half, half, size / 3, main_color)

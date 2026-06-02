@@ -5,6 +5,7 @@ const PIXEL := 16
 const VEHICLE_PIXEL := 3.0
 const VEHICLE_BODY_UNITS := 14.0
 const ROAD_TILE_DIR := "res://assets/tiles/road/"
+const INTERIOR_TILE_DIR := "res://assets/tiles/interior/"
 const TILE_OVERLAP_WORLD := 1.5
 const CROSS_TRIM_INSET := 0.92
 # 路口贴图里单条臂的路面宽度（像素），与直路 world road_width 对齐
@@ -15,6 +16,14 @@ static var _road_textures_ready := false
 static var _tex_road_ns: Texture2D
 static var _tex_road_ew: Texture2D
 static var _tex_road_cross: Texture2D
+
+static var _interior_textures_ready := false
+static var _tex_interior_floor: Texture2D
+static var _tex_interior_obstacle: Texture2D
+
+const PLAYER_FOOT_SPRITE := "res://assets/sprites/player_foot.png"
+static var _player_sprite_ready := false
+static var _tex_player_foot: Texture2D
 
 static func hash_cell(seed: int, gx: int, gy: int) -> float:
 	return fmod(sin(float(seed * 1271 + gx * 3117 + gy * 7493)) * 43758.5453, 1.0)
@@ -103,6 +112,29 @@ static func _ensure_road_textures() -> void:
 static func _has_road_textures() -> bool:
 	_ensure_road_textures()
 	return _tex_road_ns != null and _tex_road_ew != null
+
+
+static func _ensure_interior_textures() -> void:
+	if _interior_textures_ready:
+		return
+	_interior_textures_ready = true
+	_tex_interior_floor = ArtAssetLoader.load_texture(INTERIOR_TILE_DIR + "floor.png")
+	_tex_interior_obstacle = ArtAssetLoader.load_texture_alpha_key(INTERIOR_TILE_DIR + "obstacle.png")
+
+
+static func reload_interior_textures() -> void:
+	_interior_textures_ready = false
+	_tex_interior_floor = null
+	_tex_interior_obstacle = null
+	_ensure_interior_textures()
+
+
+static func draw_interior_floor(canvas: CanvasItem, panel_rect: Rect2) -> void:
+	_ensure_interior_textures()
+	if _tex_interior_floor != null:
+		canvas.draw_texture_rect(_tex_interior_floor, panel_rect, false)
+		return
+	canvas.draw_rect(panel_rect, Color("#052a42"), true)
 
 
 static func _segment_scale(texture: Texture2D, is_ns: bool) -> float:
@@ -383,13 +415,20 @@ static func draw_roadside_building(canvas: CanvasItem, road_rect: Rect2, distric
 
 
 static func draw_loot_pickup(canvas: CanvasItem, center: Vector2, item_id: String, radius: float) -> void:
-	var def := ItemDefs.get_def(item_id)
-	var color: Color = def.get("color", Color("#8ddf8a"))
-	if typeof(color) == TYPE_STRING:
-		color = Color(str(color))
-	canvas.draw_circle(center, radius + 3.0, Color(0.0, 0.0, 0.0, 0.45))
-	canvas.draw_circle(center, radius, color)
-	canvas.draw_rect(Rect2(center - Vector2(radius * 0.55, radius * 0.55), Vector2(radius * 1.1, radius * 1.1)), Color("#ffffff", 0.35), false, 2.0)
+	var icon_px := maxi(20, int(round(radius * 2.4)))
+	var tex := ItemIconFactory.get_texture(item_id, icon_px)
+	if tex != null:
+		var half := float(icon_px) * 0.5
+		var icon_rect := Rect2(center - Vector2(half, half), Vector2(icon_px, icon_px))
+		canvas.draw_circle(center, radius + 3.0, Color(0.0, 0.0, 0.0, 0.35))
+		canvas.draw_texture_rect(tex, icon_rect, false)
+	else:
+		var def := ItemDefs.get_def(item_id)
+		var color: Color = def.get("color", Color("#8ddf8a"))
+		if typeof(color) == TYPE_STRING:
+			color = Color(str(color))
+		canvas.draw_circle(center, radius + 3.0, Color(0.0, 0.0, 0.0, 0.45))
+		canvas.draw_circle(center, radius, color)
 	var name := ItemDefs.get_item_name(item_id)
 	canvas.draw_string(ThemeDB.fallback_font, center + Vector2(-radius * 1.6, radius + 14.0), name, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#f0f4f8"))
 
@@ -411,15 +450,15 @@ static func draw_building_icon(canvas: CanvasItem, center: Vector2, building_typ
 	canvas.draw_rect(Rect2(center - Vector2(4, 2), Vector2(8, 10)), door, true)
 
 
-static func draw_interior_tile(canvas: CanvasItem, tile_rect: Rect2, blocked: bool, gx: int, gy: int) -> void:
-	if blocked:
-		canvas.draw_rect(tile_rect, Color("#2a4a32"), true)
-		canvas.draw_rect(tile_rect.grow_individual(-2, -2, -2, -2), Color("#39463a"), true)
+static func draw_interior_tile(canvas: CanvasItem, tile_rect: Rect2, blocked: bool) -> void:
+	if not blocked:
 		return
-	var shade := Color("#062a45") if ((gx + gy) % 2 == 0) else Color("#042238")
-	canvas.draw_rect(tile_rect, shade, true)
-	if hash_cell(gx * 17 + gy, gx, gy) > 0.93:
-		canvas.draw_rect(tile_rect.grow_individual(-5, -5, -5, -5), Color("#0a3550", 0.6), true)
+	_ensure_interior_textures()
+	if _tex_interior_obstacle != null:
+		canvas.draw_texture_rect(_tex_interior_obstacle, tile_rect, false)
+		return
+	canvas.draw_rect(tile_rect, Color("#2a4a32"), true)
+	canvas.draw_rect(tile_rect.grow_individual(-2, -2, -2, -2), Color("#39463a"), true)
 
 
 static func draw_interior_door(canvas: CanvasItem, tile_rect: Rect2, emphasized: bool = true) -> void:
@@ -441,7 +480,47 @@ static func draw_interior_door(canvas: CanvasItem, tile_rect: Rect2, emphasized:
 	)
 
 
-static func draw_player_marker(canvas: CanvasItem, center: Vector2, unit_scale: float = 1.0) -> void:
+static func _ensure_player_foot_sprite() -> void:
+	if _player_sprite_ready:
+		return
+	_player_sprite_ready = true
+	_tex_player_foot = ArtAssetLoader.load_texture_alpha_key(PLAYER_FOOT_SPRITE, 0.12)
+
+
+static func draw_player_marker(
+	canvas: CanvasItem,
+	center: Vector2,
+	unit_scale: float = 1.0,
+	move_dir: Vector2 = Vector2.ZERO,
+	walk_phase: float = 0.0,
+	is_walking: bool = false,
+) -> void:
 	var s := clampf(unit_scale, 0.55, 1.15)
-	canvas.draw_rect(Rect2(center - Vector2(4, 4) * s, Vector2(8, 8) * s), Color("#4a9eff"), true)
-	canvas.draw_rect(Rect2(center - Vector2(2.5, 6) * s, Vector2(5, 3) * s), Color("#2a5a9a"), true)
+	_ensure_player_foot_sprite()
+	if _tex_player_foot != null:
+		var tex_size := _tex_player_foot.get_size()
+		if tex_size.x > 0.0 and tex_size.y > 0.0:
+			var display := 42.0 * s
+			var base_scale := display / maxf(float(tex_size.x), float(tex_size.y))
+			var bob := 0.0
+			var sway := 0.0
+			var stretch := 1.0
+			if is_walking:
+				bob = sin(walk_phase) * 4.0 * s
+				sway = sin(walk_phase * 2.0) * 2.5 * s
+				stretch = 1.0 + sin(walk_phase * 2.0) * 0.05
+			var draw_center := center + Vector2(sway, -bob)
+			var facing := move_dir
+			if facing.length_squared() < 0.01:
+				facing = Vector2.UP
+			var rotation := facing.angle() + PI * 0.5
+			var shadow_center := center + Vector2(sway * 0.35, 3.0 * s)
+			canvas.draw_circle(shadow_center, display * 0.32, Color(0.0, 0.0, 0.0, 0.38))
+			var half := Vector2(tex_size) * 0.5
+			canvas.draw_set_transform(draw_center, rotation, Vector2(base_scale, base_scale * stretch))
+			canvas.draw_texture(_tex_player_foot, -half)
+			canvas.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+			return
+	var fallback_s := s
+	canvas.draw_rect(Rect2(center - Vector2(4, 4) * fallback_s, Vector2(8, 8) * fallback_s), Color("#4a9eff"), true)
+	canvas.draw_rect(Rect2(center - Vector2(2.5, 6) * fallback_s, Vector2(5, 3) * fallback_s), Color("#2a5a9a"), true)

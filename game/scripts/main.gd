@@ -6,6 +6,9 @@ const EndingOutcomeOverlayScript = preload("res://scripts/ui/ending_outcome_over
 const DayTopdownRender = preload("res://scripts/day_topdown_render.gd")
 var _building_pick_index: int = 0
 var _foot_local_pos: Vector2 = Vector2.ZERO
+var _foot_move_dir: Vector2 = Vector2.UP
+var _foot_walk_phase: float = 0.0
+var _foot_is_walking: bool = false
 
 enum TravelMode { DRIVE, FOOT }
 
@@ -410,7 +413,11 @@ func _process_foot(delta: float) -> void:
 		return
 	var input_vector := Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	if input_vector == Vector2.ZERO:
+		_foot_is_walking = false
 		return
+	_foot_move_dir = input_vector.normalized()
+	_foot_is_walking = true
+	_foot_walk_phase += delta * 10.5
 	var next_local := _foot_local_pos + input_vector * 96.0 * delta
 	next_local.x = clampf(next_local.x, 8.0, foot_area.size.x - 8.0)
 	next_local.y = clampf(next_local.y, 8.0, foot_area.size.y - 8.0)
@@ -420,6 +427,9 @@ func _process_foot(delta: float) -> void:
 		_foot_local_pos = next_local
 		_apply_foot_world_position()
 		_refresh_focus()
+	else:
+		# 顶墙时仍播步态，避免角色僵住
+		_foot_walk_phase += delta * 6.0
 	_try_collect_interior_pickups()
 
 
@@ -718,6 +728,9 @@ func _begin_foot_mode(district_index: int = -1) -> void:
 		var door_world := _map.get_foot_door_world_pos(_current_district_index)
 		var foot_origin := _map.get_foot_origin(_current_district_index)
 		_foot_local_pos = door_world - foot_origin
+		_foot_move_dir = Vector2.UP
+		_foot_walk_phase = 0.0
+		_foot_is_walking = false
 		_apply_foot_world_position()
 	_sync_day_entity_visibility()
 	_fix_district_pickup_positions(_current_district_index)
@@ -762,10 +775,7 @@ func _sync_day_entity_visibility() -> void:
 		return
 	if _mode == TravelMode.FOOT:
 		if is_instance_valid(_player):
-			_player.visible = true
-			var player_sprite := _player.get_node_or_null("Sprite2D") as Sprite2D
-			if player_sprite != null:
-				player_sprite.visible = true
+			_player.visible = false
 		if is_instance_valid(_vehicle):
 			_vehicle.visible = false
 		return
@@ -2421,7 +2431,6 @@ func _draw_foot_interior() -> void:
 	draw_rect(Rect2(Vector2.ZERO, view_size), Color(0.02, 0.04, 0.08, 0.92), true)
 
 	var panel := _interior_panel_rect(_current_district_index)
-	draw_rect(panel, Color("#020810"), true)
 	var cell := _map.get_cell(_current_district_index)
 	var cols: int = maxi(int(cell.get("foot_grid_cols", 1)), 1)
 	var rows: int = maxi(int(cell.get("foot_grid_rows", 1)), 1)
@@ -2435,14 +2444,16 @@ func _draw_foot_interior() -> void:
 		elif raw is Dictionary:
 			tile = Vector2i(int(raw.get("x", 0)), int(raw.get("y", 0)))
 		blocked_set[tile] = true
+	DayTopdownRender.draw_interior_floor(self, panel)
 	for gx in range(cols):
 		for gy in range(rows):
-			var tile_coord := Vector2i(gx, gy)
+			if not blocked_set.has(Vector2i(gx, gy)):
+				continue
 			var tile_rect := Rect2(
 				panel.position + Vector2(float(gx) * tile_px, float(gy) * tile_py),
 				Vector2(tile_px, tile_py),
 			)
-			DayTopdownRender.draw_interior_tile(self, tile_rect, blocked_set.has(tile_coord), gx, gy)
+			DayTopdownRender.draw_interior_tile(self, tile_rect, true)
 	var door_tile := _map.get_foot_door_tile(_current_district_index)
 	var door_rect := Rect2(
 		panel.position + Vector2(float(door_tile.x) * tile_px, float(door_tile.y) * tile_py),
@@ -2454,7 +2465,14 @@ func _draw_foot_interior() -> void:
 	draw_string(ThemeDB.fallback_font, panel.position + Vector2(8.0, -18.0), title, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#b8d4e8"))
 	draw_string(ThemeDB.fallback_font, door_rect.position + Vector2(0.0, -4.0), "↓ 门口 · E 返回车辆", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#f0c168"))
 	var player_panel := _foot_local_to_panel(_foot_local_pos, _current_district_index)
-	DayTopdownRender.draw_player_marker(self, player_panel, 0.95)
+	DayTopdownRender.draw_player_marker(
+		self,
+		player_panel,
+		0.95,
+		_foot_move_dir,
+		_foot_walk_phase,
+		_foot_is_walking,
+	)
 	var foot_origin := _map.get_foot_origin(_current_district_index)
 	for node in _resource_nodes:
 		if not is_instance_valid(node):
