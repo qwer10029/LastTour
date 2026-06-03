@@ -62,7 +62,10 @@
 - `assets/tiles/interior/obstacle.png`：室内障碍格
 - `assets/sprites/loot/supplies.png`、`fuel.png`、`wood.png`、`parts.png`、`scrap.png`：物资拾取与背包图标
 - `assets/tiles/ground_32.png`：城市废墟地面 tile
-- `assets/tiles/road_32.png`：道路 tile
+- `assets/tiles/road/road_cross.png`：四向十字路口
+- `assets/tiles/road/road_t.png`：三岔路口（按连接方向旋转）
+- `assets/tiles/road/road_corner.png`：拐角（两向连接）
+- `assets/tiles/road/road_ns_segment.png` / `road_ew_segment.png`：直路（仅两向对向连接时不画路口贴图）
 - `assets/tiles/wall_32.png`：障碍/墙体 tile
 - `assets/tiles/elevator_32.png`：电梯装置 tile
 - `assets/tiles/camp_32.png`：营地/夜晚据点 tile
@@ -195,7 +198,10 @@ side-view 2D game vehicle sprite, post-apocalyptic truck or rover, transparent b
 - `assets/tiles/interior/obstacle.png`：室内障碍格
 - `assets/sprites/loot/supplies.png`、`fuel.png`、`wood.png`、`parts.png`、`scrap.png`：物资拾取与背包图标
 - `assets/tiles/ground_32.png`：城市废墟地面 tile
-- `assets/tiles/road_32.png`：道路 tile
+- `assets/tiles/road/road_cross.png`：四向十字路口
+- `assets/tiles/road/road_t.png`：三岔路口（按连接方向旋转）
+- `assets/tiles/road/road_corner.png`：拐角（两向连接）
+- `assets/tiles/road/road_ns_segment.png` / `road_ew_segment.png`：直路（仅两向对向连接时不画路口贴图）
 - `assets/tiles/wall_32.png`：障碍/墙体 tile
 - `assets/tiles/elevator_32.png`：电梯装置 tile
 - `assets/tiles/camp_32.png`：营地/夜晚据点 tile

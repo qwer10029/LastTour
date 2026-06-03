@@ -18,7 +18,9 @@ enum TravelMode { DRIVE, FOOT }
 @export var map_columns: int = 8
 @export var map_rows: int = 6
 @export var cell_size: Vector2i = Vector2i(720, 720)
-@export var interior_tile_scale: float = 1.45
+@export var interior_tile_scale: float = 2.15
+@export var road_render_settings: RoadRenderSettings
+@export var enable_road_tuning_panel: bool = true
 @export var world_camera_zoom: float = 0.88
 @export var world_camera_smoothing: float = 10.0
 
@@ -110,6 +112,12 @@ func _ready() -> void:
 	_base_fuel_max = fuel_max
 	_base_elevator_repair_cost = base_elevator_repair_cost
 	_apply_run_config_from_manager()
+	if road_render_settings == null:
+		road_render_settings = RoadRenderSettings.new()
+	DayTopdownRender.apply_settings(road_render_settings)
+	DayTopdownRender.reload_road_textures()
+	if enable_road_tuning_panel:
+		_setup_road_tuning_panel()
 	_ensure_input_actions()
 	_connect_buttons()
 	_setup_pause_ui()
@@ -135,6 +143,12 @@ func _ready() -> void:
 	_sync_day_entity_visibility()
 	_refresh_ui()
 	queue_redraw()
+
+
+func _setup_road_tuning_panel() -> void:
+	var panel := RoadTuningPanel.new()
+	panel.setup(road_render_settings, self)
+	add_child(panel)
 
 
 func _start_new_run() -> void:
@@ -2273,7 +2287,7 @@ func _draw_day_overworld() -> void:
 	for index in range(_map.cells.size()):
 		var cell := _map.get_cell(index)
 		var kind := str(cell["kind"])
-		if kind == "empty" or kind == "road" or kind == "junction" or kind == "hub":
+		if kind == "empty" or kind == "road" or kind == "junction" or kind == "hub" or kind == "district":
 			continue
 		var rect := _map.cell_rect(index)
 		if not view_rect.intersects(rect):
@@ -2283,10 +2297,7 @@ func _draw_day_overworld() -> void:
 			continue
 		var explored := bool(cell["explored"]) or not war_fog_enabled
 		var cell_seed := int(cell.get("seed", index + 1))
-		if kind == "district":
-			DayTopdownRender.draw_ruin_cell(self, rect, "empty", explored, cell_seed)
-		else:
-			DayTopdownRender.draw_ruin_cell(self, rect, kind, explored, cell_seed)
+		DayTopdownRender.draw_ruin_cell(self, rect, kind, explored, cell_seed)
 
 	for index in range(_map.cells.size()):
 		var cell := _map.get_cell(index)
@@ -2304,42 +2315,39 @@ func _draw_day_overworld() -> void:
 		var cell_seed := int(cell.get("seed", index + 1))
 		DayTopdownRender.draw_road_cell(self, rect, explored, cell_seed)
 
-	for index in range(_map.cells.size()):
-		var cell := _map.get_cell(index)
-		if str(cell["kind"]) == "empty":
-			continue
-		var center := _map.cell_center(index)
-		var cell_explored := bool(cell["explored"])
-		for direction in _map.get_available_directions(index):
-			var other := _map.get_neighbor_index(index, direction)
-			if other < 0 or other < index:
-				continue
-			var other_center := _map.cell_center(other)
-			var other_explored := bool(_map.get_cell(other).get("explored", false))
-			var segment_in_view := _viewport_shows_road_segment(center, other_center, view_rect)
-			if war_fog_enabled and not segment_in_view and not (cell_explored and other_explored):
-				continue
-			var explored_road := _overworld_road_lit(cell_explored and other_explored, segment_in_view)
-			var cross_trim := DayTopdownRender.cross_trim_world()
-			var from_kind := str(cell.get("kind", ""))
-			var to_kind := str(_map.get_cell(other).get("kind", ""))
-			var trim_from := cross_trim if from_kind == "hub" or from_kind == "junction" else 0.0
-			var trim_to := cross_trim if to_kind == "hub" or to_kind == "junction" else 0.0
-			DayTopdownRender.draw_road_line(
-				self, center, other_center, _map.cell_size, explored_road, trim_from, trim_to
-			)
+	# 先路口、后直路：每个 drive 格先贴路口，再沿方向 trim 后接邻格
+	DayTopdownRender.draw_road_network(
+		self,
+		_map,
+		view_rect,
+		func(from_index: int, to_index: int, from_center: Vector2, to_center: Vector2) -> bool:
+			var segment_in_view := _viewport_shows_road_segment(from_center, to_center, view_rect)
+			if not war_fog_enabled:
+				return true
+			var from_explored := bool(_map.get_cell(from_index).get("explored", false))
+			var to_explored := bool(_map.get_cell(to_index).get("explored", false))
+			return segment_in_view or (from_explored and to_explored),
+		func(from_index: int, to_index: int, from_center: Vector2, to_center: Vector2) -> bool:
+			if from_index == to_index:
+				var node_in_view := view_rect.grow(DayTopdownRender.road_width()).has_point(from_center)
+				return _overworld_road_lit(bool(_map.get_cell(from_index).get("explored", false)), node_in_view)
+			var segment_in_view := _viewport_shows_road_segment(from_center, to_center, view_rect)
+			var from_explored := bool(_map.get_cell(from_index).get("explored", false))
+			var to_explored := bool(_map.get_cell(to_index).get("explored", false))
+			return _overworld_road_lit(from_explored and to_explored, segment_in_view),
+	)
 
-	for index in range(_map.cells.size()):
-		if not _map.is_drive_node(index):
+	for district_index in _map.district_indices:
+		var dcell := _map.get_cell(district_index)
+		var drect := _map.cell_rect(district_index)
+		if not view_rect.intersects(drect):
 			continue
-		var center := _map.cell_center(index)
-		var node_in_view := view_rect.grow(DayTopdownRender.road_width()).has_point(center)
-		if not node_in_view:
+		if war_fog_enabled and not bool(dcell.get("explored", false)):
+			draw_rect(drect, Color("#06080c"), true)
 			continue
-		var cell_explored := bool(_map.get_cell(index).get("explored", false))
-		var explored := _overworld_road_lit(cell_explored, node_in_view)
-		var is_hub := _map.get_kind(index) == "hub" or _map.get_kind(index) == "junction"
-		DayTopdownRender.draw_road_node_cap(self, center, _map.cell_size, explored, is_hub)
+		var d_explored := bool(dcell.get("explored", false)) or not war_fog_enabled
+		var d_seed := int(dcell.get("seed", district_index + 1))
+		DayTopdownRender.draw_ruin_cell(self, drect, "empty", d_explored, d_seed)
 
 	var can_enter := not _get_enterable_buildings().is_empty()
 	var enterables := _get_enterable_buildings()
@@ -2363,6 +2371,7 @@ func _draw_day_overworld() -> void:
 				if pick < enterables.size() and int(enterables[pick].get("district_index", -1)) == district_index:
 					highlight = true
 			var dcell := _map.get_cell(district_index)
+			var district_rect := _map.cell_rect(district_index)
 			var entrance: Vector2 = DayTopdownRender.draw_roadside_facade(
 				self,
 				road_rect,
@@ -2370,6 +2379,7 @@ func _draw_day_overworld() -> void:
 				str(dcell.get("building_type", "")),
 				_map.building_label(district_index),
 				highlight,
+				district_rect,
 			)
 			if highlight:
 				draw_circle(entrance, 32.0, Color("#f0c168", 0.28))
@@ -2444,7 +2454,7 @@ func _draw_foot_interior() -> void:
 		elif raw is Dictionary:
 			tile = Vector2i(int(raw.get("x", 0)), int(raw.get("y", 0)))
 		blocked_set[tile] = true
-	DayTopdownRender.draw_interior_floor(self, panel)
+	DayTopdownRender.draw_interior_floor_grid(self, panel, cols, rows)
 	for gx in range(cols):
 		for gy in range(rows):
 			if not blocked_set.has(Vector2i(gx, gy)):
@@ -2482,7 +2492,7 @@ func _draw_foot_interior() -> void:
 		var loot_local := node.global_position - foot_origin
 		var loot_panel := _foot_local_to_panel(loot_local, _current_district_index)
 		var loot_id := str(node.get_meta("item_id", "scrap"))
-		var loot_radius := maxf(tile_px, tile_py) * 0.22
+		var loot_radius := maxf(tile_px, tile_py) * 0.36
 		DayTopdownRender.draw_loot_pickup(self, loot_panel, loot_id, loot_radius)
 
 func _draw_night_camp_background() -> void:

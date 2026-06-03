@@ -7,15 +7,15 @@ const VEHICLE_BODY_UNITS := 14.0
 const ROAD_TILE_DIR := "res://assets/tiles/road/"
 const INTERIOR_TILE_DIR := "res://assets/tiles/interior/"
 const TILE_OVERLAP_WORLD := 1.5
-const CROSS_TRIM_INSET := 0.92
-# 路口贴图里单条臂的路面宽度（像素），与直路 world road_width 对齐
-const CROSS_ARM_TEX_WIDTH := 213.0
-const CROSS_ARM_TEX_HALF_LENGTH := 113.0
+
+static var _settings: RoadRenderSettings = RoadRenderSettings.new()
 
 static var _road_textures_ready := false
 static var _tex_road_ns: Texture2D
 static var _tex_road_ew: Texture2D
 static var _tex_road_cross: Texture2D
+static var _tex_road_corner: Texture2D
+static var _tex_road_t: Texture2D
 
 static var _interior_textures_ready := false
 static var _tex_interior_floor: Texture2D
@@ -100,13 +100,50 @@ static func _road_modulate(explored: bool) -> Color:
 	return Color.WHITE if explored else Color(0.58, 0.54, 0.5, 1.0)
 
 
+static func reload_road_textures() -> void:
+	_road_textures_ready = false
+	_tex_road_ns = null
+	_tex_road_ew = null
+	_tex_road_cross = null
+	_tex_road_corner = null
+	_tex_road_t = null
+	ArtAssetLoader.clear_road_alpha_cache()
+
+
+static func apply_settings(settings: RoadRenderSettings) -> void:
+	if settings != null:
+		_settings = settings
+
+
+static func get_settings() -> RoadRenderSettings:
+	return _settings
+
+
 static func _ensure_road_textures() -> void:
 	if _road_textures_ready:
 		return
 	_road_textures_ready = true
-	_tex_road_ns = ArtAssetLoader.load_texture(ROAD_TILE_DIR + "road_ns_segment.png")
-	_tex_road_ew = ArtAssetLoader.load_texture(ROAD_TILE_DIR + "road_ew_segment.png")
-	_tex_road_cross = ArtAssetLoader.load_texture(ROAD_TILE_DIR + "road_cross.png")
+	_tex_road_ns = ArtAssetLoader.load_texture_road_alpha_key(ROAD_TILE_DIR + "road_ns_segment.png")
+	_tex_road_ew = ArtAssetLoader.load_texture_road_alpha_key(ROAD_TILE_DIR + "road_ew_segment.png")
+	_tex_road_cross = ArtAssetLoader.load_texture_road_alpha_key(ROAD_TILE_DIR + "road_cross.png")
+	_tex_road_corner = ArtAssetLoader.load_texture_road_alpha_key(ROAD_TILE_DIR + "road_corner.png")
+	_tex_road_t = _load_road_t_texture()
+
+
+static func _load_road_t_texture() -> Texture2D:
+	var path := ROAD_TILE_DIR + "road_t.png"
+	var tex := ArtAssetLoader.load_texture_from_disk(path)
+	if tex == null:
+		tex = ArtAssetLoader.load_texture(path)
+	if tex == null:
+		return null
+	var keyed := ArtAssetLoader.apply_road_background_key(tex)
+	if ArtAssetLoader.texture_has_visible_pixels(keyed):
+		return keyed
+	var black_keyed := ArtAssetLoader.apply_black_alpha_key(tex)
+	if ArtAssetLoader.texture_has_visible_pixels(black_keyed):
+		return black_keyed
+	return tex
 
 
 static func _has_road_textures() -> bool:
@@ -137,6 +174,27 @@ static func draw_interior_floor(canvas: CanvasItem, panel_rect: Rect2) -> void:
 	canvas.draw_rect(panel_rect, Color("#052a42"), true)
 
 
+static func draw_interior_floor_grid(
+	canvas: CanvasItem,
+	panel_rect: Rect2,
+	cols: int,
+	rows: int,
+) -> void:
+	_ensure_interior_textures()
+	var tile_w := panel_rect.size.x / float(maxi(cols, 1))
+	var tile_h := panel_rect.size.y / float(maxi(rows, 1))
+	for gy in range(rows):
+		for gx in range(cols):
+			var tile_rect := Rect2(
+				panel_rect.position + Vector2(float(gx) * tile_w, float(gy) * tile_h),
+				Vector2(tile_w, tile_h),
+			)
+			if _tex_interior_floor != null:
+				canvas.draw_texture_rect(_tex_interior_floor, tile_rect, false)
+			else:
+				canvas.draw_rect(tile_rect, Color("#052a42"), true)
+
+
 static func _segment_scale(texture: Texture2D, is_ns: bool) -> float:
 	var tex_size := texture.get_size()
 	var cross := tex_size.x if is_ns else tex_size.y
@@ -144,11 +202,225 @@ static func _segment_scale(texture: Texture2D, is_ns: bool) -> float:
 
 
 static func _cross_scale() -> float:
-	return road_width() / CROSS_ARM_TEX_WIDTH
+	return road_width() / _settings.cross_arm_tex_width * _settings.junction_scale_inset
+
+
+static func _junction_scale(texture: Texture2D) -> float:
+	# 与十字相同：统一以 _cross_scale 为基准，拐角/三岔仅乘各自倍率
+	if texture == null or texture == _tex_road_cross:
+		return _cross_scale()
+	if texture == _tex_road_corner:
+		return _cross_scale() * _settings.corner_scale_inset
+	if texture == _tex_road_t:
+		return _cross_scale() * _settings.t_junction_scale_inset
+	return _cross_scale()
 
 
 static func cross_trim_world() -> float:
-	return CROSS_ARM_TEX_HALF_LENGTH * _cross_scale() * CROSS_TRIM_INSET
+	return _settings.cross_arm_tex_half_length * _cross_scale() * _settings.cross_trim_inset
+
+
+static func junction_trim_world(dirs: Array) -> float:
+	var base := cross_trim_world()
+	if dirs.size() == 2 and not dirs_are_straight(dirs):
+		return base * _settings.corner_scale_inset / maxf(_settings.corner_trim_extra, 0.5)
+	if dirs.size() == 3:
+		return base * _settings.t_junction_scale_inset * _settings.t_junction_trim_extra
+	return base
+
+
+static func _direction_vector(direction: String) -> Vector2:
+	match direction:
+		"up":
+			return Vector2(0.0, -1.0)
+		"down":
+			return Vector2(0.0, 1.0)
+		"left":
+			return Vector2(-1.0, 0.0)
+		"right":
+			return Vector2(1.0, 0.0)
+		_:
+			return Vector2.ZERO
+
+
+static func _opposite_direction(direction: String) -> String:
+	match direction:
+		"up":
+			return "down"
+		"down":
+			return "up"
+		"left":
+			return "right"
+		"right":
+			return "left"
+		_:
+			return ""
+
+
+## 按出口方向计算 trim；拐角用该朝向独立偏移，不再旋转共用一组。
+static func junction_trim_for_exit(dirs: Array, exit_direction: String) -> float:
+	if not needs_junction_cap(dirs) or exit_direction == "":
+		return 0.0
+	var mask := _road_dir_mask(dirs)
+	if dirs.size() == 2 and not dirs_are_straight(dirs):
+		var arm := cross_trim_world() * _settings.corner_scale_inset / maxf(_settings.corner_trim_extra, 0.5)
+		var off := _corner_offset_for_mask(mask)
+		var along := off.dot(_direction_vector(exit_direction))
+		return clampf(arm + along, arm * 0.32, arm * 1.9)
+	if dirs.size() == 3:
+		var base := cross_trim_world()
+		var off := Vector2(_settings.t_junction_offset_x, _settings.t_junction_offset_y).rotated(
+			_t_junction_rotation(mask)
+		)
+		var along := off.dot(_direction_vector(exit_direction))
+		var arm := base * _settings.t_junction_scale_inset * _settings.t_junction_trim_extra
+		return clampf(arm + along, arm * 0.32, arm * 1.9)
+	return cross_trim_world()
+
+
+static func _road_dir_mask(dirs: Array) -> int:
+	var mask := 0
+	for raw in dirs:
+		match str(raw):
+			"up":
+				mask |= 1
+			"down":
+				mask |= 2
+			"left":
+				mask |= 4
+			"right":
+				mask |= 8
+	return mask
+
+
+static func dirs_are_straight(dirs: Array) -> bool:
+	if dirs.size() != 2:
+		return false
+	var a := str(dirs[0])
+	var b := str(dirs[1])
+	return (a == "up" and b == "down") or (a == "down" and b == "up") or (a == "left" and b == "right") or (a == "right" and b == "left")
+
+
+static func needs_junction_cap(dirs: Array) -> bool:
+	if dirs.size() >= 3:
+		return true
+	if dirs.size() == 2:
+		return not dirs_are_straight(dirs)
+	return false
+
+
+static func _corner_rotation(mask: int) -> float:
+	# 基准图：右 + 下（mask 10）
+	match mask:
+		10:
+			return 0.0
+		6:
+			return PI * 0.5
+		5:
+			return PI
+		9:
+			return -PI * 0.5
+		_:
+			return 0.0
+
+
+static func _t_junction_rotation(mask: int) -> float:
+	# 基准图：左 + 右 + 下（缺上，mask 14）
+	var missing := 15 - mask
+	match missing:
+		1:
+			return 0.0
+		2:
+			return PI
+		4:
+			return -PI * 0.5
+		8:
+			return PI * 0.5
+		_:
+			return 0.0
+
+
+static func _corner_offset_for_mask(mask: int) -> Vector2:
+	# 10=右+下  6=下+左  5=左+上  9=上+右（与贴图旋转一致）
+	match mask:
+		10:
+			return Vector2(_settings.corner_offset_rd_x, _settings.corner_offset_rd_y)
+		6:
+			return Vector2(_settings.corner_offset_dl_x, _settings.corner_offset_dl_y)
+		5:
+			return Vector2(_settings.corner_offset_lu_x, _settings.corner_offset_lu_y)
+		9:
+			return Vector2(_settings.corner_offset_ur_x, _settings.corner_offset_ur_y)
+		_:
+			return Vector2.ZERO
+
+
+static func _junction_offset_world(texture: Texture2D, rotation: float, road_mask: int = 0) -> Vector2:
+	if texture == _tex_road_corner:
+		return _corner_offset_for_mask(road_mask)
+	if texture == _tex_road_t:
+		return Vector2(_settings.t_junction_offset_x, _settings.t_junction_offset_y).rotated(rotation)
+	if texture == _tex_road_cross:
+		return Vector2(_settings.cross_offset_x, _settings.cross_offset_y)
+	return Vector2.ZERO
+
+
+static func _draw_junction_texture(
+	canvas: CanvasItem,
+	center: Vector2,
+	texture: Texture2D,
+	rotation: float,
+	modulate: Color,
+	road_mask: int = 0,
+) -> void:
+	if texture == null:
+		return
+	var tex_size := texture.get_size()
+	var scale := _junction_scale(texture)
+	var draw_center := center + _junction_offset_world(texture, rotation, road_mask)
+	canvas.draw_set_transform(draw_center, rotation, Vector2(scale, scale))
+	canvas.draw_texture(texture, -tex_size * 0.5, modulate)
+	canvas.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+static func draw_road_node_cap(canvas: CanvasItem, center: Vector2, cell_size: Vector2, explored: bool, dirs: Array = []) -> void:
+	if dirs.is_empty() or (dirs.size() == 2 and dirs_are_straight(dirs)):
+		return
+	_ensure_road_textures()
+	var count := dirs.size()
+	var mask := _road_dir_mask(dirs)
+	var modulate := _road_modulate(explored)
+	if count == 2:
+		if _tex_road_corner != null:
+			_draw_junction_texture(canvas, center, _tex_road_corner, _corner_rotation(mask), modulate, mask)
+			return
+		_draw_corner_fallback_cap(canvas, center, cell_size, explored)
+		return
+	if count == 4 and mask == 15 and _tex_road_cross != null:
+		_draw_junction_texture(canvas, center, _tex_road_cross, 0.0, modulate)
+		return
+	if count == 3 and _tex_road_t != null:
+		_draw_junction_texture(canvas, center, _tex_road_t, _t_junction_rotation(mask), modulate)
+		return
+	if count >= 3:
+		var half_w := _road_strip_half_width(cell_size)
+		var radius := half_w * 1.35
+		canvas.draw_circle(center, radius + 2.0, _road_edge_color(explored))
+		canvas.draw_circle(center, radius, _road_surface_color(explored))
+		if explored:
+			canvas.draw_circle(center, radius * 0.35, Color("#d8c898", 0.5))
+
+
+static func _draw_corner_fallback_cap(
+	canvas: CanvasItem,
+	center: Vector2,
+	cell_size: Vector2,
+	explored: bool,
+) -> void:
+	var half_w := _road_strip_half_width(cell_size)
+	var radius := half_w * 1.15
+	canvas.draw_circle(center, radius + 2.0, _road_edge_color(explored))
+	canvas.draw_circle(center, radius, _road_surface_color(explored))
 
 
 static func _road_surface_scale(texture: Texture2D, is_ns: bool) -> float:
@@ -217,8 +489,8 @@ static func _draw_tiled_road_strip(
 	var texture := _tex_road_ns if is_ns else _tex_road_ew
 	if texture == null:
 		return
-	var trim_start := clampf(trim_from, 0.0, length * 0.45)
-	var trim_end := clampf(trim_to, 0.0, length * 0.45)
+	var trim_start := clampf(trim_from, 0.0, length * _settings.segment_trim_max_frac)
+	var trim_end := clampf(trim_to, 0.0, length * _settings.segment_trim_max_frac)
 	var draw_start := from_pos + dir * trim_start
 	var draw_end := to_pos - dir * trim_end
 	var draw_len := draw_start.distance_to(draw_end)
@@ -284,23 +556,51 @@ static func draw_road_line(
 	draw_road_connector(canvas, from_pos, to_pos, cell_size, explored, trim_from, trim_to)
 
 
-static func draw_road_node_cap(canvas: CanvasItem, center: Vector2, cell_size: Vector2, explored: bool, hub: bool = false) -> void:
-	if hub and _has_road_textures() and _tex_road_cross != null:
-		var tex_size := _tex_road_cross.get_size()
-		var scale := _cross_scale()
-		var modulate := _road_modulate(explored)
-		canvas.draw_set_transform(center, 0.0, Vector2(scale, scale))
-		canvas.draw_texture(_tex_road_cross, -tex_size * 0.5, modulate)
-		canvas.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-		return
-	if not hub:
-		return
-	var half_w := _road_strip_half_width(cell_size)
-	var radius := half_w * 1.35
-	canvas.draw_circle(center, radius + 2.0, _road_edge_color(explored))
-	canvas.draw_circle(center, radius, _road_surface_color(explored))
-	if explored:
-		canvas.draw_circle(center, radius * 0.35, Color("#d8c898", 0.5))
+## 先画各格路口贴图，再沿每个方向从路口 trim 点接到邻格路口（直路只接在路口之间）。
+static func draw_road_network(
+	canvas: CanvasItem,
+	map: WorldMapData,
+	view_rect: Rect2,
+	should_draw_link: Callable,
+	link_explored: Callable,
+) -> void:
+	# 先直路、后路口：直路可伸入拐角直臂下方，拐角贴图盖在上面消除接缝
+	for index in range(map.cells.size()):
+		if not map.is_drive_node(index):
+			continue
+		var center := map.cell_center(index)
+		var from_dirs := map.get_road_directions(index)
+		for direction in from_dirs:
+			var other := map.get_neighbor_index(index, direction)
+			if other < 0 or other < index:
+				continue
+			if not map.is_road_link(index, other):
+				continue
+			var other_center := map.cell_center(other)
+			if not should_draw_link.call(index, other, center, other_center):
+				continue
+			var explored: bool = link_explored.call(index, other, center, other_center)
+			var to_dirs := map.get_road_directions(other)
+			var trim_from := junction_trim_for_exit(from_dirs, direction) if needs_junction_cap(from_dirs) else 0.0
+			var trim_to := (
+				junction_trim_for_exit(to_dirs, _opposite_direction(direction))
+				if needs_junction_cap(to_dirs)
+				else 0.0
+			)
+			draw_road_line(canvas, center, other_center, map.cell_size, explored, trim_from, trim_to)
+
+	for index in range(map.cells.size()):
+		if not map.is_drive_node(index):
+			continue
+		var center := map.cell_center(index)
+		var node_in_view := view_rect.grow(road_width()).has_point(center)
+		if not node_in_view:
+			continue
+		var road_dirs := map.get_road_directions(index)
+		if not needs_junction_cap(road_dirs):
+			continue
+		var explored: bool = link_explored.call(index, index, center, center)
+		draw_road_node_cap(canvas, center, map.cell_size, explored, road_dirs)
 
 
 # 路面格只铺草地/废墟底图，窄路由连接带绘制
@@ -329,22 +629,7 @@ static func draw_road_cell(canvas: CanvasItem, rect: Rect2, explored: bool, seed
 	draw_road_terrain_cell(canvas, rect, explored, seed)
 
 
-static func draw_roadside_facade(
-	canvas: CanvasItem,
-	road_rect: Rect2,
-	side_dir: Vector2,
-	building_type: String,
-	label: String,
-	highlight_entrance: bool = false,
-) -> Vector2:
-	var road_center := road_rect.position + road_rect.size * 0.5
-	var unit := minf(road_rect.size.x, road_rect.size.y)
-	var tangent := Vector2(-side_dir.y, side_dir.x)
-	var facade_depth := unit * 0.14
-	var facade_width := unit * 0.22
-	var edge := road_center + side_dir * (unit * 0.32)
-	var base := edge + side_dir * (facade_depth * 0.35)
-	var half_w := tangent * (facade_width * 0.5)
+static func _building_colors(building_type: String) -> Dictionary:
 	var wall_fill := Color("#5c4a38")
 	var roof_fill := Color("#3d3028")
 	match building_type:
@@ -363,35 +648,71 @@ static func draw_roadside_facade(
 		"market":
 			wall_fill = Color("#6a5540")
 			roof_fill = Color("#4a3c2c")
-	var front_l := base - half_w
-	var front_r := base + half_w
-	var back_l := front_l + side_dir * facade_depth
-	var back_r := front_r + side_dir * facade_depth
-	var wall_pts := PackedVector2Array([front_l, front_r, back_r, back_l])
-	canvas.draw_colored_polygon(wall_pts, wall_fill)
-	canvas.draw_polyline(wall_pts + PackedVector2Array([front_l]), Color("#1a1410"), 2.0)
-	var roof_l := front_l - tangent * 10.0 + side_dir * 6.0
-	var roof_r := front_r + tangent * 10.0 + side_dir * 6.0
-	var roof_back := (back_l + back_r) * 0.5 + side_dir * 4.0
-	canvas.draw_colored_polygon(PackedVector2Array([roof_l, roof_r, roof_back]), roof_fill)
-	var door_center := edge + side_dir * (facade_depth * 0.42)
-	var door_w := facade_width * 0.28
-	var door_h := facade_depth * 0.85
-	var door_rect := Rect2(door_center - Vector2(door_w * 0.5, door_h * 0.5), Vector2(door_w, door_h))
-	var mat_rect := Rect2(road_center + side_dir * (unit * 0.08) - Vector2(door_w * 0.55, door_h * 0.35), Vector2(door_w * 1.1, door_h * 0.7))
-	canvas.draw_rect(mat_rect, Color("#3a3428", 0.85), true)
+	return {"wall": wall_fill, "roof": roof_fill}
+
+
+static func draw_district_building(
+	canvas: CanvasItem,
+	district_rect: Rect2,
+	building_type: String,
+	label: String,
+	toward_road: Vector2,
+	highlight_entrance: bool = false,
+) -> void:
+	var unit := minf(district_rect.size.x, district_rect.size.y)
+	var center := district_rect.position + district_rect.size * 0.5
+	if toward_road.length_squared() > 0.01:
+		center += toward_road.normalized() * unit * 0.16
+	var colors := _building_colors(building_type)
+	var body_size := unit * 0.42
+	var body := Rect2(center - Vector2(body_size, body_size) * 0.5, Vector2(body_size, body_size))
+	canvas.draw_rect(body, colors["wall"], true)
+	canvas.draw_rect(body, Color("#1a1410"), false, 2.0)
+	var roof := body.grow(-body_size * 0.12)
+	roof.size.y = body_size * 0.22
+	roof.position.y = body.position.y + body_size * 0.06
+	canvas.draw_rect(roof, colors["roof"], true)
+	if highlight_entrance:
+		canvas.draw_rect(body.grow(4.0), Color("#f0c168", 0.35), false, 2.0)
+	var sign_pos := body.position + Vector2(body_size * 0.5 - 36.0, -10.0)
+	canvas.draw_rect(Rect2(sign_pos, Vector2(72, 14)), Color("#2a2218", 0.9), true)
+	canvas.draw_string(ThemeDB.fallback_font, sign_pos + Vector2(4, 10), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color("#f8ecd8"))
+
+
+static func draw_roadside_entrance(
+	canvas: CanvasItem,
+	road_rect: Rect2,
+	side_dir: Vector2,
+	highlight_entrance: bool = false,
+) -> Vector2:
+	var road_center := road_rect.position + road_rect.size * 0.5
+	var unit := minf(road_rect.size.x, road_rect.size.y)
+	var edge := road_center + side_dir.normalized() * (unit * 0.36)
+	var door_w := unit * 0.07
+	var door_h := unit * 0.06
+	var door_rect := Rect2(edge - Vector2(door_w * 0.5, door_h * 0.5), Vector2(door_w, door_h))
 	canvas.draw_rect(door_rect, Color("#1a1410"), true)
 	var door_color := Color("#4a9ed8")
 	if highlight_entrance:
 		door_color = Color("#9ef0ff")
-		canvas.draw_rect(door_rect.grow(5.0), Color("#f0c168", 0.55), true)
-		canvas.draw_rect(mat_rect.grow(3.0), Color("#f0c168", 0.35), true)
-	canvas.draw_rect(door_rect.grow(-2.0), door_color, true)
-	canvas.draw_string(ThemeDB.fallback_font, door_center - Vector2(8, 5), "门", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#f8ecd8"))
-	var sign_pos := door_center + tangent * (facade_width * 0.38) + side_dir * (facade_depth * 0.2)
-	canvas.draw_rect(Rect2(sign_pos - Vector2(36, 8), Vector2(72, 14)), Color("#2a2218", 0.9), true)
-	canvas.draw_string(ThemeDB.fallback_font, sign_pos - Vector2(32, 4), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color("#f8ecd8"))
-	return door_center
+		canvas.draw_rect(door_rect.grow(4.0), Color("#f0c168", 0.55), true)
+	canvas.draw_rect(door_rect.grow(-1.5), door_color, true)
+	canvas.draw_string(ThemeDB.fallback_font, edge - Vector2(6, 4), "门", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#f8ecd8"))
+	return edge
+
+
+static func draw_roadside_facade(
+	canvas: CanvasItem,
+	road_rect: Rect2,
+	side_dir: Vector2,
+	building_type: String,
+	label: String,
+	highlight_entrance: bool = false,
+	district_rect: Rect2 = Rect2(),
+) -> Vector2:
+	if district_rect.size != Vector2.ZERO:
+		draw_district_building(canvas, district_rect, building_type, label, -side_dir, highlight_entrance)
+	return draw_roadside_entrance(canvas, road_rect, side_dir, highlight_entrance)
 
 
 static func draw_world_building(
@@ -407,7 +728,15 @@ static func draw_world_building(
 	var side := district_center - road_center
 	if side.length_squared() < 1.0:
 		side = Vector2(0.0, -1.0)
-	return draw_roadside_facade(canvas, road_rect, side.normalized(), building_type, label, highlight_entrance)
+	return draw_roadside_facade(
+		canvas,
+		road_rect,
+		side.normalized(),
+		building_type,
+		label,
+		highlight_entrance,
+		district_rect,
+	)
 
 
 static func draw_roadside_building(canvas: CanvasItem, road_rect: Rect2, district_rect: Rect2, building_type: String, label: String) -> void:

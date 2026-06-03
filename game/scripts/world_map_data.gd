@@ -1,12 +1,12 @@
 class_name WorldMapData
 extends RefCounted
 
-const FOOT_TILE_SIZE := 24
-const INTERIOR_COLS := 20
-const INTERIOR_ROWS := 14
+const FOOT_TILE_SIZE := 28
+const INTERIOR_COLS := 14
+const INTERIOR_ROWS := 10
 ## 各资源区固定障碍格（网格坐标，通常为正中格）
-const FOOT_ANCHOR_OBSTACLE := Vector2i(9, 6)
-const FOOT_DOOR_TILE := Vector2i(10, 13)
+const FOOT_ANCHOR_OBSTACLE := Vector2i(6, 4)
+const FOOT_DOOR_TILE := Vector2i(6, 9)
 
 const DIRECTIONS := {
 	"up": Vector2i(0, -1),
@@ -231,6 +231,37 @@ func get_available_directions(index: int) -> Array[String]:
 		if int(connections[direction]) >= 0:
 			result.append(str(direction))
 	return result
+
+
+## 仅统计通向其它路网格的方向（不含建筑 district），用于路口贴图与路段。
+func get_road_directions(index: int) -> Array[String]:
+	var result: Array[String] = []
+	if not is_valid_index(index):
+		return result
+	for direction in get_available_directions(index):
+		var other := get_neighbor_index(index, direction)
+		if other < 0 or not is_road_link(index, other):
+			continue
+		result.append(direction)
+	return result
+
+
+func is_road_link(from_index: int, to_index: int) -> bool:
+	if not is_valid_index(from_index) or not is_valid_index(to_index):
+		return false
+	if is_district(from_index) or is_district(to_index):
+		return false
+	if direction_between(from_index, to_index) == "":
+		return false
+	var from_kind := get_kind(from_index)
+	var to_kind := get_kind(to_index)
+	if not _is_road_surface_kind(from_kind) or not _is_road_surface_kind(to_kind):
+		return false
+	return true
+
+
+func _is_road_surface_kind(kind: String) -> bool:
+	return kind == "road" or kind == "junction" or kind == "hub"
 
 func get_neighbor_index(index: int, direction: String) -> int:
 	if not is_valid_index(index):
