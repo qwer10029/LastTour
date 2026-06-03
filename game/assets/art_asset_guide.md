@@ -6,7 +6,7 @@
 
 - `assets/dummy/player_dummy.png` / `assets/dummy/player_dummy.svg`
 - `assets/dummy/resource_dummy.png` / `assets/dummy/resource_dummy.svg`
-- `assets/dummy/vehicle_dummy.png` / `assets/dummy/vehicle_dummy.svg`
+- `assets/sprites/vehicle_topdown.png`（全游戏统一俯视角车辆；`vehicle_dummy` 仅作缺失回退）
 
 这三张图现在都是占位图，背景透明，足以验证移动、拾取和驾驶流程。
 

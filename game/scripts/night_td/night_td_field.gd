@@ -1,6 +1,8 @@
 extends Node2D
 class_name NightTdField
 
+const DayTopdownRender = preload("res://scripts/day_topdown_render.gd")
+
 signal cell_clicked(cell: Vector2i)
 signal cell_right_clicked(cell: Vector2i)
 signal cell_combat_clicked(cell: Vector2i)
@@ -208,16 +210,13 @@ func _draw() -> void:
 
 	for cell in vehicle_cells:
 		var rect := Rect2(field_origin + Vector2(cell.x * _layout_tile_size, cell.y * _layout_tile_size), Vector2(_layout_tile_size, _layout_tile_size))
-		draw_rect(rect, Color("#203144"), true)
-		draw_rect(rect, Color("#ffcc6f"), false, 3.0)
-		draw_string(ThemeDB.fallback_font, rect.position + Vector2(6, 18), "车", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#fff8e6"))
+		draw_rect(rect, Color("#203144", 0.35), true)
+		draw_rect(rect, Color("#ffcc6f", 0.55), false, 2.0)
 
 	var veh_center := get_vehicle_center_local()
-	draw_circle(veh_center, 30.0, Color(0.95, 0.74, 0.22, 0.22))
-	draw_circle(veh_center, 20.0, Color("#ffd66d"))
-	draw_circle(veh_center, 10.0, Color("#ff6b63"))
-	draw_string(ThemeDB.fallback_font, veh_center + Vector2(-18, -4), "车辆", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#fff8e6"))
-	draw_string(ThemeDB.fallback_font, veh_center + Vector2(-18, -28), "防守核心", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#ffb1a8"))
+	var veh_scale := (_layout_tile_size * 2.28) / maxf(DayTopdownRender.vehicle_display_width(), 1.0)
+	DayTopdownRender.draw_vehicle_marker(self, veh_center, veh_scale, "", Vector2.UP)
+	draw_string(ThemeDB.fallback_font, veh_center + Vector2(-22, -36), "防守核心", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#ffb1a8", 0.9))
 
 	if _controller != null:
 		if (

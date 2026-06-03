@@ -1,6 +1,8 @@
 extends CharacterBody2D
 class_name VehicleUnit
 
+const DayTopdownRender = preload("res://scripts/day_topdown_render.gd")
+
 @export var road_y: float = 448.0
 
 @onready var camera: Camera2D = $Camera2D
@@ -12,15 +14,17 @@ func _ready() -> void:
 	_load_texture()
 
 func _load_texture() -> void:
-	if is_instance_valid(sprite):
-		var tex: Texture2D = ArtAssetLoader.load_texture("res://assets/dummy/vehicle_dummy.png", "res://assets/dummy/vehicle_dummy.svg")
-		sprite.texture = tex
-		if tex != null:
-			var desired_px := 64.0
-			var sz: Vector2i = tex.get_size()
-			if sz.x > 0 and sz.y > 0:
-				var factor: float = minf(minf(desired_px / float(sz.x), desired_px / float(sz.y)), 1.0)
-				sprite.scale = Vector2(factor, factor)
+	if not is_instance_valid(sprite):
+		return
+	var tex: Texture2D = DayTopdownRender.vehicle_texture()
+	sprite.texture = tex
+	if tex == null:
+		return
+	var desired_px := DayTopdownRender.vehicle_display_width() * DayTopdownRender.VEHICLE_DISPLAY_SCALE
+	var sz: Vector2i = tex.get_size()
+	if sz.x > 0 and sz.y > 0:
+		var factor: float = desired_px / maxf(float(sz.x), float(sz.y))
+		sprite.scale = Vector2(factor, factor)
 
 func set_active(active: bool) -> void:
 	set_physics_process(active)

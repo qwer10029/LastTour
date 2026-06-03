@@ -55,6 +55,8 @@ var _drive_travel_distance: float = 0.0
 var _current_district_index: int = -1
 var _exit_options: Dictionary = {}
 var _drive_offset: Vector2 = Vector2.ZERO
+var _vehicle_facing: Vector2 = Vector2.RIGHT
+var _drive_exit_locked: bool = false  ## 到岔口后须先松开方向键，再按一次才选路
 var _current_layer: int = 1
 var _elevator_repair_progress: int = 0
 var _run_ended := false
@@ -128,9 +130,6 @@ func _ready() -> void:
 	_spawn_vehicle()
 	_spawn_player()
 	_setup_day_night()
-	var junction_buttons := get_node_or_null("HUD/ActionPanel/MarginContainer/VBoxContainer/JunctionButtons")
-	if junction_buttons != null:
-		junction_buttons.visible = false
 	if GameManager.consume_load_save_request():
 		var save_data := SaveManager.load_game()
 		if save_data.is_empty():
@@ -216,6 +215,14 @@ func _connect_buttons() -> void:
 	if is_instance_valid(back_track_button):
 		back_track_button.focus_mode = Control.FOCUS_NONE
 		back_track_button.pressed.connect(_take_back_at_node)
+	if is_instance_valid(up_button):
+		up_button.pressed.connect(func() -> void: _choose_exit_direction("up", true))
+	if is_instance_valid(down_button):
+		down_button.pressed.connect(func() -> void: _choose_exit_direction("down", true))
+	if is_instance_valid(left_button):
+		left_button.pressed.connect(func() -> void: _choose_exit_direction("left", true))
+	if is_instance_valid(right_button):
+		right_button.pressed.connect(func() -> void: _choose_exit_direction("right", true))
 
 func _spawn_vehicle() -> void:
 	if vehicle_scene == null:
@@ -328,6 +335,7 @@ func _physics_process(delta: float) -> void:
 				_enter_selected_building()
 			else:
 				_take_back_at_node()
+	_update_drive_exit_lock()
 	if _mode == TravelMode.DRIVE and _segment_target_index < 0:
 		var buildings := _get_enterable_buildings()
 		if buildings.size() > 1 and Input.is_action_just_pressed("cycle_building"):
@@ -409,6 +417,10 @@ func _process_drive(delta: float) -> void:
 	if axis == 0.0:
 		_update_vehicle_transform()
 		return
+	var forward_dir := _map.direction_between(_segment_from_index, _segment_target_index)
+	var forward_vec := _drive_direction_vector(forward_dir)
+	if forward_vec.length_squared() > 0.01:
+		_vehicle_facing = forward_vec if axis > 0.0 else -forward_vec
 	_segment_progress += axis * drive_speed * delta / maxf(_segment_length, 1.0)
 	_update_vehicle_transform()
 	_fuel = maxf(_fuel - abs(axis) * drive_speed * delta * fuel_per_pixel, 0.0)
@@ -512,11 +524,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if not event.is_pressed() or event.is_echo():
 		return
-	var direction := _direction_from_move_event(event)
+	var direction := _just_pressed_drive_direction_from_event(event)
 	if direction == "" or not _exit_options.has(direction):
 		return
-	_begin_drive_segment(_current_node_index, int(_exit_options[direction]))
+	_choose_exit_direction(direction)
 	get_viewport().set_input_as_handled()
+
 
 func _arrive_at_node(node_index: int) -> void:
 	if _segment_target_index >= 0:
@@ -558,6 +571,7 @@ func _halt_at_node(node_index: int) -> void:
 	_segment_progress = 0.0
 	_exit_options = _build_exit_options(node_index)
 	_ensure_back_exit_option()
+	_drive_exit_locked = true
 	_building_pick_index = 0
 	for district_index in _map.get_roadside_districts(node_index):
 		_map.mark_explored(district_index)
@@ -596,18 +610,6 @@ func _take_back_at_node() -> void:
 		_begin_drive_segment(_current_node_index, back_index)
 
 
-func _direction_from_move_event(event: InputEvent) -> String:
-	if event.is_action_pressed("move_up"):
-		return "up"
-	if event.is_action_pressed("move_down"):
-		return "down"
-	if event.is_action_pressed("move_left"):
-		return "left"
-	if event.is_action_pressed("move_right"):
-		return "right"
-	return ""
-
-
 func _pressed_drive_direction() -> String:
 	if Input.is_action_pressed("move_up"):
 		return "up"
@@ -618,23 +620,6 @@ func _pressed_drive_direction() -> String:
 	if Input.is_action_pressed("move_right"):
 		return "right"
 	return ""
-
-
-func _get_segment_drive_axis() -> float:
-	if _segment_target_index < 0 or not _map.is_valid_index(_segment_from_index):
-		return 0.0
-	var forward_dir := _map.direction_between(_segment_from_index, _segment_target_index)
-	var input_dir := _pressed_drive_direction()
-	if input_dir == "":
-		return 1.0
-	var allowed := _map.allowed_input_directions_for_segment(_segment_from_index, _segment_target_index)
-	if input_dir not in allowed:
-		return 1.0
-	if input_dir == forward_dir:
-		return 1.0
-	if input_dir == _map.opposite_direction(forward_dir):
-		return -1.0
-	return 1.0
 
 
 func _just_pressed_drive_direction() -> String:
@@ -649,13 +634,74 @@ func _just_pressed_drive_direction() -> String:
 	return ""
 
 
+func _just_pressed_drive_direction_from_event(event: InputEvent) -> String:
+	if event.is_action_pressed("move_up"):
+		return "up"
+	if event.is_action_pressed("move_down"):
+		return "down"
+	if event.is_action_pressed("move_left"):
+		return "left"
+	if event.is_action_pressed("move_right"):
+		return "right"
+	return ""
+
+
+func _update_drive_exit_lock() -> void:
+	if _drive_exit_locked and _pressed_drive_direction() == "":
+		_drive_exit_locked = false
+
+
+func _choose_exit_direction(direction: String, from_ui: bool = false) -> void:
+	if _mode != TravelMode.DRIVE or _segment_target_index >= 0:
+		return
+	if _drive_exit_locked and not from_ui:
+		return
+	if direction == "" or not _exit_options.has(direction):
+		return
+	_drive_exit_locked = false
+	_begin_drive_segment(_current_node_index, int(_exit_options[direction]))
+
+
+func _get_segment_drive_axis() -> float:
+	if _segment_target_index < 0 or not _map.is_valid_index(_segment_from_index):
+		return 0.0
+	var forward_dir := _map.direction_between(_segment_from_index, _segment_target_index)
+	var input_dir := _pressed_drive_direction()
+	if input_dir == "":
+		return 0.0
+	var allowed := _map.allowed_input_directions_for_segment(_segment_from_index, _segment_target_index)
+	if input_dir not in allowed:
+		return 0.0
+	if input_dir == forward_dir:
+		return 1.0
+	if input_dir == _map.opposite_direction(forward_dir):
+		return -1.0
+	return 0.0
+
+
 func _try_begin_drive_from_input() -> void:
 	if _segment_target_index >= 0:
+		return
+	if _drive_exit_locked:
 		return
 	var direction := _just_pressed_drive_direction()
 	if direction == "" or not _exit_options.has(direction):
 		return
-	_begin_drive_segment(_current_node_index, int(_exit_options[direction]))
+	_choose_exit_direction(direction)
+
+
+func _drive_direction_vector(direction: String) -> Vector2:
+	match direction:
+		"up":
+			return Vector2.UP
+		"down":
+			return Vector2.DOWN
+		"left":
+			return Vector2.LEFT
+		"right":
+			return Vector2.RIGHT
+		_:
+			return Vector2.ZERO
 
 
 func _enter_node(node_index: int, is_run_start: bool = false) -> void:
@@ -688,6 +734,7 @@ func _begin_drive_segment(from_index: int, to_index: int) -> void:
 	_segment_target_index = to_index
 	_segment_progress = 0.0
 	_segment_length = maxf(_road_center(from_index).distance_to(_road_center(to_index)), 1.0)
+	_drive_exit_locked = false
 	if is_instance_valid(_vehicle):
 		_vehicle.set_active(true)
 		_vehicle.global_position = _map.cell_center(from_index)
@@ -2015,6 +2062,7 @@ func _update_prompts() -> void:
 			prompt_label.text = "夜晚塔防：俯视图布防 → 接敌交互 → 结算（白天探索已暂停）"
 		else:
 			prompt_label.text = "夜晚结算中…"
+		_sync_junction_buttons()
 		return
 	if is_instance_valid(time_system) and time_system.can_manual_enter_defense():
 		if _mode == TravelMode.DRIVE and _segment_target_index >= 0:
@@ -2029,13 +2077,17 @@ func _update_prompts() -> void:
 			prompt_label.text = _building_menu_prompt_text()
 		elif in_foot:
 			return_button.visible = true
+		_sync_junction_buttons()
 		return
 
 	if waiting_turn:
 		var lines: PackedStringArray = [_halt_prompt_text()]
+		if _drive_exit_locked:
+			lines.append("（先松开方向键，再按要选的路）")
 		if can_enter_buildings:
 			lines.append(_building_menu_prompt_text())
 		prompt_label.text = "\n".join(lines)
+		_sync_junction_buttons()
 		var back_index := _get_back_neighbor_index()
 		if is_instance_valid(back_track_button) and back_index >= 0 and not can_enter_buildings:
 			var back_dir := _map.direction_between(_current_node_index, back_index)
@@ -2062,6 +2114,29 @@ func _update_prompts() -> void:
 			prompt_label.text = "俯视驾驶 · 沿当前路段用 WASD 或方向键前进/后退"
 	else:
 		prompt_label.text = "沿路驾驶（WASD）· 镜头跟车 · 开到路边房子门口高亮时按 E 进入"
+	_sync_junction_buttons()
+
+
+func _sync_junction_buttons() -> void:
+	var waiting_turn := _mode == TravelMode.DRIVE and _segment_target_index < 0 and not _is_night_phase()
+	var junction_root := get_node_or_null("HUD/ActionPanel/MarginContainer/VBoxContainer/JunctionButtons")
+	if junction_root != null:
+		junction_root.visible = waiting_turn
+	var button_map: Dictionary = {
+		"up": up_button,
+		"down": down_button,
+		"left": left_button,
+		"right": right_button,
+	}
+	for direction in button_map.keys():
+		var btn: Button = button_map[direction]
+		if not is_instance_valid(btn):
+			continue
+		var available := waiting_turn and _exit_options.has(direction)
+		btn.visible = available
+		btn.disabled = not available
+		if available:
+			btn.text = _direction_label(direction)
 
 
 func _building_menu_prompt_text() -> String:
@@ -2387,7 +2462,7 @@ func _draw_day_overworld() -> void:
 
 	var vpos := _vehicle_world_position()
 	if view_rect.has_point(vpos):
-		DayTopdownRender.draw_pixel_vehicle(self, vpos, _current_travel_axis())
+		DayTopdownRender.draw_vehicle_marker(self, vpos, 1.0, _current_travel_axis(), _vehicle_facing)
 
 	if _segment_target_index < 0 and _map.is_valid_index(_current_node_index):
 		var node_center := _map.cell_center(_current_node_index)

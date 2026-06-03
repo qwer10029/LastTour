@@ -4,6 +4,7 @@ extends RefCounted
 const PIXEL := 16
 const VEHICLE_PIXEL := 3.0
 const VEHICLE_BODY_UNITS := 14.0
+const VEHICLE_DISPLAY_SCALE := 1.62  ## 俯视角贴图相对路面宽度的显示倍率
 const ROAD_TILE_DIR := "res://assets/tiles/road/"
 const INTERIOR_TILE_DIR := "res://assets/tiles/interior/"
 const TILE_OVERLAP_WORLD := 1.5
@@ -22,8 +23,14 @@ static var _tex_interior_floor: Texture2D
 static var _tex_interior_obstacle: Texture2D
 
 const PLAYER_FOOT_SPRITE := "res://assets/sprites/player_foot.png"
+const PLAYER_FOOT_WALK_UP := "res://assets/sprites/player_foot_walk_up.png"
+const PLAYER_WALK_FRAME_COUNT := 4
+const VEHICLE_TOPDOWN_SPRITE := "res://assets/sprites/vehicle_topdown.png"
+const VEHICLE_SPRITE_FORWARD := Vector2.LEFT  ## 贴图默认车头朝左
 static var _player_sprite_ready := false
 static var _tex_player_foot: Texture2D
+static var _vehicle_sprite_ready := false
+static var _tex_vehicle: Texture2D
 
 static func hash_cell(seed: int, gx: int, gy: int) -> float:
 	return fmod(sin(float(seed * 1271 + gx * 3117 + gy * 7493)) * 43758.5453, 1.0)
@@ -608,6 +615,74 @@ static func draw_road_terrain_cell(canvas: CanvasItem, rect: Rect2, explored: bo
 	draw_ruin_cell(canvas, rect, "trail", explored, seed)
 
 
+static func _ensure_vehicle_sprite() -> void:
+	if _vehicle_sprite_ready:
+		return
+	_vehicle_sprite_ready = true
+	var raw := ArtAssetLoader.load_texture(
+		VEHICLE_TOPDOWN_SPRITE,
+		"res://assets/dummy/vehicle_dummy.png",
+	)
+	if raw == null:
+		raw = ArtAssetLoader.load_texture("res://assets/dummy/vehicle_dummy.png", "res://assets/dummy/vehicle_dummy.svg")
+	if raw != null:
+		var keyed := ArtAssetLoader.apply_road_background_key(raw)
+		if ArtAssetLoader.texture_has_visible_pixels(keyed):
+			_tex_vehicle = keyed
+			return
+		keyed = ArtAssetLoader.apply_black_alpha_key(raw, 0.12)
+		if ArtAssetLoader.texture_has_visible_pixels(keyed):
+			_tex_vehicle = keyed
+			return
+	_tex_vehicle = raw
+
+
+static func vehicle_texture() -> Texture2D:
+	_ensure_vehicle_sprite()
+	return _tex_vehicle
+
+
+static func _vehicle_draw_rotation(facing: Vector2, travel_axis: String) -> float:
+	var dir := facing
+	if dir.length_squared() < 0.01:
+		match travel_axis:
+			"right":
+				dir = Vector2.RIGHT
+			"left":
+				dir = Vector2.LEFT
+			"up":
+				dir = Vector2.UP
+			"down":
+				dir = Vector2.DOWN
+	if dir.length_squared() < 0.01:
+		return 0.0
+	return dir.angle() - VEHICLE_SPRITE_FORWARD.angle()
+
+
+static func draw_vehicle_marker(
+	canvas: CanvasItem,
+	center: Vector2,
+	unit_scale: float = 1.0,
+	travel_axis: String = "",
+	facing: Vector2 = Vector2.ZERO,
+) -> void:
+	var s := clampf(unit_scale, 0.55, 1.5)
+	_ensure_vehicle_sprite()
+	if _tex_vehicle != null:
+		var tex_size := _tex_vehicle.get_size()
+		if tex_size.x > 0.0 and tex_size.y > 0.0:
+			var display := vehicle_display_width() * s * VEHICLE_DISPLAY_SCALE
+			var base_scale := display / maxf(float(tex_size.x), float(tex_size.y))
+			var rotation := _vehicle_draw_rotation(facing, travel_axis)
+			canvas.draw_circle(center + Vector2(0.0, 4.0 * s), display * 0.3, Color(0.0, 0.0, 0.0, 0.36))
+			var half := Vector2(tex_size) * 0.5
+			canvas.draw_set_transform(center, rotation, Vector2(base_scale, base_scale))
+			canvas.draw_texture(_tex_vehicle, -half)
+			canvas.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+			return
+	draw_pixel_vehicle(canvas, center, travel_axis)
+
+
 static func draw_pixel_vehicle(canvas: CanvasItem, center: Vector2, travel_axis: String = "") -> void:
 	var px := 3.0
 	var body := Rect2(center - Vector2(7 * px, 5 * px), Vector2(14 * px, 10 * px))
@@ -619,10 +694,6 @@ static func draw_pixel_vehicle(canvas: CanvasItem, center: Vector2, travel_axis:
 		canvas.draw_rect(Rect2(center.x - 7 * px, center.y - 2 * px, 3 * px, 4 * px), Color("#8a5030"), true)
 	canvas.draw_rect(Rect2(center.x - 8 * px, center.y + 3 * px, 3 * px, 3 * px), Color("#101010"), true)
 	canvas.draw_rect(Rect2(center.x + 5 * px, center.y + 3 * px, 3 * px, 3 * px), Color("#101010"), true)
-
-
-static func draw_vehicle_marker(canvas: CanvasItem, center: Vector2, _unit_scale: float = 1.0) -> void:
-	draw_pixel_vehicle(canvas, center)
 
 
 static func draw_road_cell(canvas: CanvasItem, rect: Rect2, explored: bool, seed: int = 0) -> void:
@@ -813,7 +884,44 @@ static func _ensure_player_foot_sprite() -> void:
 	if _player_sprite_ready:
 		return
 	_player_sprite_ready = true
-	_tex_player_foot = ArtAssetLoader.load_texture_alpha_key(PLAYER_FOOT_SPRITE, 0.12)
+	var raw := ArtAssetLoader.load_texture(PLAYER_FOOT_WALK_UP, PLAYER_FOOT_SPRITE)
+	if raw == null:
+		raw = ArtAssetLoader.load_texture(PLAYER_FOOT_SPRITE, "")
+	if raw != null:
+		var keyed := ArtAssetLoader.apply_road_background_key(raw)
+		if ArtAssetLoader.texture_has_visible_pixels(keyed):
+			_tex_player_foot = keyed
+			return
+		keyed = ArtAssetLoader.apply_black_alpha_key(raw, 0.12)
+		if ArtAssetLoader.texture_has_visible_pixels(keyed):
+			_tex_player_foot = keyed
+			return
+	_tex_player_foot = raw
+
+
+static func _foot_cardinal_direction(move_dir: Vector2) -> String:
+	if move_dir.length_squared() < 0.01:
+		return "up"
+	if absf(move_dir.x) > absf(move_dir.y):
+		return "right" if move_dir.x > 0.0 else "left"
+	return "down" if move_dir.y > 0.0 else "up"
+
+
+static func _foot_walk_flip(cardinal: String) -> Vector2:
+	# 贴图为背面行走（朝上走）；其余方向暂用翻转，有正面/侧面图后可换贴图
+	match cardinal:
+		"down":
+			return Vector2(1.0, -1.0)
+		"left":
+			return Vector2(-1.0, 1.0)
+		_:
+			return Vector2(1.0, 1.0)
+
+
+static func _foot_walk_frame_index(walk_phase: float, is_walking: bool) -> int:
+	if not is_walking:
+		return 0
+	return int(floor(walk_phase * 2.0 / PI)) % PLAYER_WALK_FRAME_COUNT
 
 
 static func draw_player_marker(
@@ -829,25 +937,28 @@ static func draw_player_marker(
 	if _tex_player_foot != null:
 		var tex_size := _tex_player_foot.get_size()
 		if tex_size.x > 0.0 and tex_size.y > 0.0:
-			var display := 42.0 * s
-			var base_scale := display / maxf(float(tex_size.x), float(tex_size.y))
+			var frame_count := 1
+			if float(tex_size.x) >= float(tex_size.y) * 3.2:
+				frame_count = PLAYER_WALK_FRAME_COUNT
+			var frame_w := float(tex_size.x) / float(frame_count)
+			var frame_h := float(tex_size.y)
+			var frame := _foot_walk_frame_index(walk_phase, is_walking) % frame_count
 			var bob := 0.0
 			var sway := 0.0
-			var stretch := 1.0
 			if is_walking:
-				bob = sin(walk_phase) * 4.0 * s
-				sway = sin(walk_phase * 2.0) * 2.5 * s
-				stretch = 1.0 + sin(walk_phase * 2.0) * 0.05
+				bob = sin(walk_phase) * 3.0 * s
+				sway = sin(walk_phase * 2.0) * 1.5 * s
 			var draw_center := center + Vector2(sway, -bob)
-			var facing := move_dir
-			if facing.length_squared() < 0.01:
-				facing = Vector2.UP
-			var rotation := facing.angle() + PI * 0.5
+			var cardinal := _foot_cardinal_direction(move_dir)
+			var flip := _foot_walk_flip(cardinal)
+			var display_h := 52.0 * s
+			var display_w := display_h * (frame_w / maxf(frame_h, 1.0))
 			var shadow_center := center + Vector2(sway * 0.35, 3.0 * s)
-			canvas.draw_circle(shadow_center, display * 0.32, Color(0.0, 0.0, 0.0, 0.38))
-			var half := Vector2(tex_size) * 0.5
-			canvas.draw_set_transform(draw_center, rotation, Vector2(base_scale, base_scale * stretch))
-			canvas.draw_texture(_tex_player_foot, -half)
+			canvas.draw_circle(shadow_center, display_h * 0.28, Color(0.0, 0.0, 0.0, 0.38))
+			var src := Rect2(frame * frame_w, 0.0, frame_w, frame_h)
+			var dest := Rect2(-display_w * 0.5, -display_h * 0.5, display_w, display_h)
+			canvas.draw_set_transform(draw_center, 0.0, flip)
+			canvas.draw_texture_rect_region(_tex_player_foot, dest, src)
 			canvas.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 			return
 	var fallback_s := s
