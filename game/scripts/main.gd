@@ -4,6 +4,7 @@ const RunEndOverlayScript = preload("res://scripts/ui/run_end_overlay.gd")
 const CommunicationTerminalScript = preload("res://scripts/ui/communication_terminal.gd")
 const EndingOutcomeOverlayScript = preload("res://scripts/ui/ending_outcome_overlay.gd")
 const DayTopdownRender = preload("res://scripts/day_topdown_render.gd")
+const RunStateClass = preload("res://scripts/run_state.gd")
 var _building_pick_index: int = 0
 var _foot_local_pos: Vector2 = Vector2.ZERO
 var _foot_move_dir: Vector2 = Vector2.UP
@@ -84,7 +85,7 @@ var _repair_choice_popup: Window
 @onready var night_defense: NightDefenseSystem = $Systems/NightDefenseSystem
 @onready var time_hud: Control = $HUD/TimePanel/MarginContainer/TimeHud
 @onready var evening_notice: PanelContainer = $HUD/EveningNotice
-@onready var night_td: NightTdController = $NightTd
+var night_td: NightTdController = null  # 由子场景决定是否存在（main.tscn 有，day_exploration.tscn 无）
 @onready var fuel_label: Label = $HUD/InfoPanel/MarginContainer/VBoxContainer/FuelLabel
 @onready var inventory_label: Label = $HUD/InfoPanel/MarginContainer/VBoxContainer/InventoryLabel
 @onready var vitals_label: Label = $HUD/InfoPanel/MarginContainer/VBoxContainer/VitalsLabel
@@ -112,6 +113,7 @@ var _night_result_applied := false
 @onready var back_track_button: Button = $HUD/ActionPanel/MarginContainer/VBoxContainer/ActionButtons/BackTrackButton
 
 func _ready() -> void:
+	night_td = get_node_or_null("NightTd") as NightTdController  # 主场景有，子场景可能无
 	_base_fuel_max = fuel_max
 	_base_elevator_repair_cost = base_elevator_repair_cost
 	_apply_run_config_from_manager()
@@ -133,7 +135,7 @@ func _ready() -> void:
 	_spawn_player()
 	_setup_day_night()
 	if GameManager.consume_load_save_request():
-		var save_data := SaveManager.load_game()
+		var save_data: Dictionary = SaveManager.load_game()
 		if save_data.is_empty():
 			_start_new_run()
 		else:
@@ -1630,6 +1632,54 @@ func _load_travel_inventory(travel: Dictionary) -> void:
 		_survival.load_from_dictionary(travel["survival"])
 
 
+## 从 RunState 恢复全部状态（场景切换后初始化）。
+func init_from_run_state(rs) -> void:
+	if rs == null:
+		return
+	var save_data: Dictionary = rs.to_full_dict()
+	_apply_save_data(save_data)
+	# 恢复 RunState 特有字段（不在 save_data 中的）
+	_last_night_losses.clear()
+	for s in rs.last_night_losses:
+		_last_night_losses.append(s)
+	_last_night_salvage = rs.last_night_salvage
+	_run_difficulty_name = rs.run_difficulty_name
+	_run_squad_name = rs.run_squad_name
+	GameManager.difficulty = rs.difficulty
+	GameManager.squad_id = rs.squad_id
+	_apply_run_config_from_manager()
+	_vehicle_hp_max = _get_vehicle_hp_max()
+	_vehicle_hp = clampf(_vehicle_hp, 0.0, _vehicle_hp_max)
+	if is_instance_valid(minimap_view):
+		minimap_view.set_world_map(_map)
+		minimap_view.set_war_fog_enabled(war_fog_enabled)
+	_sync_day_entity_visibility()
+	# 恢复时间（如果 RunState 指定了 phase，则跳到对应阶段）
+	if is_instance_valid(time_system) and not rs.time_dict.is_empty():
+		time_system.load_from_dictionary(rs.time_dict)
+		_restore_time_phase_after_load()
+	_sync_minimap_navigation()
+	_refresh_ui()
+	queue_redraw()
+
+
+## 导出当前全部状态为 RunState（用于场景切换前保存）。
+func export_run_state():
+	var rs = RunStateClass.new()
+	# 通过 save 格式捕获（已有完整的序列化逻辑）
+	var save_data: Dictionary = capture_save_data()
+	rs.from_full_dict(save_data)
+	# 补充 RunState 特有字段
+	rs.total_layers = total_layers
+	rs.run_difficulty_name = _run_difficulty_name
+	rs.run_squad_name = _run_squad_name
+	rs.last_night_losses.clear()
+	for s in _last_night_losses:
+		rs.last_night_losses.append(s)
+	rs.last_night_salvage = _last_night_salvage
+	return rs
+
+
 func capture_save_data() -> Dictionary:
 	var player_pos := Vector2.ZERO
 	if is_instance_valid(_player):
@@ -1787,8 +1837,12 @@ func _restore_time_phase_after_load() -> void:
 		TimeSystem.Phase.NIGHT_SETUP:
 			_force_return_to_vehicle_for_night()
 			if is_instance_valid(night_defense):
+				var snapshot: Dictionary = {}
+				if is_instance_valid(_backpack) and _backpack.has_method("to_dictionary"):
+					snapshot = _backpack.to_dictionary().duplicate()
 				night_defense.start_td_session(
-					_backpack.total_count(), GameManager.difficulty, time_system.day_index, true, _vehicle_hp, _vehicle_hp_max, _backpack
+					_backpack.total_count(), GameManager.difficulty, time_system.day_index, true,
+					_vehicle_hp, _vehicle_hp_max, snapshot
 				)
 			time_system.pause()
 		TimeSystem.Phase.NIGHT_RESOLVE:
@@ -1886,8 +1940,13 @@ func _on_night_setup_started(day_index: int, manual_setup: bool) -> void:
 	if is_instance_valid(evening_notice) and evening_notice.has_method("hide_notice"):
 		evening_notice.hide_notice()
 	if is_instance_valid(night_defense):
+		# 传入背包快照（字典），而非 live 引用，切断耦合
+		var snapshot: Dictionary = {}
+		if is_instance_valid(_backpack) and _backpack.has_method("to_dictionary"):
+			snapshot = _backpack.to_dictionary().duplicate()
 		night_defense.start_td_session(
-			_backpack.total_count(), GameManager.difficulty, day_index, manual_setup, _vehicle_hp, _vehicle_hp_max, _backpack
+			_backpack.total_count(), GameManager.difficulty, day_index, manual_setup,
+			_vehicle_hp, _vehicle_hp_max, snapshot
 		)
 	_refresh_ui()
 
@@ -1931,26 +1990,41 @@ func _apply_night_result(result: Dictionary) -> void:
 	if result.has("base_hp_max"):
 		_vehicle_hp_max = float(result.get("base_hp_max", _vehicle_hp_max))
 		_vehicle_hp = clampf(_vehicle_hp, 0.0, _vehicle_hp_max)
-	# Remove items from backpack based on night losses
+	# 记录损失明细（用于结算 UI）
 	_last_night_losses.clear()
-	var severity: String = str(result.get("loss_severity", "none"))
-	var outcome: String = str(result.get("outcome", "success"))
-	if outcome == "vehicle_destroyed":
-		severity = "total"
+	_last_night_salvage = ""
 	var breach_losses: Variant = result.get("breach_losses", {})
 	var breach_total: int = int(result.get("breach_total", 0))
 	if breach_total > 0 and breach_losses is Dictionary:
-		# TD 已在夜里实时拖走物资；这里只记录明细用于汇报，不再二次扣除。
 		for item_id: String in (breach_losses as Dictionary).keys():
 			var n := int((breach_losses as Dictionary)[item_id])
 			if n > 0:
 				_last_night_losses.append("%s×%d" % [ItemDefs.get_item_name(str(item_id)), n])
 	else:
+		# 旧模式兼容：无真实背包时的随机损耗
+		var severity: String = str(result.get("loss_severity", "none"))
+		var outcome: String = str(result.get("outcome", "success"))
+		if outcome == "vehicle_destroyed":
+			severity = "total"
 		var inv_loss: int = int(result.get("inventory_loss", 0))
 		if severity != "none" or inv_loss > 0:
 			_remove_backpack_items_for_night(inv_loss, severity)
-	# 夜末回收入袋（P6.3）：幸存塔退还、残骸废料、敌人掉落。
-	_apply_night_salvage(result.get("salvage", {}))
+		if result.has("salvage") and not (result["salvage"] as Dictionary).is_empty():
+			_apply_night_salvage(result["salvage"])
+	# 新接口：最终背包快照（包含所有建造消耗、突破损失、夜末回收的最终结果）
+	if result.has("final_backpack_dict") and not result["final_backpack_dict"].is_empty():
+		if is_instance_valid(_backpack) and _backpack.has_method("load_from_dictionary"):
+			_backpack.load_from_dictionary(result["final_backpack_dict"])
+		# 生成回收文本
+		var salvage: Variant = result.get("salvage", {})
+		if salvage is Dictionary and not salvage.is_empty():
+			var added: Array[String] = []
+			for item_id: String in (salvage as Dictionary).keys():
+				var amount := int((salvage as Dictionary)[item_id])
+				if amount > 0:
+					added.append("%s×%d" % [ItemDefs.get_item_name(str(item_id)), amount])
+			if not added.is_empty():
+				_last_night_salvage = "夜末回收：" + "、".join(added)
 
 
 ## 把夜末结算的回收物资加入背包，并记录用于结算文本。

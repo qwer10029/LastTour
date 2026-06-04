@@ -69,9 +69,11 @@ var _shepherd_degrade_until := 0.0  # 此刻之前指挥官退化为 base-rush
 var _combat_time := 0.0
 
 # --- 资源经济（P6）---
-# _backpack 非空时用真实背包资源造塔/回收；为空时回退到 deploy-point 预算（旧逻辑/测试）。
-var _backpack: InventoryData = null
+# _local_backpack 是白天背包的快照副本（非 live 引用），TD 期间所有建造/回收/偷窃
+# 都只操作这份副本；夜末通过 result["final_backpack_dict"] 把最终状态返回给白天。
+var _local_backpack: InventoryData = null
 var _salvage_pending: Dictionary = {}   # 夜末待结算的废料掉落 item_id -> count
+var _session_paused := false             # 由 GameManager / 父场景控制暂停
 var _breach_losses: Dictionary = {}      # 突破被拖走的物资 item_id -> count（夜末汇报）
 
 
@@ -89,9 +91,11 @@ func _ready() -> void:
 		hud.tower_power_step.connect(_on_tower_power_step)
 
 
+func set_session_paused(paused: bool) -> void:
+	_session_paused = paused
+
 func _process(delta: float) -> void:
-	var root := get_parent()
-	if root != null and root.has_method("is_user_paused") and root.is_user_paused():
+	if _session_paused:
 		return
 	if not visible:
 		return
@@ -114,10 +118,13 @@ func start_session(
 	allow_placement: bool = true,
 	vehicle_hp: float = -1.0,
 	vehicle_hp_max: float = -1.0,
-	backpack: InventoryData = null,
+	backpack_snapshot: Dictionary = {},
 ) -> void:
 	_allow_placement = allow_placement
-	_backpack = backpack
+	# 从快照创建本地背包副本（切断对白天状态的引用）
+	_local_backpack = InventoryData.new()
+	if not backpack_snapshot.is_empty():
+		_local_backpack.load_from_dictionary(backpack_snapshot)
 	_salvage_pending = {}
 	_breach_losses = {}
 	_exploration_inventory = maxi(inventory, 0)
@@ -179,7 +186,7 @@ func start_session(
 			hud.set_place_mode(true)
 			hud.set_phase_text("夜晚塔防 · 布防阶段")
 			hud.set_placement_timer(placement_remaining)
-			if _backpack != null:
+			if _local_backpack != null:
 				hud.set_hint(
 					"俯视图：青色箭头为敌群涌动方向。左键放置设施、右键撤销（资源全额退还）。\n"
 					+ "用背包里的零件/废料建造设施；幸存设施夜末回收，被毁则折成少量废料。"
@@ -435,7 +442,7 @@ func _update_enemies(delta: float) -> void:
 ## 突破时从真实背包拖走物资：优先废料/木材，其次燃料/补给，最后才动零件（最珍贵）。
 ## 每次突破拿走 1~2 个非证据物品；记录到 _breach_losses 供夜末汇报。
 func _steal_resources(enemy: Dictionary) -> void:
-	if _backpack == null:
+	if _local_backpack == null:
 		return
 	var take := 1
 	if str(enemy.get("type", "")) == "scout":
@@ -444,8 +451,8 @@ func _steal_resources(enemy: Dictionary) -> void:
 	for _n in range(take):
 		var grabbed := false
 		for item_id in priority:
-			if _backpack.has(item_id, 1):
-				_backpack.remove(item_id, 1)
+			if _local_backpack.has(item_id, 1):
+				_local_backpack.remove(item_id, 1)
 				_breach_losses[item_id] = int(_breach_losses.get(item_id, 0)) + 1
 				grabbed = true
 				break
@@ -986,35 +993,35 @@ func _remove_tower_at_cell(cell: Vector2i) -> String:
 
 ## 能否支付建造成本。有背包时检查 build_cost；否则用 deploy-point 预算。
 func _can_afford(tdef: Dictionary, deploy_cost: int) -> bool:
-	if _backpack == null:
+	if _local_backpack == null:
 		return backpack_remaining >= deploy_cost
 	var build_cost: Dictionary = tdef.get("build_cost", {})
 	for item_id: String in build_cost.keys():
-		if not _backpack.has(str(item_id), int(build_cost[item_id])):
+		if not _local_backpack.has(str(item_id), int(build_cost[item_id])):
 			return false
 	return true
 
 
 func _pay_cost(tdef: Dictionary, deploy_cost: int) -> void:
-	if _backpack == null:
+	if _local_backpack == null:
 		backpack_remaining -= deploy_cost
 		return
 	var build_cost: Dictionary = tdef.get("build_cost", {})
 	for item_id: String in build_cost.keys():
-		_backpack.remove(str(item_id), int(build_cost[item_id]))
+		_local_backpack.remove(str(item_id), int(build_cost[item_id]))
 
 
 func _refund_cost(tdef: Dictionary, deploy_cost: int) -> void:
-	if _backpack == null:
+	if _local_backpack == null:
 		backpack_remaining += deploy_cost
 		return
 	var build_cost: Dictionary = tdef.get("build_cost", {})
 	for item_id: String in build_cost.keys():
-		_backpack.add(str(item_id), int(build_cost[item_id]))
+		_local_backpack.add(str(item_id), int(build_cost[item_id]))
 
 
 func _cost_label(tdef: Dictionary) -> String:
-	if _backpack == null:
+	if _local_backpack == null:
 		return "%d 部署点" % int(tdef.get("cost", 1))
 	var build_cost: Dictionary = tdef.get("build_cost", {})
 	var parts: Array[String] = []
@@ -1027,11 +1034,11 @@ func _cost_label(tdef: Dictionary) -> String:
 func _refresh_resource_hud() -> void:
 	if not is_instance_valid(hud):
 		return
-	if _backpack == null:
+	if _local_backpack == null:
 		hud.set_resources(backpack_remaining, resources_spent)
 		return
-	var parts := int(_backpack.count("parts"))
-	var scrap := int(_backpack.count("scrap"))
+	var parts := int(_local_backpack.count("parts"))
+	var scrap := int(_local_backpack.count("scrap"))
 	hud.set_resource_text("建材  零件 %d · 废料 %d" % [parts, scrap])
 
 
@@ -1084,13 +1091,9 @@ func _end_combat() -> void:
 
 
 func _compose_result_message(result: Dictionary) -> String:
-	var msg := str(result.get("message", ""))
-	var root := get_parent()
-	if root != null and root.has_method("on_td_combat_ended"):
-		var extra: String = root.on_td_combat_ended(result)
-		if extra != "":
-			msg += extra
-	return msg
+	# 结果报文已自包含：所有损耗/回收信息都在 result 字典中，
+	# 不再需要回调父节点。白天侧从 RunState.apply_night_result() 获取最终状态。
+	return str(result.get("message", ""))
 
 
 func _resolve_wave_plan_path(day: int, diff: int) -> String:
@@ -1142,13 +1145,21 @@ func _build_result() -> Dictionary:
 		"severe":
 			inv_loss = randi_range(3, 5)
 	var salvage := _settle_salvage()
+	# 关键：把回收物资加回本地背包，这样 final_backpack_dict 才包含它们
+	if _local_backpack != null:
+		for item_id: String in salvage.keys():
+			_local_backpack.add(str(item_id), int(salvage[item_id]))
 	# 真实背包模式：突破物资已在战斗中实时拖走（_steal_resources），
-	# 这里把 inventory_loss 置 0，避免 main.gd 二次扣除；改用 breach_losses 汇报实拿明细。
+	# 这里把 inventory_loss 置 0；改用 breach_losses 汇报实拿明细。
 	var breach_total := 0
 	for k: String in _breach_losses.keys():
 		breach_total += int(_breach_losses[k])
-	if _backpack != null:
+	if _local_backpack != null:
 		inv_loss = 0
+	# 导出最终背包快照（含所有建造消耗、突破损失、夜末回收）
+	var final_backpack_dict: Dictionary = {}
+	if _local_backpack != null and _local_backpack.has_method("to_dictionary"):
+		final_backpack_dict = _local_backpack.to_dictionary().duplicate()
 	return {
 		"outcome": outcome,
 		"message": msg,
@@ -1167,6 +1178,7 @@ func _build_result() -> Dictionary:
 		"salvage": salvage,
 		"breach_losses": _breach_losses.duplicate(),
 		"breach_total": breach_total,
+		"final_backpack_dict": final_backpack_dict,
 	}
 
 

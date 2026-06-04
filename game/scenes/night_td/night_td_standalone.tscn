@@ -1,0 +1,7 @@
+[gd_scene load_steps=2 format=3 uid="uid://night_td_standalone_scene"]
+
+[ext_resource type="Script" path="res://scripts/night_td/night_td_root.gd" id="1_root"]
+
+[node name="NightTdStandalone" type="Node2D"]
+script = ExtResource("1_root")
+night_td_scene = null

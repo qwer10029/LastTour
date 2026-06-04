@@ -1,5 +1,7 @@
 extends Node
 
+const RunStateClass = preload("res://scripts/run_state.gd")
+
 enum Difficulty { EASY, NORMAL, HARD }
 const RUN_CONFIG_PATH := "res://data/run_config.json"
 
@@ -8,6 +10,8 @@ const SCENE_OPENING_PROLOGUE := "res://scenes/menu/opening_prologue.tscn"
 const SCENE_DIFFICULTY := "res://scenes/menu/difficulty_select.tscn"
 const SCENE_SQUAD := "res://scenes/menu/squad_select.tscn"
 const SCENE_GAME := "res://scenes/main.tscn"
+const SCENE_DAY := "res://scenes/day_exploration.tscn"
+const SCENE_NIGHT_TD := "res://scenes/night_td/night_td_standalone.tscn"
 
 var _difficulty_names := {
 	Difficulty.EASY: "简单",
@@ -38,6 +42,48 @@ var _run_config: Dictionary = {}
 
 var _pending_new_game := false
 var _pending_load_save := false
+
+# -- 场景切换模式（方案四）：Day/Night 独立场景之间的状态传递 --
+var run_state = null   # RunState — 跨场景共享状态（类型在 preload 中解析）
+var _game_paused := false           # 暂停状态（NightTdRoot 需要查询）
+
+## 请求切换到夜间塔防场景。
+func request_night_defense(rs) -> void:
+	run_state = rs
+	get_tree().change_scene_to_file(SCENE_NIGHT_TD)
+
+
+## 夜间结束后切回白天场景。
+func apply_night_result_and_continue(result: Dictionary) -> void:
+	if run_state != null:
+		run_state.apply_night_result(result)
+		run_state.day_index += 1
+	# 检查车辆是否已毁
+	if run_state != null and run_state.run_ended:
+		go_to_main_menu()
+		return
+	start_day_exploration(run_state)
+
+
+## 返回当前 RunState 并清空（供 NightTdRoot / DayExploration 读取）。
+func consume_run_state():
+	var rs = run_state
+	run_state = null
+	return rs
+
+
+## 启动白天探索场景（方案四入口）。
+func start_day_exploration(rs = null) -> void:
+	run_state = rs
+	_pending_new_game = false
+	_pending_load_save = false
+	get_tree().change_scene_to_file(SCENE_DAY)
+
+
+## 检查游戏是否暂停（供 NightTdController 查询）。
+func is_game_paused() -> bool:
+	return _game_paused
+
 
 func _ready() -> void:
 	_load_run_config()
