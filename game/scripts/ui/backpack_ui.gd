@@ -14,6 +14,7 @@ var _item_list: ItemList
 var _detail_label: Label
 var _use_btn: Button
 var _discard_btn: Button
+var _craft_hint_label: Label
 var _craft_btn: Button
 var _selected_id: String = ""
 var _inventory: InventoryData
@@ -120,6 +121,17 @@ func _build_ui() -> void:
 	_discard_btn.disabled = true
 	_discard_btn.pressed.connect(_on_discard_pressed)
 	side.add_child(_discard_btn)
+
+	# --- 合成区（无需选中物品，独立于使用/丢弃）---
+	var sep := HSeparator.new()
+	side.add_child(sep)
+
+	_craft_hint_label = Label.new()
+	_craft_hint_label.text = "合成配方：3 废料 + 1 燃料 → 1 零件"
+	_craft_hint_label.add_theme_font_size_override("font_size", 13)
+	_craft_hint_label.add_theme_color_override("font_color", Color("#bcc8d8"))
+	_craft_hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	side.add_child(_craft_hint_label)
 
 	_craft_btn = Button.new()
 	_craft_btn.text = "合成零件"

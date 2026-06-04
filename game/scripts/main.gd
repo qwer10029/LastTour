@@ -78,6 +78,7 @@ var _pause_layer: CanvasLayer
 var _pause_panel: PanelContainer
 var _pause_confirm: ConfirmationDialog
 var _war_fog_checkbox: CheckBox
+var _repair_choice_popup: Window
 
 @onready var time_system: TimeSystem = $Systems/TimeSystem
 @onready var night_defense: NightDefenseSystem = $Systems/NightDefenseSystem
@@ -127,6 +128,7 @@ func _ready() -> void:
 	_setup_run_end_ui()
 	_setup_stat_bars()
 	_setup_world_camera()
+	_setup_repair_choice_popup()
 	_spawn_vehicle()
 	_spawn_player()
 	_setup_day_night()
@@ -148,6 +150,60 @@ func _setup_road_tuning_panel() -> void:
 	var panel := RoadTuningPanel.new()
 	panel.setup(road_render_settings, self)
 	add_child(panel)
+
+
+func _setup_repair_choice_popup() -> void:
+	_repair_choice_popup = Window.new()
+	_repair_choice_popup.title = "选择修复材料"
+	_repair_choice_popup.initial_position = Window.WINDOW_INITIAL_POSITION_CENTER_PRIMARY_SCREEN
+	_repair_choice_popup.size = Vector2i(320, 220)
+	_repair_choice_popup.unresizable = true
+	_repair_choice_popup.visible = false
+	_repair_choice_popup.close_requested.connect(_repair_choice_popup.hide)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 16)
+	margin.add_theme_constant_override("margin_top", 12)
+	margin.add_theme_constant_override("margin_right", 16)
+	margin.add_theme_constant_override("margin_bottom", 12)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 8)
+
+	var label := Label.new()
+	label.text = "请选择修复材料："
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(label)
+
+	var sep := HSeparator.new()
+	vbox.add_child(sep)
+
+	var parts_btn := Button.new()
+	parts_btn.name = "PartsBtn"
+	parts_btn.text = "零件 ×%d（优先）" % ItemDefs.REPAIR_PARTS_EACH
+	parts_btn.pressed.connect(_repair_with_material.bind("parts"))
+	vbox.add_child(parts_btn)
+
+	var scrap_btn := Button.new()
+	scrap_btn.name = "ScrapBtn"
+	scrap_btn.text = "废料 ×%d（应急）" % ItemDefs.REPAIR_SCRAP_EACH
+	scrap_btn.pressed.connect(_repair_with_material.bind("scrap"))
+	vbox.add_child(scrap_btn)
+
+	var wood_scrap_btn := Button.new()
+	wood_scrap_btn.name = "WoodScrapBtn"
+	wood_scrap_btn.text = "木材 ×%d + 废料 ×%d" % [ItemDefs.REPAIR_WOOD_EACH, ItemDefs.REPAIR_SCRAP_ALT_EACH]
+	wood_scrap_btn.pressed.connect(_repair_with_material.bind("wood_scrap"))
+	vbox.add_child(wood_scrap_btn)
+
+	var cancel_btn := Button.new()
+	cancel_btn.text = "取消"
+	cancel_btn.pressed.connect(_repair_choice_popup.hide)
+	vbox.add_child(cancel_btn)
+
+	margin.add_child(vbox)
+	_repair_choice_popup.add_child(margin)
+	add_child(_repair_choice_popup)
 
 
 func _start_new_run() -> void:
@@ -869,22 +925,70 @@ func _apply_run_config_from_manager() -> void:
 func _current_repair_cost() -> int:
 	return GameManager.get_elevator_repair_cost(_base_elevator_repair_cost) + maxi(_current_layer - 1, 0)
 
-func _attempt_repair_elevator() -> void:
+func _show_repair_choices() -> void:
 	if not _can_repair_elevator():
-		return
-	if not _consume_repair_material():
-		if is_instance_valid(prompt_label) and _can_repair_elevator():
-			prompt_label.text = ItemDefs.get_repair_requirement_text(_backpack)
 		return
 	var needed := _current_repair_cost() - _elevator_repair_progress
 	if needed <= 0:
 		return
+
+	var has_parts := _backpack.has("parts", ItemDefs.REPAIR_PARTS_EACH)
+	var has_scrap := _backpack.has("scrap", ItemDefs.REPAIR_SCRAP_EACH)
+	var has_wood_scrap := _backpack.has("wood", ItemDefs.REPAIR_WOOD_EACH) and _backpack.has("scrap", ItemDefs.REPAIR_SCRAP_ALT_EACH)
+
+	if not has_parts and not has_scrap and not has_wood_scrap:
+		if is_instance_valid(prompt_label) and _can_repair_elevator():
+			prompt_label.text = ItemDefs.get_repair_requirement_text(_backpack)
+		return
+
+	var parts_btn := _repair_choice_popup.get_node_or_null("MarginContainer/VBoxContainer/PartsBtn") as Button
+	var scrap_btn := _repair_choice_popup.get_node_or_null("MarginContainer/VBoxContainer/ScrapBtn") as Button
+	var wood_scrap_btn := _repair_choice_popup.get_node_or_null("MarginContainer/VBoxContainer/WoodScrapBtn") as Button
+
+	if parts_btn:
+		parts_btn.disabled = not has_parts
+	if scrap_btn:
+		scrap_btn.disabled = not has_scrap
+	if wood_scrap_btn:
+		wood_scrap_btn.disabled = not has_wood_scrap
+
+	_repair_choice_popup.popup_centered()
+	_repair_choice_popup.show()
+
+
+func _repair_with_material(material: String) -> void:
+	_repair_choice_popup.hide()
+
+	var consumed := false
+	match material:
+		"parts":
+			consumed = _backpack.remove("parts", ItemDefs.REPAIR_PARTS_EACH)
+		"scrap":
+			consumed = _backpack.remove("scrap", ItemDefs.REPAIR_SCRAP_EACH)
+		"wood_scrap":
+			consumed = _backpack.remove("wood", ItemDefs.REPAIR_WOOD_EACH) and _backpack.remove("scrap", ItemDefs.REPAIR_SCRAP_ALT_EACH)
+
+	if not consumed:
+		if is_instance_valid(prompt_label) and _can_repair_elevator():
+			prompt_label.text = ItemDefs.get_repair_requirement_text(_backpack)
+		return
+
+	var needed := _current_repair_cost() - _elevator_repair_progress
+	if needed <= 0:
+		return
+
 	_elevator_repair_progress += 1
+	_refresh_ui()
+
 	if _elevator_repair_progress >= _current_repair_cost():
 		if _current_layer >= total_layers:
 			_open_communication_terminal()
 		else:
 			_advance_layer()
+
+
+func _attempt_repair_elevator() -> void:
+	_show_repair_choices()
 
 func _on_resource_collected(item_id: String, district_index: int) -> void:
 	if not _map.collect_resource(district_index):
@@ -1137,12 +1241,8 @@ func _consume_repair_material() -> bool:
 
 
 func _repair_button_label() -> String:
-	if _backpack.has("parts", ItemDefs.REPAIR_PARTS_EACH):
-		return "修复电梯 (零件×%d)" % ItemDefs.REPAIR_PARTS_EACH
-	if _backpack.has("scrap", ItemDefs.REPAIR_SCRAP_EACH):
-		return "修复电梯 (废料×%d 应急)" % ItemDefs.REPAIR_SCRAP_EACH
-	if _backpack.has("wood", ItemDefs.REPAIR_WOOD_EACH) and _backpack.has("scrap", ItemDefs.REPAIR_SCRAP_ALT_EACH):
-		return "修复电梯 (木×%d+废料×%d)" % [ItemDefs.REPAIR_WOOD_EACH, ItemDefs.REPAIR_SCRAP_ALT_EACH]
+	if _backpack.has("parts", ItemDefs.REPAIR_PARTS_EACH) or _backpack.has("scrap", ItemDefs.REPAIR_SCRAP_EACH) or (_backpack.has("wood", ItemDefs.REPAIR_WOOD_EACH) and _backpack.has("scrap", ItemDefs.REPAIR_SCRAP_ALT_EACH)):
+		return "修复电梯 (R · 自选材料)"
 	return "修复电梯 (材料不足)"
 
 
@@ -2121,7 +2221,7 @@ func _update_prompts() -> void:
 			prompt_label.text = "室内 · 顶层电梯：修复完成将触发归档仪式与最终抉择"
 			repair_button.visible = true
 		elif _can_repair_elevator():
-			prompt_label.text = "室内 · " + ItemDefs.get_repair_requirement_text(_backpack) + "\n进度满后进入上层。"
+			prompt_label.text = "室内 · 电梯楼：按 R 选择材料修复\n进度 %d/%d，满后进入上层。" % [_elevator_repair_progress, _current_repair_cost()]
 			repair_button.visible = true
 			repair_button.text = _repair_button_label()
 		else:
