@@ -27,7 +27,7 @@ enum TravelMode { DRIVE, FOOT }
 var _world_camera: Camera2D
 @export var fuel_max: float = 999.0
 @export var fuel_per_pixel: float = 0.01
-@export var drive_speed: float = 160.0
+@export var drive_speed: float = 640.0 ## 加快到4倍
 @export var total_layers: int = 3
 @export var base_elevator_repair_cost: int = 3
 @export var war_fog_enabled: bool = true
@@ -1022,6 +1022,7 @@ func _setup_backpack_ui() -> void:
 	hud.add_child(_backpack_ui)
 	_backpack_ui.item_use_requested.connect(_on_backpack_use_item)
 	_backpack_ui.item_discard_requested.connect(_on_backpack_discard_item)
+	_backpack_ui.craft_parts_requested.connect(_on_backpack_craft_parts)
 	_backpack_ui.closed.connect(_on_backpack_closed)
 
 
@@ -1084,6 +1085,28 @@ func _on_backpack_discard_item(item_id: String) -> void:
 	if _backpack.remove(item_id, 1):
 		_backpack_ui.show_backpack(_backpack)
 		_refresh_ui()
+
+
+func _on_backpack_craft_parts() -> void:
+	var scrap_cost: int = ItemDefs.CRAFT_PARTS_SCRAP_COST
+	var fuel_cost: int = ItemDefs.CRAFT_PARTS_FUEL_COST
+	var parts_out: int = ItemDefs.CRAFT_PARTS_OUT
+
+	if not _backpack.has("scrap", scrap_cost):
+		print("[Craft] 废料不足（需 %d 个），无法合成零件。" % scrap_cost)
+		return
+	if fuel_cost > 0 and not _backpack.has("fuel", fuel_cost):
+		print("[Craft] 燃料不足（需 %d 桶），无法合成零件。" % fuel_cost)
+		return
+
+	_backpack.remove("scrap", scrap_cost)
+	if fuel_cost > 0:
+		_backpack.remove("fuel", fuel_cost)
+	_backpack.add("parts", parts_out)
+
+	print("[Craft] 已将 %d 废料 + %d 燃料合成为 %d 零件。" % [scrap_cost, fuel_cost, parts_out])
+	_backpack_ui.show_backpack(_backpack)
+	_refresh_ui()
 
 
 func _use_backpack_item(item_id: String) -> bool:

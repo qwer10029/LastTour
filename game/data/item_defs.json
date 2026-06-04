@@ -45,7 +45,7 @@
 		"scrap": {
 			"name": "废料",
 			"desc": "回收金属碎料，可应急代替零件修电梯。",
-			"stack_max": 40,
+			"stack_max": 400,
 			"color": "#8a9aa8",
 			"usable": false
 		}

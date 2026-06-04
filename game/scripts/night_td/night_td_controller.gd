@@ -232,6 +232,13 @@ func _process_place(delta: float) -> void:
 		_begin_combat()
 
 
+
+func _count_hostiles() -> int:
+	var n := 0
+	for e in _enemies:
+		if str(e.get("faction", "enemy")) == "enemy":
+			n += 1
+	return n
 func _process_combat(delta: float) -> void:
 	if _combat_done:
 		return
@@ -256,14 +263,14 @@ func _process_combat(delta: float) -> void:
 		var total := _wave_scheduler.total_spawn_events if _wave_scheduler != null else _enemies_spawned + _wave_queue.size()
 		var remain := _wave_scheduler.remaining_count() if _wave_scheduler != null else _wave_queue.size()
 		hud.set_combat_status("波次 %d/%d · 待刷 %d · 场上 %d 敌 · 车辆 HP %.0f" % [
-			_enemies_spawned, total, remain, _enemies.size(), base_hp
+			_enemies_spawned, total, remain, _count_hostiles(), base_hp
 		])
 	var waves_done := false
 	if _wave_scheduler != null:
-		waves_done = _wave_scheduler.is_finished(_enemies.size())
+		waves_done = _wave_scheduler.is_finished(_count_hostiles())
 	else:
 		waves_done = _wave_queue.is_empty()
-	if waves_done and _enemies.is_empty() and _enemies_spawned > 0:
+	if waves_done and _count_hostiles() == 0 and _enemies_spawned > 0:
 		_end_combat()
 
 
@@ -1045,7 +1052,7 @@ func _begin_combat() -> void:
 		hud.set_phase_text("夜晚塔防 · 接敌中")
 		hud.set_hint("接敌中：敌人头顶箭头为当前前进方向，设施自动开火/阻挡。")
 		var total := _wave_scheduler.total_spawn_events if _wave_scheduler != null else _enemies_spawned + _wave_queue.size()
-		hud.set_combat_status("波次 %d/%d · 场上 %d 敌" % [_enemies_spawned, total, _enemies.size()])
+		hud.set_combat_status("波次 %d/%d · 场上 %d 敌" % [_enemies_spawned, total, _count_hostiles()])
 		hud.append_log("—— 夜间威胁来袭 ——")
 
 

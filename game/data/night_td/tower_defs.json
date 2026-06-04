@@ -64,7 +64,7 @@
 			"salvage": {"parts": 1, "scrap": 1},
 			"is_hack_tower": true,
 			"upkeep": 1.5,
-			"hack_rate": 28.0,
+			"hack_rate": 80.0,
 			"power_curve": {"damage_per_power": 0.0, "firerate_per_power": 0.0, "hackrate_per_power": 0.6}
 		},
 		"sniper": {
