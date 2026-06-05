@@ -884,19 +884,12 @@ static func _ensure_player_foot_sprite() -> void:
 	if _player_sprite_ready:
 		return
 	_player_sprite_ready = true
-	var raw := ArtAssetLoader.load_texture(PLAYER_FOOT_WALK_UP, PLAYER_FOOT_SPRITE)
-	if raw == null:
-		raw = ArtAssetLoader.load_texture(PLAYER_FOOT_SPRITE, "")
-	if raw != null:
-		var keyed := ArtAssetLoader.apply_road_background_key(raw)
-		if ArtAssetLoader.texture_has_visible_pixels(keyed):
-			_tex_player_foot = keyed
-			return
-		keyed = ArtAssetLoader.apply_black_alpha_key(raw, 0.12)
-		if ArtAssetLoader.texture_has_visible_pixels(keyed):
-			_tex_player_foot = keyed
-			return
-	_tex_player_foot = raw
+	# 灰头盔不能被路面灰底抠图吃掉，只去近黑背景
+	_tex_player_foot = ArtAssetLoader.load_texture_sprite_alpha_key(
+		PLAYER_FOOT_WALK_UP,
+		0.12,
+		PLAYER_FOOT_SPRITE,
+	)
 
 
 static func _foot_cardinal_direction(move_dir: Vector2) -> String:

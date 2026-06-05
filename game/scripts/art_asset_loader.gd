@@ -117,6 +117,24 @@ static func apply_black_alpha_key(tex: Texture2D, threshold: float = 0.12) -> Te
 	return ImageTexture.create_from_image(img)
 
 
+## 角色/道具精灵：只去近黑底，避免把灰色头盔等中性色抠掉。
+static func load_texture_sprite_alpha_key(
+	preferred_path: String,
+	threshold: float = 0.12,
+	fallback_path: String = "",
+) -> Texture2D:
+	var cache_key := "sprite|%s|%.3f|%s" % [preferred_path, threshold, fallback_path]
+	if _alpha_key_cache.has(cache_key):
+		return _alpha_key_cache[cache_key]
+	var tex := load_texture(preferred_path, fallback_path)
+	if tex == null:
+		_alpha_key_cache[cache_key] = null
+		return null
+	tex = apply_black_alpha_key(tex, threshold)
+	_alpha_key_cache[cache_key] = tex
+	return tex
+
+
 static func load_texture_alpha_key(
 	preferred_path: String,
 	threshold: float = 0.12,

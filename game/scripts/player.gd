@@ -20,11 +20,17 @@ func _ready() -> void:
 
 func _load_texture() -> void:
 	if is_instance_valid(sprite):
-		var tex: Texture2D = ArtAssetLoader.load_texture_alpha_key(
-			"res://assets/sprites/player_foot.png",
+		var tex: Texture2D = ArtAssetLoader.load_texture_sprite_alpha_key(
+			"res://assets/sprites/player_foot_walk_up.png",
 			0.12,
-			"res://assets/dummy/player_dummy.png",
+			"res://assets/sprites/player_foot.png",
 		)
+		if tex == null:
+			tex = ArtAssetLoader.load_texture_sprite_alpha_key(
+				"res://assets/sprites/player_foot.png",
+				0.12,
+				"res://assets/dummy/player_dummy.png",
+			)
 		if tex == null:
 			tex = ArtAssetLoader.load_texture("res://assets/dummy/player_dummy.svg")
 		sprite.texture = tex
