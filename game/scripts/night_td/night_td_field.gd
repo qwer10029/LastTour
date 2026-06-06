@@ -11,8 +11,8 @@ signal cell_combat_clicked(cell: Vector2i)
 @export var grid_rows: int = 18
 @export var tile_size: int = 48
 @export var field_origin: Vector2 = Vector2(120, 70)
-@export var top_reserved_px: float = 112.0
-@export var right_reserved_px: float = 176.0
+@export var top_reserved_px: float = 80.0
+@export var right_reserved_px: float = 216.0
 @export var outer_margin_px: float = 24.0
 
 # 基地居中（敌人从四面边缘涌入）。
@@ -21,6 +21,14 @@ var base_local_pos: Vector2 = Vector2.ZERO
 var _layout_tile_size: float = 48.0
 var _controller: NightTdController
 var _last_view_size: Vector2 = Vector2.ZERO
+
+# Tower selection (P5): multiple towers selectable via click or box-drag
+var _selected_tower_ids: Array[int] = []
+var _drag_start_pos: Vector2 = Vector2.ZERO
+var _drag_end_pos: Vector2 = Vector2.ZERO
+var _is_dragging := false
+# Breach flash effects
+var _breach_flashes: Array[Dictionary] = []  # {pos, timer, max_timer}
 
 
 func _ready() -> void:
@@ -35,10 +43,11 @@ func bind_controller(controller: NightTdController) -> void:
 	_controller = controller
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	var view_size := get_viewport_rect().size
 	if view_size != _last_view_size:
 		_reflow_layout()
+	_process_breach_flashes(delta)
 	if get_parent() != null and get_parent().visible:
 		queue_redraw()
 
@@ -140,6 +149,48 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if _is_pointer_over_ui():
 		return
+
+	if _controller.phase == NightTdController.Phase.COMBAT:
+		if event is InputEventMouseButton:
+			if event.button_index == MOUSE_BUTTON_LEFT:
+				if event.pressed:
+					_drag_start_pos = get_global_mouse_position()
+					_drag_end_pos = _drag_start_pos
+					_is_dragging = true
+				else:
+					# Mouse released: check if it was a drag or click
+					var dist := _drag_end_pos.distance_to(_drag_start_pos)
+					if dist < 8.0:
+						# Click (no meaningful drag)
+						var cell := world_to_cell(get_global_mouse_position())
+						if is_inside_grid(cell):
+							# Check if clicking on a tower
+							var hit_tower := false
+							for tower in _controller._towers:
+								if tower.get("removed", false): continue
+								if tower["cell"] == cell:
+									hit_tower = true
+									break
+							if not hit_tower:
+								# Clicked empty space — deselect
+								clear_tower_selection()
+							cell_combat_clicked.emit(cell)
+							get_viewport().set_input_as_handled()
+					else:
+						# Box-select: find all towers in rect
+						_select_towers_in_rect(_drag_start_pos, _drag_end_pos)
+						get_viewport().set_input_as_handled()
+					_is_dragging = false
+					queue_redraw()
+			elif event.button_index == MOUSE_BUTTON_RIGHT:
+				if event.pressed:
+					_selected_tower_ids.clear()
+					queue_redraw()
+		elif event is InputEventMouseMotion and _is_dragging:
+			_drag_end_pos = get_global_mouse_position()
+			queue_redraw()
+		return
+
 	if not (event is InputEventMouseButton and event.pressed):
 		return
 	var cell := world_to_cell(get_global_mouse_position())
@@ -152,11 +203,16 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif event.button_index == MOUSE_BUTTON_RIGHT:
 			cell_right_clicked.emit(cell)
 			get_viewport().set_input_as_handled()
-	elif _controller.phase == NightTdController.Phase.COMBAT:
-		# 战斗中左键点选设施（功率调度 / 黑入指派）。
-		if event.button_index == MOUSE_BUTTON_LEFT:
-			cell_combat_clicked.emit(cell)
-			get_viewport().set_input_as_handled()
+
+
+func _select_towers_in_rect(from: Vector2, to: Vector2) -> void:
+	_selected_tower_ids.clear()
+	var r := Rect2(from.min(to), (to - from).abs())
+	for tower in _controller._towers:
+		if tower.get("removed", false): continue
+		var wp: Vector2 = tower["world_pos"]
+		if r.has_point(wp):
+			_selected_tower_ids.append(int(tower.get("id", -1)))
 
 
 func _is_pointer_over_ui() -> bool:
@@ -164,7 +220,7 @@ func _is_pointer_over_ui() -> bool:
 	while control != null:
 		if control is BaseButton:
 			return true
-		if control.name in ["SidePanel", "TopBar", "ResultOverlay", "Hud", "ResultPanel", "ContinueBtn"]:
+		if str(control.name) in ["SidePanel", "Sidebar", "TopBar", "ResultOverlay", "Hud", "ResultPanel", "ContinueBtn"]:
 			return true
 		control = control.get_parent() as Control
 	return false
@@ -230,6 +286,9 @@ func _draw() -> void:
 		_draw_combat_entities()
 		_draw_placement_preview()
 		_draw_vehicle_hp_bar()
+		_draw_breach_flashes()
+		if _is_dragging:
+			_draw_selection_rect()
 
 
 func _draw_arrow_head(tip: Vector2, direction: Vector2, size: float, color: Color) -> void:
@@ -368,6 +427,56 @@ func _draw_vehicle_hp_bar() -> void:
 	draw_string(ThemeDB.fallback_font, Vector2(bar_x, bar_y - 18), "车辆耐久", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#d8e4f0"))
 
 
+func play_breach_flash(world_pos: Vector2) -> void:
+	var local := to_local(world_pos)
+	_breach_flashes.append({"pos": local, "timer": 0.0, "max_timer": 0.5})
+
+
+func set_highlighted_tower(tower_id: int) -> void:
+	_selected_tower_ids.clear()
+	if tower_id >= 0:
+		_selected_tower_ids.append(tower_id)
+	queue_redraw()
+
+
+func get_selected_tower_ids() -> Array[int]:
+	return _selected_tower_ids
+
+
+func clear_tower_selection() -> void:
+	_selected_tower_ids.clear()
+	queue_redraw()
+	# Also clear HUD power row highlight
+	if _controller != null and is_instance_valid(_controller.hud):
+		_controller.hud.clear_power_highlight()
+
+
+func _process_breach_flashes(delta: float) -> void:
+	var to_remove: Array[int] = []
+	for i in range(_breach_flashes.size() - 1, -1, -1):
+		_breach_flashes[i]["timer"] += delta
+		if _breach_flashes[i]["timer"] >= _breach_flashes[i]["max_timer"]:
+			_breach_flashes.remove_at(i)
+	if not _breach_flashes.is_empty():
+		queue_redraw()
+
+
+func _draw_breach_flashes() -> void:
+	for flash in _breach_flashes:
+		var t: float = flash["timer"]
+		var max_t: float = flash["max_timer"]
+		var progress: float = clampf(t / max_t, 0.0, 1.0)
+		var r: float = lerpf(0.0, 48.0, progress)
+		var a: float = lerpf(0.9, 0.0, progress)
+		draw_circle(flash["pos"], r, Color(0.91, 0.47, 0.25, a))
+
+
+func _draw_selection_rect() -> void:
+	var r := Rect2(_drag_start_pos.min(_drag_end_pos), (_drag_end_pos - _drag_start_pos).abs())
+	draw_rect(r, Color("#ffcc6f", 0.3), true)
+	draw_rect(r, Color("#ffcc6f", 0.8), false, 2.0)
+
+
 func _draw_placed_towers() -> void:
 	for tower in _controller._towers:
 		if tower.get("removed", false):
@@ -432,6 +541,24 @@ func _draw_placed_towers() -> void:
 				draw_circle(local_pos, radius * 0.45, Color("#1a0e00"))
 			_:
 				draw_circle(local_pos, radius, tdef.get("color", Color.WHITE))
+
+		# Tower HP bar + selection highlight
+		var tid := int(tower.get("id", -1))
+		var tmax_hp := float(tdef.get("hp", 30))
+		var tcurrent_hp := float(tower.get("hp", tmax_hp))
+		var is_selected := tid in _selected_tower_ids
+		var is_damaged := tcurrent_hp < tmax_hp
+		if is_damaged or is_selected:
+			var bar_w: float = 30.0
+			var bar_h: float = 4.0
+			var bar_y := local_pos.y - radius - 10.0
+			var ratio := clampf(tcurrent_hp / tmax_hp, 0.0, 1.0)
+			draw_rect(Rect2(local_pos.x - bar_w * 0.5, bar_y, bar_w, bar_h), Color("#1a2533"), true)
+			draw_rect(Rect2(local_pos.x - bar_w * 0.5, bar_y, bar_w * ratio, bar_h), Color("#6ed08b"), true)
+		if is_selected:
+			# Gold border around HP bar to indicate selection
+			var bar_y := local_pos.y - radius - 10.0
+			draw_rect(Rect2(local_pos.x - 16.0, bar_y - 1.0, 32.0, 6.0), Color("#ffcc6f"), false, 1.5)
 
 
 func get_buildable_hint_cell(world_pos: Vector2) -> Vector2i:

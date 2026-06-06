@@ -2,6 +2,11 @@ extends Node2D
 class_name NightTdController
 
 signal session_finished(result: Dictionary)
+signal enemy_breached(enemy_type: String, pos: Vector2)
+
+# -- 事件日志（每步资源变动，用于结算明细）--
+var _event_log: Array[Dictionary] = []       # {time, type, detail, resource_change}
+var _converted_survivors: Array[Dictionary] = []  # {enemy_type, parts_value}
 
 enum Phase { PLACE, COMBAT, RESULT }
 
@@ -75,6 +80,7 @@ var _local_backpack: InventoryData = null
 var _salvage_pending: Dictionary = {}   # 夜末待结算的废料掉落 item_id -> count
 var _session_paused := false             # 由 GameManager / 父场景控制暂停
 var _breach_losses: Dictionary = {}      # 突破被拖走的物资 item_id -> count（夜末汇报）
+var _combat_tower_ids: Array[int] = []   # 进入战斗时的塔 id 快照（排除布防阶段已撤销的塔）
 
 
 func _ready() -> void:
@@ -89,6 +95,7 @@ func _ready() -> void:
 		hud.start_wave_pressed.connect(_begin_combat)
 		hud.continue_pressed.connect(_finish_session)
 		hud.tower_power_step.connect(_on_tower_power_step)
+		hud.power_tower_selected.connect(_on_power_tower_selected)
 
 
 func set_session_paused(paused: bool) -> void:
@@ -127,6 +134,9 @@ func start_session(
 		_local_backpack.load_from_dictionary(backpack_snapshot)
 	_salvage_pending = {}
 	_breach_losses = {}
+	_event_log.clear()
+	_converted_survivors.clear()
+	_combat_tower_ids.clear()
 	_exploration_inventory = maxi(inventory, 0)
 	_starting_inventory = _exploration_inventory
 	backpack_remaining = _compute_deploy_budget()
@@ -426,14 +436,25 @@ func _update_enemies(delta: float) -> void:
 			base_hp = maxf(base_hp - float(enemy["base_damage"]) * BASE_DAMAGE_FACTOR, 0.0)
 			_enemies_reached += 1
 			to_remove.append(i)
+			_on_enemy_breached(enemy, pos)
 			if is_instance_valid(hud):
 				_refresh_resource_hud()
-				hud.append_log("敌人突破防线，拖走了一些物资。")
+				var ename: String = str(enemy.get("name", enemy.get("type", "未知")))
+				hud.append_log("[%.0f] ⚠ 突破! %s 抵达基地防线" % [_combat_time, ename], Color("#e87840"))
+				hud.increment_breach_counter(_enemies_reached)
+			if is_instance_valid(field) and field.has_method("play_breach_flash"):
+				field.play_breach_flash(pos)
+			_add_event_log("enemy_breached", str(enemy.get("type", "")), {})
 		elif float(enemy["hp"]) <= 0.0:
 			if bool(enemy.get("is_shepherd", false)):
 				_trigger_shepherd_degrade("被击毁")
 			_enemies_killed += 1
+			var scrap_val := 2 if str(enemy.get("type","")) in ["heavy","shepherd"] else 1
 			_add_salvage_drop(enemy)
+			_add_event_log("enemy_killed", str(enemy.get("type", "")), {"scrap": scrap_val})
+			if is_instance_valid(hud):
+				var ename: String = str(enemy.get("name", enemy.get("type", "未知")))
+				hud.append_log("[%.0f] 击毁%s +%d废料" % [_combat_time, ename, scrap_val], Color("#6ed08b"))
 			to_remove.append(i)
 	for idx in range(to_remove.size() - 1, -1, -1):
 		_enemies.remove_at(to_remove[idx])
@@ -708,11 +729,26 @@ func _convert_enemy(enemy: Dictionary) -> void:
 	enemy["faction"] = "ally"
 	enemy["hacked_by"] = -1
 	enemy["goal_key"] = "ally"
+	enemy["_converted_at"] = _combat_time
 	var ename := str(NightTdDefs.get_enemy_def(str(enemy["type"])).get("name", enemy["type"]))
 	if is_instance_valid(hud):
-		hud.append_log("黑入成功：%s 已倒戈！" % ename)
+		hud.append_log("[%.0f] 策反成功：%s 已倒戈！" % [_combat_time, ename], Color("#5ac8e0"))
+	_add_event_log("enemy_converted", str(enemy.get("type", "")), {})
 	if bool(enemy.get("is_shepherd", false)):
 		_trigger_shepherd_degrade("策反")
+
+
+func _on_enemy_breached(enemy: Dictionary, pos: Vector2) -> void:
+	enemy_breached.emit(str(enemy.get("type", "")), pos)
+
+
+func _add_event_log(ev_type: String, detail: String, resource_change: Dictionary) -> void:
+	_event_log.append({
+		"time": _combat_time,
+		"type": ev_type,
+		"detail": detail,
+		"resource_change": resource_change.duplicate(),
+	})
 
 
 ## 牧羊者被击杀/策反 → 敌方指挥能力短时退化为各自冲锋。
@@ -759,8 +795,19 @@ func _on_cell_combat_clicked(cell: Vector2i) -> void:
 			if is_instance_valid(hud):
 				hud.append_log("已选入侵天线：再点击一个敌人指派黑入目标")
 			return
+	# 2.5) 点到有功耗的塔 → 高亮右侧电力面板对应行
+	if not tw.is_empty() and tw.has("id") and _energy != null:
+		if is_instance_valid(hud) and hud.has_method("highlight_power_row"):
+			hud.highlight_power_row(int(tw["id"]))
+			if is_instance_valid(field) and field.has_method("set_highlighted_tower"):
+				field.set_highlighted_tower(int(tw["id"]))
 	# 3) 其它 → 取消天线选择
 	_selected_hacker_id = -1
+
+
+func _on_power_tower_selected(tower_id: int) -> void:
+	if is_instance_valid(field) and field.has_method("set_highlighted_tower"):
+		field.set_highlighted_tower(tower_id)
 
 
 func _enemy_at_cell(cell: Vector2i) -> Dictionary:
@@ -780,8 +827,15 @@ func _enemy_at_cell(cell: Vector2i) -> Dictionary:
 	return best
 
 
-## HUD 功率列表里某塔的 +/− 按钮 → 直接调节该塔功率。
+## HUD 功率列表里某塔的 +/− 按钮 → 调节该塔（若多选则调节所有选中塔）的功率。
 func _on_tower_power_step(tower_id: int, delta_step: float) -> void:
+	if is_instance_valid(field) and field.has_method("get_selected_tower_ids"):
+		var sel: Array[int] = field.get_selected_tower_ids()
+		if sel.size() > 1 and sel.has(tower_id):
+			# Multi-select: apply to all selected towers
+			for tid in sel:
+				adjust_tower_power(tid, delta_step)
+			return
 	adjust_tower_power(tower_id, delta_step)
 
 
@@ -1039,7 +1093,15 @@ func _refresh_resource_hud() -> void:
 		return
 	var parts := int(_local_backpack.count("parts"))
 	var scrap := int(_local_backpack.count("scrap"))
-	hud.set_resource_text("建材  零件 %d · 废料 %d" % [parts, scrap])
+	hud.set_resource_text("零件 %d · 废料 %d" % [parts, scrap])
+	# Also update card costs so they show (剩余 N)
+	if hud.has_method("update_card_costs"):
+		var counts := {"parts": parts, "scrap": scrap}
+		if _local_backpack.has_method("to_dictionary"):
+			var full := _local_backpack.to_dictionary()
+			for k in full.keys():
+				counts[str(k)] = int(full[k])
+		hud.update_card_costs(counts)
 
 
 func _on_tower_selected(type_id: String) -> void:
@@ -1049,6 +1111,11 @@ func _on_tower_selected(type_id: String) -> void:
 func _begin_combat() -> void:
 	if phase == Phase.COMBAT:
 		return
+	# 快照：进入战斗时实际放置的塔（排除布防阶段已撤销的）
+	_combat_tower_ids.clear()
+	for tower in _towers:
+		if not tower.get("removed", false):
+			_combat_tower_ids.append(int(tower.get("id", -1)))
 	phase = Phase.COMBAT
 	show_route_overlay = false
 	_spawn_timer = 0.0
@@ -1091,9 +1158,95 @@ func _end_combat() -> void:
 
 
 func _compose_result_message(result: Dictionary) -> String:
-	# 结果报文已自包含：所有损耗/回收信息都在 result 字典中，
-	# 不再需要回调父节点。白天侧从 RunState.apply_night_result() 获取最终状态。
-	return str(result.get("message", ""))
+	var lines: PackedStringArray = []
+	lines.append("══════ 夜间结算 ══════")
+	lines.append("")
+	lines.append(str(result.get("message", "")))
+	lines.append("")
+
+	# — 防御塔返还 —
+	lines.append("—— 防御塔返还 ——")
+	var tower_refund: Dictionary = result.get("tower_refund", {})
+	if tower_refund.is_empty():
+		lines.append("  （无）")
+	else:
+		for key in tower_refund.keys():
+			var def := NightTdDefs.get_tower_def(str(key))
+			var info: Dictionary = tower_refund[key]
+			for entry in info.get("survived", []):
+				lines.append("  幸存: %s → 退还 %s" % [_fmt_tower_name(str(key)), _fmt_items(entry)])
+			for entry in info.get("destroyed", []):
+				lines.append("  损毁: %s → 残骸 %s" % [_fmt_tower_name(str(key)), _fmt_items(entry)])
+
+	# — 击毁回收 —
+	lines.append("")
+	lines.append("—— 击毁回收 ——")
+	var kill_log: Array = result.get("kill_log", [])
+	if kill_log.is_empty():
+		lines.append("  （无）")
+	else:
+		var by_type: Dictionary = {}
+		for entry in kill_log:
+			var t := str(entry.get("type", "?"))
+			by_type[t] = int(by_type.get(t, 0)) + 1
+		for t in by_type.keys():
+			var def := NightTdDefs.get_enemy_def(t)
+			var ename := str(def.get("name", t))
+			var cnt := int(by_type[t])
+			var scrap_per := 2 if t in ["heavy", "shepherd"] else 1
+			lines.append("  %s×%d → 废料×%d" % [ename, cnt, cnt * scrap_per])
+
+	# — 策反回收 —
+	lines.append("")
+	lines.append("—— 策反回收 ——")
+	var converted: Array = result.get("converted_survivors", [])
+	if converted.is_empty():
+		lines.append("  （无）")
+	else:
+		var by_type: Dictionary = {}
+		for entry in converted:
+			var t := str(entry.get("enemy_type", "?"))
+			by_type[t] = int(by_type.get(t, 0)) + 1
+		for t in by_type.keys():
+			var def := NightTdDefs.get_enemy_def(t)
+			var ename := str(def.get("name", t))
+			var cnt := int(by_type[t])
+			var parts_val := 2 if t in ["heavy", "shepherd"] else 1
+			lines.append("  %s×%d → 零件×%d" % [ename, cnt, cnt * parts_val])
+
+	# — 突破损失 —
+	lines.append("")
+	lines.append("—— 突破损失 ——")
+	var bl: Dictionary = result.get("breach_losses", {})
+	if bl.is_empty():
+		lines.append("  （无）")
+	else:
+		for item_id: String in (bl as Dictionary).keys():
+			var n := int((bl as Dictionary)[item_id])
+			lines.append("  %s×%d 被拖走" % [ItemDefs.get_item_name(str(item_id)), n])
+
+	# — 汇总 —
+	lines.append("")
+	lines.append("—— 车辆状态 ——")
+	lines.append("  HP: %.0f/%.0f" % [float(result.get("base_hp", 0)), float(result.get("base_hp_max", 100))])
+
+	return "\n".join(lines)
+
+
+func _fmt_tower_name(type_id: String) -> String:
+	var def := NightTdDefs.get_tower_def(type_id)
+	return str(def.get("name", type_id))
+
+
+func _fmt_items(d: Variant) -> String:
+	if not (d is Dictionary) or (d as Dictionary).is_empty():
+		return "无"
+	var parts: Array[String] = []
+	for item_id: String in (d as Dictionary).keys():
+		var n := int((d as Dictionary)[item_id])
+		if n > 0:
+			parts.append("%s×%d" % [ItemDefs.get_item_name(str(item_id)), n])
+	return "、".join(parts) if not parts.is_empty() else "无"
 
 
 func _resolve_wave_plan_path(day: int, diff: int) -> String:
@@ -1172,13 +1325,16 @@ func _build_result() -> Dictionary:
 		"enemies_killed": _enemies_killed,
 		"enemies_reached": _enemies_reached,
 		"towers_placed": _count_active_towers(),
-		"resources_spent": resources_spent,
+		"resources_spent": _compute_resources_spent(),
 		"defense_power": _count_active_towers() * 2 + _enemies_killed,
 		"threat_power": _enemies_spawned,
 		"salvage": salvage,
 		"breach_losses": _breach_losses.duplicate(),
 		"breach_total": breach_total,
 		"final_backpack_dict": final_backpack_dict,
+		"tower_refund": _build_tower_refund_detail(),
+		"kill_log": _build_kill_log(),
+		"converted_survivors": _converted_survivors.duplicate(),
 	}
 
 
@@ -1186,9 +1342,19 @@ func _build_result() -> Dictionary:
 ## 加上战斗中累计的敌人废料掉落。返回 item_id -> count。
 func _settle_salvage() -> Dictionary:
 	var out: Dictionary = {}
+	# 策反单位存活到夜末 → 零件回收
+	for enemy in _enemies:
+		if str(enemy.get("faction", "enemy")) == "ally":
+			var parts_val := 2 if str(enemy.get("type","")) in ["heavy","shepherd"] else 1
+			_converted_survivors.append({"enemy_type": str(enemy.get("type","")), "parts_value": parts_val})
+			out["parts"] = int(out.get("parts", 0)) + parts_val
+			_add_event_log("ally_survived", str(enemy.get("type","")), {"parts": parts_val})
 	for item_id: String in _salvage_pending.keys():
 		out[item_id] = int(out.get(item_id, 0)) + int(_salvage_pending[item_id])
 	for tower in _towers:
+		# 只统计进入战斗的塔
+		if not _combat_tower_ids.has(int(tower.get("id", -1))):
+			continue
 		var tdef: Dictionary = NightTdDefs.get_tower_def(str(tower["type"]))
 		var src: Dictionary = {}
 		if tower.get("removed", false):
@@ -1201,6 +1367,32 @@ func _settle_salvage() -> Dictionary:
 
 
 ## 敌人被击毁时累计废料掉落（夜末统一结算，不在战斗中即时入袋）。
+func _build_tower_refund_detail() -> Dictionary:
+	var out: Dictionary = {}
+	for tower in _towers:
+		# 只统计进入战斗的塔（布防阶段撤销的不算）
+		if not _combat_tower_ids.has(int(tower.get("id", -1))):
+			continue
+		var tid := str(tower.get("type", ""))
+		if not out.has(tid):
+			out[tid] = {"survived": [], "destroyed": []}
+		if tower.get("removed", false):
+			var tdef := NightTdDefs.get_tower_def(tid)
+			out[tid]["destroyed"].append(tdef.get("salvage", {}))
+		else:
+			var tdef := NightTdDefs.get_tower_def(tid)
+			out[tid]["survived"].append(tdef.get("build_cost", {}))
+	return out
+
+
+func _build_kill_log() -> Array:
+	var log: Array = []
+	for entry in _event_log:
+		if str(entry.get("type", "")) == "enemy_killed":
+			log.append({"type": str(entry.get("detail", "?")), "scrap": int(entry.get("resource_change", {}).get("scrap", 0))})
+	return log
+
+
 func _add_salvage_drop(enemy: Dictionary) -> void:
 	# 已策反的友军不计回收；普通敌人掉 1 废料，重型/牧羊者掉 2。
 	if str(enemy.get("faction", "enemy")) != "enemy":
@@ -1210,6 +1402,22 @@ func _add_salvage_drop(enemy: Dictionary) -> void:
 	if t == "heavy" or bool(enemy.get("is_shepherd", false)):
 		amount = 2
 	_salvage_pending["scrap"] = int(_salvage_pending.get("scrap", 0)) + amount
+
+
+## 从当前实际放置的塔（排除已撤销）计算资源消耗。
+func _compute_resources_spent() -> int:
+	var total := 0
+	for tower in _towers:
+		if tower.get("removed", false):
+			continue
+		var tdef: Dictionary = NightTdDefs.get_tower_def(str(tower["type"]))
+		if _local_backpack == null:
+			total += int(tdef.get("cost", 1))
+		else:
+			# backpack 模式下计入实际建造材料（用于结算汇报）
+			for item_id: String in tdef.get("build_cost", {}).keys():
+				total += int(tdef["build_cost"][item_id])
+	return total
 
 
 func _count_active_towers() -> int:

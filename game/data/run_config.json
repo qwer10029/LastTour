@@ -24,8 +24,8 @@
 		"default": {
 			"supplies": 4,
 			"wood": 1,
-			"parts": 1,
-			"scrap": 1
+			"parts": 8,
+			"scrap": 8
 		},
 		"squad_overrides": {
 			"logistics": {

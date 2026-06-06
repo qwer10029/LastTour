@@ -3,351 +3,502 @@ extends CanvasLayer
 signal tower_selected(type_id: String)
 signal start_wave_pressed
 signal continue_pressed
+signal tower_power_step(tower_id: int, delta_step: float)
+signal power_tower_selected(tower_id: int)
 
 @onready var top_bar: PanelContainer = $TopBar
-@onready var side_panel: PanelContainer = $SidePanel
-@onready var phase_label: Label = %PhaseLabel
-@onready var resource_label: Label = %ResourceLabel
-@onready var timer_label: Label = %TimerLabel
-@onready var hint_label: Label = %HintLabel
-@onready var log_label: Label = %LogLabel
-@onready var jammer_btn: Button = %JammerBtn
-@onready var barrier_btn: Button = %BarrierBtn
-@onready var trap_btn: Button = %TrapBtn
-@onready var start_btn: Button = %StartWaveBtn
-@onready var result_overlay: Control = %ResultOverlay
+@onready var side_panel: PanelContainer = $Sidebar
+@onready var phase_label: Label = $TopBar/HBox/PhaseLabel
+@onready var resource_label: Label = $TopBar/HBox/ResourceLabel
+@onready var timer_label: Label = $TopBar/HBox/TimerLabel
+@onready var start_btn: Button = $Sidebar/Margin/VBox/StartWaveBtn
+@onready var event_log_vbox: VBoxContainer = $Sidebar/Margin/VBox/ScrollContainer/EventLog
+@onready var event_scroll: ScrollContainer = $Sidebar/Margin/VBox/ScrollContainer
+@onready var breach_label: Label = $BreachCounter
+@onready var result_overlay: Control = $ResultOverlay
 @onready var continue_btn: Button = %ContinueBtn
 @onready var result_panel: PanelContainer = %ResultPanel
 @onready var result_label: Label = %ResultLabel
 
-var _selected: String = "jammer"
-var _continue_locked: bool = false
-var _hacker_btn: Button = null   # P5：入侵天线建造按钮（代码创建）
+var _tower_card_data := {
+	"jammer":  {"icon": "⚡", "name": "干扰信标", "color": "#6ed08b"},
+	"barrier": {"icon": "▣", "name": "物理路障", "color": "#9e8564"},
+	"trap":    {"icon": "▲", "name": "电磁陷阱", "color": "#e87840"},
+	"hacker":  {"icon": "⌁", "name": "入侵天线", "color": "#5ac8e0"},
+	"sniper":  {"icon": "◎", "name": "狙击信标", "color": "#7aa6ff"},
+	"splash":  {"icon": "❖", "name": "电弧塔",   "color": "#e0a23a"},
+}
 
-# P4.3 战斗功率面板（运行时构建，不改 .tscn）：每座耗电塔一行，含功率条 + 增减按钮。
-signal tower_power_step(tower_id: int, delta_step: float)   # 列表内某塔的功率增减
-var _power_panel: PanelContainer = null
+var _selected: String = "jammer"
+var _continue_locked := false
+var _breach_count := 0
+var _tower_cards: Dictionary = {}
+var _cards_vbox: VBoxContainer = null
+
+# Tooltip
+var _tooltip: PanelContainer = null
+var _tooltip_label: Label = null
+var _hover_timer: float = 0.0
+var _hovered_card_type: String = ""
+const HOVER_DELAY: float = 0.45
+
+# Power
+var _power_panel: VBoxContainer = null
 var _energy_label: Label = null
 var _power_list: VBoxContainer = null
 var _power_empty_label: Label = null
-var _power_rows: Dictionary = {}   # tower_id -> { row, name_label, bar, value_label }
+var _power_rows: Dictionary = {}
+var _selected_power_tower_id := -1
+
+const COLORS := {
+	"bg": "#0b1018", "panel": "#141c28", "border": "#2a3a4f",
+	"title": "#d8e4f0", "subtitle": "#8fa3b8", "accent": "#6ed08b",
+	"danger": "#e87840", "hack": "#5ac8e0", "amber": "#f0a040",
+}
 
 
 func _ready() -> void:
 	hide_session_ui()
-	if is_instance_valid(jammer_btn):
-		jammer_btn.pressed.connect(func(): _select("jammer"))
-	if is_instance_valid(barrier_btn):
-		barrier_btn.pressed.connect(func(): _select("barrier"))
-	if is_instance_valid(trap_btn):
-		trap_btn.pressed.connect(func(): _select("trap"))
-	_build_hacker_button()
+	_build_tooltip()
+	_build_cards_in_sidebar()
 	if is_instance_valid(start_btn):
 		start_btn.pressed.connect(func(): start_wave_pressed.emit())
 	if is_instance_valid(continue_btn):
 		continue_btn.pressed.connect(_on_continue_pressed)
 	_build_power_panel()
+	if is_instance_valid(breach_label): breach_label.visible = false
 	_select("jammer")
+
+
+func _process(delta: float) -> void:
+	if _hovered_card_type != "":
+		_hover_timer += delta
+		if _hover_timer >= HOVER_DELAY and not _tooltip.visible:
+			_show_tooltip(_hovered_card_type)
 
 
 func show_session_ui() -> void:
 	show()
 	_continue_locked = false
-	if is_instance_valid(top_bar):
-		top_bar.show()
-	if is_instance_valid(side_panel):
-		side_panel.show()
+	_breach_count = 0
+	if is_instance_valid(top_bar): top_bar.show()
+	if is_instance_valid(side_panel): side_panel.show()
+	if is_instance_valid(breach_label):
+		breach_label.visible = false
+		breach_label.text = "⚠ 突破: 0"
+	clear_log()
 	hide_result_dialog()
 
 
 func hide_session_ui() -> void:
 	hide_result_dialog()
-	if is_instance_valid(top_bar):
-		top_bar.hide()
-	if is_instance_valid(side_panel):
-		side_panel.hide()
+	if is_instance_valid(top_bar): top_bar.hide()
+	if is_instance_valid(side_panel): side_panel.hide()
+	if is_instance_valid(breach_label): breach_label.visible = false
 	hide()
 
 
 func hide_result_dialog() -> void:
 	_continue_locked = true
 	if is_instance_valid(result_overlay):
-		result_overlay.hide()
-		result_overlay.visible = false
+		result_overlay.hide(); result_overlay.visible = false
 	if is_instance_valid(continue_btn):
 		continue_btn.disabled = true
 
 
 func _on_continue_pressed() -> void:
-	if _continue_locked:
-		return
+	if _continue_locked: return
 	_continue_locked = true
-	if is_instance_valid(continue_btn):
-		continue_btn.disabled = true
+	if is_instance_valid(continue_btn): continue_btn.disabled = true
 	hide_result_dialog()
 	continue_pressed.emit()
+
+
+# -- Tooltip ------------------------------------------------------
+
+func _build_tooltip() -> void:
+	_tooltip = PanelContainer.new()
+	_tooltip.name = "TowerTooltip"
+	_tooltip.visible = false
+	_tooltip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tooltip.z_index = 100
+	add_child(_tooltip)
+	var m := MarginContainer.new()
+	for side in ["left","top","right","bottom"]:
+		m.add_theme_constant_override("margin_" + side, 6)
+	_tooltip.add_child(m)
+	_tooltip_label = Label.new()
+	_tooltip_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	m.add_child(_tooltip_label)
+
+
+func _show_tooltip(type_id: String) -> void:
+	var tdef: Dictionary = NightTdDefs.get_tower_def(type_id)
+	var parts: PackedStringArray = []
+	# Single line: range | damage | firerate | special
+	if int(tdef.get("range", 0)) > 0:
+		parts.append("射程%dpx" % int(tdef.get("range", 0)))
+	if float(tdef.get("damage", 0)) > 0:
+		parts.append("伤害%.0f" % float(tdef.get("damage", 0)))
+	var fi := float(tdef.get("fire_interval", 0))
+	if fi > 0 and fi < 900:
+		parts.append("射速%.1fs" % fi)
+	if int(tdef.get("hp", 0)) > 0:
+		parts.append("HP%d" % int(tdef.get("hp", 0)))
+	if int(tdef.get("splash_radius", 0)) > 0:
+		parts.append("AOE%dpx" % int(tdef.get("splash_radius", 0)))
+	if float(tdef.get("hack_rate", 0)) > 0:
+		parts.append("黑入%.0f/s" % float(tdef.get("hack_rate", 0)))
+	if float(tdef.get("slow_factor", 0)) > 0:
+		parts.append("减速%.0f%%" % (float(tdef.get("slow_factor", 0)) * 100))
+	if tdef.get("one_shot", false):
+		parts.append("一次性")
+	var desc: String = str(tdef.get("description", ""))
+	if desc != "":
+		parts.insert(0, desc)
+	_tooltip_label.text = " · ".join(parts)
+	# Position: left of the sidebar
+	var card: PanelContainer = _tower_cards[type_id]["panel"]
+	var p := card.global_position
+	_tooltip.position = Vector2(p.x - 210, p.y - 2)
+	_tooltip.custom_minimum_size = Vector2(200, 0)
+	var ts := StyleBoxFlat.new()
+	ts.bg_color = Color(COLORS["panel"])
+	ts.border_color = Color(COLORS["border"])
+	ts.set_border_width_all(1); ts.set_corner_radius_all(6)
+	_tooltip.add_theme_stylebox_override("panel", ts)
+	_tooltip.visible = true
+
+
+# -- Tower Cards (right sidebar, vertical list) -------------------
+
+func _build_cards_in_sidebar() -> void:
+	var vbox := side_panel.get_node_or_null("Margin/VBox")
+	if vbox == null: return
+
+	_cards_vbox = VBoxContainer.new()
+	_cards_vbox.name = "TowerCards"
+	_cards_vbox.add_theme_constant_override("separation", 3)
+	# Insert at the top of sidebar VBox
+	vbox.add_child(_cards_vbox)
+	vbox.move_child(_cards_vbox, 0)
+
+	for type_id in ["jammer","barrier","trap","hacker","sniper","splash"]:
+		var data: Dictionary = _tower_card_data.get(type_id, {})
+		var card := _make_card_row(type_id, data)
+		_cards_vbox.add_child(card)
+
+
+func _make_card_row(type_id: String, data: Dictionary) -> PanelContainer:
+	var card := PanelContainer.new()
+	card.name = type_id.capitalize() + "Card"
+	card.custom_minimum_size = Vector2(0, 28)
+	card.mouse_filter = Control.MOUSE_FILTER_STOP
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(COLORS["panel"])
+	style.border_color = Color(COLORS["border"])
+	style.set_border_width_all(1); style.set_corner_radius_all(4)
+	card.add_theme_stylebox_override("panel", style)
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	card.add_child(row)
+
+	var icon := Label.new()
+	icon.text = str(data.get("icon", "?"))
+	icon.custom_minimum_size = Vector2(22, 0)
+	icon.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	icon.add_theme_font_size_override("font_size", 14)
+	icon.add_theme_color_override("font_color", Color(str(data.get("color", "#ffffff"))))
+	row.add_child(icon)
+
+	var name_lbl := Label.new()
+	name_lbl.text = str(data.get("name", type_id))
+	name_lbl.custom_minimum_size = Vector2(66, 0)
+	name_lbl.add_theme_font_size_override("font_size", 11)
+	name_lbl.add_theme_color_override("font_color", Color(COLORS["title"]))
+	row.add_child(name_lbl)
+
+	var cost_lbl := Label.new()
+	cost_lbl.text = ""
+	cost_lbl.custom_minimum_size = Vector2(70, 0)
+	cost_lbl.add_theme_font_size_override("font_size", 10)
+	cost_lbl.add_theme_color_override("font_color", Color(COLORS["subtitle"]))
+	cost_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	row.add_child(cost_lbl)
+
+	card.gui_input.connect(_on_card_input.bind(type_id))
+	card.mouse_entered.connect(func(): _hovered_card_type = type_id; _hover_timer = 0.0)
+	card.mouse_exited.connect(func():
+		_hovered_card_type = ""; _hover_timer = 0.0; _tooltip.visible = false)
+
+	_tower_cards[type_id] = {"panel": card, "icon": icon, "name": name_lbl, "cost": cost_lbl}
+	return card
+
+
+func _on_card_input(event: InputEvent, type_id: String) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		_select(type_id)
 
 
 func _select(type_id: String) -> void:
 	_selected = type_id
 	tower_selected.emit(type_id)
-	refresh_tool_buttons()
+	_refresh_card_highlights()
 
 
 func get_selected_tower() -> String:
 	return _selected
 
 
-func set_phase_text(text: String) -> void:
-	if is_instance_valid(phase_label):
-		phase_label.text = text
+func _refresh_card_highlights() -> void:
+	for tid in _tower_cards.keys():
+		var card: PanelContainer = _tower_cards[tid]["panel"]
+		var s := StyleBoxFlat.new()
+		if tid == _selected:
+			s.bg_color = Color("#2d4a3a"); s.border_color = Color(COLORS["accent"])
+			s.set_border_width_all(2)
+		else:
+			s.bg_color = Color(COLORS["panel"]); s.border_color = Color(COLORS["border"])
+			s.set_border_width_all(1)
+		s.set_corner_radius_all(4)
+		card.add_theme_stylebox_override("panel", s)
 
+
+func update_card_costs(backpack_counts: Dictionary) -> void:
+	for tid in _tower_cards.keys():
+		var cost_lbl: Label = _tower_cards[tid]["cost"]
+		var tdef := NightTdDefs.get_tower_def(tid)
+		var build_cost: Dictionary = tdef.get("build_cost", {})
+		var pcs: Array[String] = []
+		for item_id: String in build_cost.keys():
+			pcs.append("%s×%d" % [ItemDefs.get_item_name(item_id), int(build_cost[item_id])])
+		cost_lbl.text = "、".join(pcs) if not pcs.is_empty() else ""
+		var ok := true
+		for item_id: String in build_cost.keys():
+			if int(backpack_counts.get(item_id, 0)) < int(build_cost[item_id]):
+				ok = false; break
+		cost_lbl.add_theme_color_override("font_color", Color(COLORS["accent"]) if ok else Color(COLORS["danger"]))
+
+
+# -- Phase --------------------------------------------------------
+
+func set_phase_text(text: String) -> void:
+	if is_instance_valid(phase_label): phase_label.text = text
 
 func set_resources(remaining: int, spent: int) -> void:
 	if is_instance_valid(resource_label):
-		resource_label.text = "布防部署点: %d（已用 %d）" % [remaining, spent]
+		resource_label.text = "部署点: %d (已用 %d)" % [remaining, spent]
 
-
-## 直接设置资源行文本（P6 真实背包模式：显示零件/废料数量）。
 func set_resource_text(text: String) -> void:
-	if is_instance_valid(resource_label):
-		resource_label.text = text
-
+	if is_instance_valid(resource_label): resource_label.text = text
 
 func set_placement_timer(sec: float) -> void:
-	if is_instance_valid(timer_label):
-		timer_label.text = "布防剩余 %.0f 秒（时间到将自动接敌）" % maxf(sec, 0.0)
-
+	if is_instance_valid(timer_label): timer_label.text = "布防 %.0fs" % maxf(sec, 0.0)
 
 func set_combat_status(text: String) -> void:
-	if is_instance_valid(timer_label):
-		timer_label.text = text
-
+	if is_instance_valid(timer_label): timer_label.text = text
 
 func set_hint(text: String) -> void:
-	if is_instance_valid(hint_label):
-		hint_label.text = text + "\n右键可撤销已放置防御"
+	pass
 
+
+# -- Breach Counter ------------------------------------------------
+
+func increment_breach_counter(count: int) -> void:
+	_breach_count = count
+	if is_instance_valid(breach_label):
+		breach_label.text = "⚠ 突破: %d" % count
+		breach_label.visible = true
+		var tween := create_tween()
+		tween.tween_property(breach_label, "modulate:a", 0.4, 0.15)
+		tween.tween_property(breach_label, "modulate:a", 1.0, 0.3)
+
+
+# -- Event Log ----------------------------------------------------
 
 func clear_log() -> void:
-	if is_instance_valid(log_label):
-		log_label.text = ""
+	if is_instance_valid(event_log_vbox):
+		for child in event_log_vbox.get_children():
+			child.queue_free()
 
 
-func append_log(line: String) -> void:
-	if not is_instance_valid(log_label):
-		return
-	var lines: PackedStringArray = PackedStringArray()
-	if log_label.text != "":
-		lines = log_label.text.split("\n")
-	lines.append(line)
-	while lines.size() > 6:
-		lines.remove_at(0)
-	log_label.text = "\n".join(lines)
+func append_log(line: String, text_color: Color = Color(COLORS["subtitle"])) -> void:
+	if not is_instance_valid(event_log_vbox): return
+	var entry := Label.new()
+	entry.text = line
+	entry.add_theme_font_size_override("font_size", 10)
+	entry.add_theme_color_override("font_color", text_color)
+	entry.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	entry.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	event_log_vbox.add_child(entry)
+	if is_instance_valid(event_scroll):
+		await get_tree().process_frame
+		event_scroll.scroll_vertical = int(event_scroll.get_v_scroll_bar().max_value)
 
+
+# -- Mode Switching ------------------------------------------------
 
 func set_place_mode(active: bool) -> void:
-	if is_instance_valid(start_btn):
-		start_btn.visible = active
+	if is_instance_valid(start_btn): start_btn.show() if active else start_btn.hide()
 	hide_result_dialog()
-	if is_instance_valid(jammer_btn):
-		jammer_btn.disabled = not active
-	if is_instance_valid(barrier_btn):
-		barrier_btn.disabled = not active
-	if is_instance_valid(trap_btn):
-		trap_btn.disabled = not active
-	if is_instance_valid(_hacker_btn):
-		_hacker_btn.disabled = not active
+	if is_instance_valid(_cards_vbox): _cards_vbox.visible = active
 	show_power_panel(false)
+	_update_card_states(active)
 
 
 func set_combat_mode() -> void:
-	if is_instance_valid(start_btn):
-		start_btn.visible = false
+	if is_instance_valid(start_btn): start_btn.hide()
 	hide_result_dialog()
-	if is_instance_valid(jammer_btn):
-		jammer_btn.disabled = true
-	if is_instance_valid(barrier_btn):
-		barrier_btn.disabled = true
-	if is_instance_valid(trap_btn):
-		trap_btn.disabled = true
-	if is_instance_valid(_hacker_btn):
-		_hacker_btn.disabled = true
+	if is_instance_valid(_cards_vbox): _cards_vbox.visible = false
+	_update_card_states(false)
 	show_power_panel(true)
 
 
+func _update_card_states(enabled: bool) -> void:
+	for tid in _tower_cards.keys():
+		var card: PanelContainer = _tower_cards[tid]["panel"]
+		card.mouse_filter = Control.MOUSE_FILTER_STOP if enabled else Control.MOUSE_FILTER_IGNORE
+		card.modulate = Color(1,1,1,1) if enabled else Color(1,1,1,0.4)
+
+
+# -- Result Screen ------------------------------------------------
+
 func show_result(text: String) -> void:
 	_continue_locked = false
-	if is_instance_valid(result_label):
-		result_label.text = text
-	if is_instance_valid(continue_btn):
-		continue_btn.disabled = false
+	if is_instance_valid(result_label): result_label.text = text
+	if is_instance_valid(continue_btn): continue_btn.disabled = false
 	if is_instance_valid(result_overlay):
-		result_overlay.show()
-		result_overlay.visible = true
-	if is_instance_valid(jammer_btn):
-		jammer_btn.disabled = true
-	if is_instance_valid(barrier_btn):
-		barrier_btn.disabled = true
-	if is_instance_valid(trap_btn):
-		trap_btn.disabled = true
-	if is_instance_valid(start_btn):
-		start_btn.visible = false
+		result_overlay.show(); result_overlay.visible = true
+	if is_instance_valid(start_btn): start_btn.hide()
+	if is_instance_valid(_cards_vbox): _cards_vbox.visible = false
 
 
-func refresh_tool_buttons() -> void:
-	for btn_data in [
-		[jammer_btn, "jammer"],
-		[barrier_btn, "barrier"],
-		[trap_btn, "trap"],
-		[_hacker_btn, "hacker"],
-	]:
-		var btn: Button = btn_data[0]
-		var id: String = btn_data[1]
-		if not is_instance_valid(btn):
-			continue
-		btn.text = NightTdDefs.get_tower_button_text(id, id == _selected)
-		btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-
-
-# --- P4.3 战斗功率面板（代码构建，挂在 SidePanel 下方）---
-
-func _build_hacker_button() -> void:
-	if not is_instance_valid(trap_btn):
-		return
-	_hacker_btn = Button.new()
-	_hacker_btn.name = "HackerBtn"
-	_hacker_btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_hacker_btn.pressed.connect(func(): _select("hacker"))
-	# 插到陷阱按钮后面
-	var parent := trap_btn.get_parent()
-	if parent != null:
-		parent.add_child(_hacker_btn)
-		parent.move_child(_hacker_btn, trap_btn.get_index() + 1)
-
+# -- Power Panel ---------------------------------------------------
 
 func _build_power_panel() -> void:
-	if not is_instance_valid(side_panel):
-		return
-	var vbox := side_panel.get_node_or_null("Margin/VBox")
-	if vbox == null:
-		return
-	# 独立面板，锚定在屏幕左侧空白区（不挤占右侧已塞满的布防面板）。
-	_power_panel = PanelContainer.new()
+	# 电力面板放在屏幕左侧，不挤占右侧边栏
+	_power_panel = VBoxContainer.new()
 	_power_panel.name = "PowerPanel"
 	_power_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	_power_panel.offset_left = 16.0
-	_power_panel.offset_top = 130.0
-	_power_panel.custom_minimum_size = Vector2(240, 0)
+	_power_panel.offset_left = 12.0
+	_power_panel.offset_top = 96.0
+	_power_panel.custom_minimum_size = Vector2(200, 0)
+	_power_panel.add_theme_constant_override("separation", 3)
+	_power_panel.visible = false
 	_power_panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	var margin := MarginContainer.new()
-	for side in ["left", "top", "right", "bottom"]:
-		margin.add_theme_constant_override("margin_" + side, 10)
-	_power_panel.add_child(margin)
-	var inner := VBoxContainer.new()
-	inner.add_theme_constant_override("separation", 3)
-	margin.add_child(inner)
+	add_child(_power_panel)
 
 	var title := Label.new()
 	title.text = "⚡ 电力调度"
-	inner.add_child(title)
+	title.add_theme_color_override("font_color", Color(COLORS["title"]))
+	_power_panel.add_child(title)
 
 	_energy_label = Label.new()
 	_energy_label.text = "反应堆: --"
-	inner.add_child(_energy_label)
-
-	var hint := Label.new()
-	hint.text = "每座耗电设施单独供电（功率↑伤害/射速↑）："
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	inner.add_child(hint)
+	_energy_label.add_theme_color_override("font_color", Color(COLORS["subtitle"]))
+	_power_panel.add_child(_energy_label)
 
 	_power_list = VBoxContainer.new()
 	_power_list.add_theme_constant_override("separation", 2)
-	inner.add_child(_power_list)
+	_power_panel.add_child(_power_list)
 
 	_power_empty_label = Label.new()
-	_power_empty_label.text = "（暂无耗电设施。建造干扰信标/入侵天线后在此调度电力。）"
-	_power_empty_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	inner.add_child(_power_empty_label)
-
-	hud_root_for_power().add_child(_power_panel)
-	_power_panel.visible = false
+	_power_empty_label.text = "（暂无耗电设施）"
+	_power_empty_label.add_theme_color_override("font_color", Color(COLORS["subtitle"]))
+	_power_panel.add_child(_power_empty_label)
 
 
-## 功率面板挂载点：优先挂到 CanvasLayer 自身，保证浮在最上层、不受布防面板布局影响。
-func hud_root_for_power() -> Node:
-	return self
-
-
-## 刷新反应堆电量显示。
 func set_energy_status(current: float, capacity: float, demand: float) -> void:
 	if is_instance_valid(_energy_label):
 		_energy_label.text = "反应堆: %.0f/%.0f  耗能 %.1f/s" % [current, capacity, demand]
 
 
-## 用当前耗电塔列表重建/更新功率行。towers: Array[{id:int, name:String, level:float, scale:float}]
 func update_power_list(towers: Array) -> void:
-	if not is_instance_valid(_power_list):
-		return
+	if not is_instance_valid(_power_list): return
 	var seen := {}
 	for t: Dictionary in towers:
 		var tid := int(t.get("id", -1))
 		seen[tid] = true
-		if not _power_rows.has(tid):
-			_add_power_row(tid)
+		if not _power_rows.has(tid): _add_power_row(tid)
 		_update_power_row(tid, t)
-	# 移除已不存在的塔行
 	for tid: int in _power_rows.keys():
 		if not seen.has(tid):
-			var row: Control = _power_rows[tid]["row"]
-			if is_instance_valid(row):
-				row.queue_free()
+			if is_instance_valid(_power_rows[tid]["row"]): _power_rows[tid]["row"].queue_free()
 			_power_rows.erase(tid)
-	if is_instance_valid(_power_empty_label):
-		_power_empty_label.visible = _power_rows.is_empty()
+	if is_instance_valid(_power_empty_label): _power_empty_label.visible = _power_rows.is_empty()
+
+
+func clear_power_highlight() -> void:
+	if _selected_power_tower_id >= 0:
+		var prev: Dictionary = _power_rows.get(_selected_power_tower_id, {})
+		if not prev.is_empty() and is_instance_valid(prev["panel"]):
+			prev["panel"].remove_theme_stylebox_override("panel")
+	_selected_power_tower_id = -1
+
+
+func highlight_power_row(tower_id: int) -> void:
+	# Clear previous
+	if _selected_power_tower_id >= 0:
+		var prev: Dictionary = _power_rows.get(_selected_power_tower_id, {})
+		if not prev.is_empty() and is_instance_valid(prev["panel"]):
+			prev["panel"].remove_theme_stylebox_override("panel")
+
+	var d: Dictionary = _power_rows.get(tower_id, {})
+	if d.is_empty(): return
+	var panel: PanelContainer = d["panel"]
+	_selected_power_tower_id = tower_id
+
+	# Amber border to indicate selection
+	var s := StyleBoxFlat.new()
+	s.bg_color = Color(COLORS["amber"], 0.12)
+	s.border_color = Color(COLORS["amber"])
+	s.set_border_width_all(2); s.set_corner_radius_all(4)
+	panel.add_theme_stylebox_override("panel", s)
 
 
 func _add_power_row(tower_id: int) -> void:
+	# Use PanelContainer so the highlight border is visible
+	var panel := PanelContainer.new()
+	panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	panel.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			power_tower_selected.emit(tower_id))
+
 	var row := HBoxContainer.new()
-	var name_label := Label.new()
-	name_label.custom_minimum_size = Vector2(96, 0)
-	name_label.autowrap_mode = TextServer.AUTOWRAP_OFF
-	row.add_child(name_label)
-	var minus := Button.new()
-	minus.text = "−"
-	minus.custom_minimum_size = Vector2(28, 0)
-	minus.pressed.connect(func(): tower_power_step.emit(tower_id, -NightTdEnergy.POWER_STEP))
-	row.add_child(minus)
-	var value_label := Label.new()
-	value_label.custom_minimum_size = Vector2(40, 0)
-	value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	row.add_child(value_label)
-	var plus := Button.new()
-	plus.text = "+"
-	plus.custom_minimum_size = Vector2(28, 0)
-	plus.pressed.connect(func(): tower_power_step.emit(tower_id, NightTdEnergy.POWER_STEP))
-	row.add_child(plus)
-	_power_list.add_child(row)
-	_power_rows[tower_id] = {"row": row, "name": name_label, "value": value_label}
+	row.add_theme_constant_override("separation", 4)
+	panel.add_child(row)
+	var nl := Label.new()
+	nl.custom_minimum_size = Vector2(80, 0); nl.add_theme_font_size_override("font_size", 11)
+	row.add_child(nl)
+	var mb := Button.new()
+	mb.text = "−"; mb.custom_minimum_size = Vector2(24, 0)
+	mb.pressed.connect(func(): tower_power_step.emit(tower_id, -NightTdEnergy.POWER_STEP))
+	row.add_child(mb)
+	var vl := Label.new()
+	vl.custom_minimum_size = Vector2(36, 0)
+	vl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	row.add_child(vl)
+	var pb := Button.new()
+	pb.text = "+"; pb.custom_minimum_size = Vector2(24, 0)
+	pb.pressed.connect(func(): tower_power_step.emit(tower_id, NightTdEnergy.POWER_STEP))
+	row.add_child(pb)
+	_power_list.add_child(panel)
+	_power_rows[tower_id] = {"panel": panel, "row": row, "name": nl, "value": vl}
 
 
 func _update_power_row(tower_id: int, data: Dictionary) -> void:
 	var entry: Dictionary = _power_rows.get(tower_id, {})
-	if entry.is_empty():
-		return
-	var name_label: Label = entry["name"]
-	var value_label: Label = entry["value"]
-	name_label.text = str(data.get("name", "设施"))
-	var level := float(data.get("level", 1.0))
-	var scale := float(data.get("scale", level))
-	# 用方块条直观显示功率档（0 / 0.5 / 1.0 / 1.5 / 2.0）。
-	var bars := int(round(level / 0.5))
+	if entry.is_empty(): return
+	entry["name"].text = str(data.get("name", "设施"))
+	var lv := float(data.get("level", 1.0))
+	var sc := float(data.get("scale", lv))
+	var bars := int(round(lv / 0.5))
 	var filled := ""
-	for i in range(4):
-		filled += "▮" if i < bars else "▯"
-	value_label.text = "%s %.1fx" % [filled, scale]
+	for i in range(4): filled += "▮" if i < bars else "▯"
+	entry["value"].text = "%s %.1fx" % [filled, sc]
 
 
 func show_power_panel(visible_now: bool) -> void:
-	if is_instance_valid(_power_panel):
-		_power_panel.visible = visible_now
+	if is_instance_valid(_power_panel): _power_panel.visible = visible_now

@@ -16,102 +16,84 @@ script = ExtResource("2_field")
 layer = 10
 script = ExtResource("3_hud")
 
+; -- Compact TopBar (64px, horizontal) --
 [node name="TopBar" type="PanelContainer" parent="Hud"]
 anchors_preset = 10
 anchor_right = 1.0
-offset_bottom = 120.0
+offset_bottom = 64.0
 grow_horizontal = 2
 mouse_filter = 0
 
-[node name="Margin" type="MarginContainer" parent="Hud/TopBar"]
+[node name="HBox" type="HBoxContainer" parent="Hud/TopBar"]
 layout_mode = 2
-theme_override_constants/margin_left = 16
-theme_override_constants/margin_top = 10
-theme_override_constants/margin_right = 16
-theme_override_constants/margin_bottom = 10
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+alignment = 1
+theme_override_constants/separation = 20
 
-[node name="VBox" type="VBoxContainer" parent="Hud/TopBar/Margin"]
+[node name="PhaseLabel" type="Label" parent="Hud/TopBar/HBox"]
 layout_mode = 2
-theme_override_constants/separation = 4
+text = "夜晚塔防"
 
-[node name="PhaseLabel" type="Label" parent="Hud/TopBar/Margin/VBox"]
-unique_name_in_owner = true
+[node name="ResourceLabel" type="Label" parent="Hud/TopBar/HBox"]
 layout_mode = 2
-text = "夜晚塔防 · 布防阶段"
+text = "资源"
 
-[node name="ResourceLabel" type="Label" parent="Hud/TopBar/Margin/VBox"]
-unique_name_in_owner = true
+[node name="TimerLabel" type="Label" parent="Hud/TopBar/HBox"]
 layout_mode = 2
-text = "背包资源: 0"
+text = "布防 180s"
 
-[node name="TimerLabel" type="Label" parent="Hud/TopBar/Margin/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "布防剩余 180 秒"
+; -- Breach Counter --
+[node name="BreachCounter" type="Label" parent="Hud"]
+offset_left = 12.0
+offset_top = 72.0
+text = "⚠ 突破: 0"
+visible = false
+mouse_filter = 1
 
-[node name="HintLabel" type="Label" parent="Hud/TopBar/Margin/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "点击地图放置防御设施"
-autowrap_mode = 2
-
-[node name="SidePanel" type="PanelContainer" parent="Hud"]
+; -- Right Sidebar (200px) --
+[node name="Sidebar" type="PanelContainer" parent="Hud"]
 anchors_preset = 11
 anchor_left = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -220.0
-offset_top = 130.0
+offset_left = -200.0
+offset_top = 64.0
 offset_bottom = -16.0
 grow_vertical = 2
 mouse_filter = 0
 
-[node name="Margin" type="MarginContainer" parent="Hud/SidePanel"]
+[node name="Margin" type="MarginContainer" parent="Hud/Sidebar"]
 layout_mode = 2
-theme_override_constants/margin_left = 12
-theme_override_constants/margin_top = 12
-theme_override_constants/margin_right = 12
-theme_override_constants/margin_bottom = 12
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
 
-[node name="VBox" type="VBoxContainer" parent="Hud/SidePanel/Margin"]
+[node name="VBox" type="VBoxContainer" parent="Hud/Sidebar/Margin"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="ToolsTitle" type="Label" parent="Hud/SidePanel/Margin/VBox"]
+[node name="ScrollContainer" type="ScrollContainer" parent="Hud/Sidebar/Margin/VBox"]
 layout_mode = 2
-text = "背包 · 布防设施"
+size_flags_horizontal = 3
+size_flags_vertical = 3
 
-[node name="JammerBtn" type="Button" parent="Hud/SidePanel/Margin/VBox"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 40)
+[node name="EventLog" type="VBoxContainer" parent="Hud/Sidebar/Margin/VBox/ScrollContainer"]
 layout_mode = 2
-text = "干扰信标"
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 2
 
-[node name="BarrierBtn" type="Button" parent="Hud/SidePanel/Margin/VBox"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 40)
-layout_mode = 2
-text = "物理路障"
-
-[node name="TrapBtn" type="Button" parent="Hud/SidePanel/Margin/VBox"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 40)
-layout_mode = 2
-text = "电磁陷阱"
-
-[node name="StartWaveBtn" type="Button" parent="Hud/SidePanel/Margin/VBox"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 44)
+[node name="StartWaveBtn" type="Button" parent="Hud/Sidebar/Margin/VBox"]
+custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
 text = "布防完成，开始接敌"
 
-[node name="LogLabel" type="Label" parent="Hud/SidePanel/Margin/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_vertical = 3
-text = ""
-autowrap_mode = 2
-
+; -- Result Overlay --
 [node name="ResultOverlay" type="Control" parent="Hud"]
 unique_name_in_owner = true
 visible = false
@@ -135,16 +117,18 @@ color = Color(0, 0, 0, 0.55)
 
 [node name="CenterContainer" type="CenterContainer" parent="Hud/ResultOverlay"]
 layout_mode = 1
-anchors_preset = 15
+anchors_preset = 0
+anchor_left = 0.0
+anchor_top = 0.25
 anchor_right = 1.0
-anchor_bottom = 1.0
+anchor_bottom = 0.75
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
 [node name="ResultPanel" type="PanelContainer" parent="Hud/ResultOverlay/CenterContainer"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(480, 0)
+custom_minimum_size = Vector2(620, 0)
 layout_mode = 2
 
 [node name="Margin" type="MarginContainer" parent="Hud/ResultOverlay/CenterContainer/ResultPanel"]
