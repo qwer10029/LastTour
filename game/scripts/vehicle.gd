@@ -31,6 +31,8 @@ func set_active(active: bool) -> void:
 	set_process(active)
 	if is_instance_valid(sprite):
 		sprite.visible = false
-	if is_instance_valid(camera):
+	if is_instance_valid(camera) and camera.enabled and camera.is_inside_tree():
 		if active:
 			camera.make_current()
+		elif camera.is_current():
+			camera.enabled = false

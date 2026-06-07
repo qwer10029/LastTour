@@ -564,11 +564,11 @@ func _spawn_resources() -> void:
 			if pickup.has_method("setup_loot"):
 				pickup.setup_loot(loot_id)
 			if pickup.has_signal("collected"):
-				pickup.collected.connect(_on_resource_collected.bind(district_index))
+				pickup.collected.connect(func(loot_id: String, p: Area2D): _on_resource_collected(district_index, loot_id, p))
 			_resource_nodes.append(pickup)
 
 func _process(_delta: float) -> void:
-	if _run_ended or _game_paused or _backpack_open or _story_blocks_ui():
+	if _run_ended or _game_paused or _backpack_open:
 		return
 	if Input.is_action_just_pressed("enter_defense_mode"):
 		_try_enter_defense_mode()
@@ -1433,8 +1433,9 @@ func _init_player_loadout() -> void:
 
 
 func _toggle_backpack() -> void:
-	if _run_ended or _story_blocks_ui():
+	if _run_ended:
 		return
+	# 背包始终可以打开，不受 NPC 对话影响
 	if is_instance_valid(night_td) and night_td.visible:
 		if _backpack_open:
 			_close_backpack()
@@ -2584,11 +2585,17 @@ func _refresh_ui() -> void:
 	if is_instance_valid(prompt_label):
 		_update_prompts()
 
+var _last_reward_story_id: String = ""
+
 func _update_prompts() -> void:
 	prompt_label.text = ""
 	prompt_label.visible = false
 	_set_story_choice_buttons_visible(false)
-	_clear_story_reward_buttons()
+	# Only clear/recreate reward buttons when the story context changes (avoids flicker)
+	var current_story_id := _story_controller.story_id_at_node(_current_node_index) if is_instance_valid(_story_controller) else ""
+	if current_story_id != _last_reward_story_id:
+		_last_reward_story_id = current_story_id
+		_clear_story_reward_buttons()
 	disembark_button.visible = false
 	return_button.visible = false
 	repair_button.visible = false
@@ -3363,9 +3370,15 @@ func _setup_story_controller() -> void:
 	_story_controller.ui_refresh_requested.connect(_on_story_ui_refresh)
 
 
+var _story_refresh_guard := false
+
 func _on_story_ui_refresh() -> void:
+	if _story_refresh_guard:
+		return
+	_story_refresh_guard = true
 	_refresh_ui()
 	_refresh_backpack_if_open()
+	_story_refresh_guard = false
 
 
 func _story_blocks_ui() -> bool:
