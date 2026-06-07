@@ -129,8 +129,42 @@ static func apply_button(button: BaseButton) -> void:
 	button.add_theme_color_override("font_color", Color("#e6eef6"))
 	button.add_theme_color_override("font_hover_color", Color("#ffffff"))
 	button.add_theme_color_override("font_pressed_color", Color("#c8d4e0"))
+	button.add_theme_color_override("font_focus_color", Color("#ffffff"))
 	button.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.55))
 	button.add_theme_constant_override("outline_size", 1)
+
+
+static func apply_choice_button(button: Button, accent: Color = Color("#8ec8e8")) -> void:
+	if button == null:
+		return
+	apply_button(button)
+	# 与分队选择一致：仅鼠标悬停高亮，不用键盘焦点描边
+	button.focus_mode = Control.FOCUS_NONE
+	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	var normal := StyleBoxFlat.new()
+	normal.bg_color = Color(0.08, 0.11, 0.16, 0.88)
+	normal.border_color = Color(0.26, 0.34, 0.44, 0.55)
+	normal.set_border_width_all(1)
+	normal.set_corner_radius_all(6)
+	normal.content_margin_left = 12
+	normal.content_margin_right = 12
+	normal.content_margin_top = 8
+	normal.content_margin_bottom = 8
+	button.add_theme_stylebox_override("normal", normal)
+	var hover := normal.duplicate() as StyleBoxFlat
+	hover.bg_color = Color(0.14, 0.20, 0.28, 0.96)
+	hover.border_color = Color(accent.r, accent.g, accent.b, 0.92)
+	hover.set_border_width_all(2)
+	button.add_theme_stylebox_override("hover", hover)
+	button.add_theme_stylebox_override("focus", normal)
+	var pressed := hover.duplicate() as StyleBoxFlat
+	pressed.bg_color = Color(0.10, 0.14, 0.20, 0.98)
+	pressed.border_color = Color(accent.r, accent.g, accent.b, 0.75)
+	button.add_theme_stylebox_override("pressed", pressed)
+	var disabled := normal.duplicate() as StyleBoxFlat
+	disabled.bg_color = Color(0.05, 0.07, 0.10, 0.72)
+	disabled.border_color = Color(0.18, 0.22, 0.28, 0.35)
+	button.add_theme_stylebox_override("disabled", disabled)
 
 
 static func apply_panel(panel: Panel) -> void:
@@ -240,7 +274,7 @@ static func layout_hud(hud: CanvasLayer) -> void:
 	if action != null:
 		action.add_theme_stylebox_override("panel", panel_style(0.42))
 		action.offset_left = -300.0
-		action.offset_top = -164.0
+		action.offset_top = -280.0
 		action.offset_right = 300.0
 		action.offset_bottom = -SAFE_MARGIN
 		var action_margin := action.get_node_or_null("MarginContainer") as MarginContainer

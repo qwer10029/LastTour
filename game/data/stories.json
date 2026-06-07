@@ -1,0 +1,92 @@
+{
+  "required_for_truth": [
+    "sentinel_s09_parts",
+    "sentinel_s09_blueprint",
+    "sentinel_s09_branch"
+  ],
+  "stories": [
+    {
+      "story_id": "sentinel_s09",
+      "title": "10032军营 · 哨兵 S-09",
+      "npc_id": "sentinel_s09",
+      "district_tag": "sentinel_s09",
+      "building_type": "barracks",
+      "building_label": "荒废军营",
+      "gate": {
+        "lines": [
+          { "speaker": "npc", "text": "请停步。我并无敌意，能请您帮个忙吗？" },
+          { "speaker": "npc", "text": "我是 10032 军营哨兵，编号 S-09。" },
+          { "speaker": "npc", "text": "能源快耗尽了。我不能离开门口。" },
+          { "speaker": "npc", "text": "东侧仓库有能量电池。取来就给您报酬。" },
+          { "speaker": "player", "text": "仓库在哪？" },
+          { "speaker": "npc", "text": "第二通道备件柜。门已替您解锁。" }
+        ],
+        "choice_npc": "能帮我吗？",
+        "accept_npc": "我会在这里等您。",
+        "accept_player": "好。",
+        "decline_npc": "……明白了。营门仍由我守着。"
+      },
+      "quest": {
+        "hint": "进入军营，拾取能量电池（2 块）。",
+        "collect_item_id": "quest:sentinel_battery",
+        "collect_count": 2,
+        "pickup_label": "能量电池",
+        "interior_offsets": [
+          [96, 72],
+          [168, 120]
+        ]
+      },
+      "reward": {
+        "gate_npc": "谢谢。按协议，报酬任选一项。",
+        "choices": [
+          {
+            "choice_id": "parts",
+            "encounter_id": "sentinel_s09_parts",
+            "label": "二十份零件",
+            "prompt": "1 · 二十份零件",
+            "description": "立刻获得 20 份零件；营内西侧还会解锁额外补给点。",
+            "journal_body": "路过那座荒废军营时，门口的机器人哨兵拦下了我。\n\n它自称 S-09，能源快耗尽，请我去东侧仓库取能量电池。我取回两块还能用的电池后，它让我从报酬协议里选一样——我选了仓库西侧未登记的维修备件。\n\n铁门后堆着成箱的齿轮和板件，比它说的还多几箱。二十份零件在车厢里哐当作响，够修半扇电梯门了。\n\n【情报】战前军营仍执行友军识别与报酬协议；部分后勤物资未纳入登记系统，仍遗留在西侧仓库。",
+            "effects": [
+              { "type": "inventory_add", "items": { "parts": 20 } },
+              {
+                "type": "spawn_district_loot",
+                "pickups": [
+                  { "item_id": "parts", "offset": [220, 88] },
+                  { "item_id": "parts", "offset": [248, 112] },
+                  { "item_id": "scrap", "offset": [196, 136] }
+                ]
+              }
+            ]
+          },
+          {
+            "choice_id": "blueprint",
+            "encounter_id": "sentinel_s09_blueprint",
+            "label": "强化防御塔蓝图",
+            "prompt": "2 · 强化防御塔蓝图",
+            "description": "获得夜间布防蓝图数据；营内会留下一些可拾取的废料。",
+            "journal_body": "路过那座荒废军营时，门口的机器人哨兵拦下了我。\n\n我帮它取回能量电池后，它把 10032 军营夜间布防方案第 7 修订版交给我——比标准干扰信标多一层脉冲护盾，当年用来挡无人机。\n\n我把蓝图存进车载库。塔身结构复杂，需要额外零件才能落地，但多一层护盾值得。\n\n【情报】上层军事设施的自动防御模板仍可通过旧式数据片读取；战前无人机对策并未随人类一同消失。",
+            "effects": [
+              { "type": "inventory_add", "items": { "parts": 5 } },
+              {
+                "type": "spawn_district_loot",
+                "pickups": [
+                  { "item_id": "scrap", "offset": [180, 96] },
+                  { "item_id": "scrap", "offset": [210, 120] }
+                ]
+              }
+            ]
+          },
+          {
+            "choice_id": "branch",
+            "encounter_id": "sentinel_s09_branch",
+            "label": "变异植物的枝条",
+            "prompt": "3 · 变异植物的枝条",
+            "description": "取走门口花盆里变异植物的一截枝条；无其他物资。",
+            "journal_body": "路过那座荒废军营时，门口的机器人哨兵拦下了我。\n\n我帮它取回能量电池后，它指向门口花盆里那棵变异植物。我取走一截枝条，凉丝丝的，带着铁锈和泥土的气味。哨兵没有阻止，光学镜头暗了一下，像在说谢谢，又像在告别。\n\n【情报】地表仍有战前生物工程遗留物在无人照料下持续变异；部分哨兵单位会把「守护对象」扩展到非人类生命。",
+            "effects": []
+          }
+        ]
+      }
+    }
+  ]
+}

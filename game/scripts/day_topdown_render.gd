@@ -721,6 +721,9 @@ static func _building_colors(building_type: String) -> Dictionary:
 		"garage":
 			wall_fill = Color("#4a5560")
 			roof_fill = Color("#333c44")
+		"barracks":
+			wall_fill = Color("#5a4a40")
+			roof_fill = Color("#3a3028")
 		"market":
 			wall_fill = Color("#6a5540")
 			roof_fill = Color("#4a3c2c")
@@ -796,6 +799,12 @@ static func draw_roadside_entrance(
 	canvas.draw_rect(door_rect.grow(-1.5), door_color, true)
 	canvas.draw_string(ThemeDB.fallback_font, edge - Vector2(6, 4), "门", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#f8ecd8"))
 	return edge
+
+
+static func roadside_facade_entrance(road_rect: Rect2, side_dir: Vector2) -> Vector2:
+	var road_center := road_rect.position + road_rect.size * 0.5
+	var unit := minf(road_rect.size.x, road_rect.size.y)
+	return road_center + side_dir.normalized() * (unit * 0.36)
 
 
 static func draw_hotkey_badge(
@@ -878,13 +887,20 @@ static func draw_loot_pickup(
 	item_id: String,
 	radius: float,
 	show_label: bool = false,
+	label_override: String = "",
 ) -> void:
 	var icon_px := maxi(20, int(round(radius * 2.4)))
-	var tex := ItemIconFactory.get_texture(item_id, icon_px)
+	var draw_id := ItemIconFactory.loot_draw_id(item_id)
+	var tex: Texture2D = null
+	var icon_size := Vector2(float(icon_px), float(icon_px))
+	if draw_id == "quest_battery":
+		tex = ItemIconFactory.get_quest_battery_texture(icon_px)
+		icon_size = ItemIconFactory.quest_battery_draw_size(icon_px)
+	else:
+		tex = ItemIconFactory.get_texture(draw_id, icon_px)
 	if tex != null:
-		var half := float(icon_px) * 0.5
-		var icon_rect := Rect2(center - Vector2(half, half), Vector2(icon_px, icon_px))
-		canvas.draw_circle(center, radius + 3.0, Color(0.0, 0.0, 0.0, 0.35))
+		var icon_rect := Rect2(center - icon_size * 0.5, icon_size)
+		canvas.draw_circle(center, maxf(radius * 0.55, icon_size.x * 0.55), Color(0.0, 0.0, 0.0, 0.35))
 		canvas.draw_texture_rect(tex, icon_rect, false)
 	else:
 		var def := ItemDefs.get_def(item_id)
@@ -895,7 +911,7 @@ static func draw_loot_pickup(
 		canvas.draw_circle(center, radius, color)
 	if not show_label:
 		return
-	var name := ItemDefs.get_item_name(item_id)
+	var name := ItemIconFactory.loot_display_name(item_id, label_override)
 	var label_pos := center + Vector2(-20.0, -radius - 10.0)
 	var bubble := Rect2(label_pos + Vector2(-4.0, -12.0), Vector2(maxf(40.0, float(name.length()) * 7.0 + 8.0), 14.0))
 	canvas.draw_rect(bubble, Color(0.04, 0.07, 0.10, 0.72), true)
@@ -913,6 +929,8 @@ static func draw_building_icon(canvas: CanvasItem, center: Vector2, building_typ
 			door = Color("#8fd4a0")
 		"garage":
 			door = Color("#9ec9ff")
+		"barracks":
+			door = Color("#c8a080")
 		"market":
 			door = Color("#e8a86e")
 	canvas.draw_rect(Rect2(center - Vector2(10, 12), Vector2(20, 16)), Color("#2a2f34"), true)

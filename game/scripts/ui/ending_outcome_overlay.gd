@@ -157,8 +157,8 @@ func _enter_message_only_epilogue() -> void:
 	_body.visible = true
 	_body.text = """你没有发送终止信号。
 
-若已在通信终端留言，话语已写入前代勘探者档案。
-昆仑程序将把新的克隆体送上来——循环继续。"""
+本局勘探日记已上传至昆仑终端。
+程序将把新的克隆体送上来——循环继续。"""
 	_primary_btn.text = "返回主菜单"
 
 

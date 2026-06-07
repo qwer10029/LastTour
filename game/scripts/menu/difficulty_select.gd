@@ -18,7 +18,7 @@ func _ready() -> void:
 	hard_button.pressed.connect(func(): _select_difficulty(GameManager.Difficulty.HARD))
 	back_button.pressed.connect(_on_back_pressed)
 	if is_instance_valid(hint_label):
-		hint_label.text = "选择难度。抵达顶层通信终端写留言时，可阅读前代留言；留言供下一位勘探者参考。"
+		hint_label.text = "选择难度。到顶后通信终端会上传本局日记并展示前代记录；路遇 NPC 的遭遇会写入勘探日记。"
 
 
 func _select_difficulty(value: int) -> void:

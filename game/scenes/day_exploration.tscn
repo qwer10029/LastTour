@@ -207,7 +207,7 @@ anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
 offset_left = -300.0
-offset_top = -164.0
+	offset_top = -280.0
 offset_right = 300.0
 offset_bottom = -28.0
 
@@ -226,6 +226,24 @@ offset_bottom = 110.0
 [node name="PromptLabel" type="Label" parent="HUD/ActionPanel/MarginContainer/VBoxContainer"]
 text = "俯视废墟路网驾驶；停靠后 E 进入建筑"
 autowrap_mode = 3
+
+[node name="StoryChoiceButtons" type="VBoxContainer" parent="HUD/ActionPanel/MarginContainer/VBoxContainer"]
+visible = false
+theme_override_constants/separation = 6
+
+[node name="StoryAcceptButton" type="Button" parent="HUD/ActionPanel/MarginContainer/VBoxContainer/StoryChoiceButtons"]
+custom_minimum_size = Vector2(0, 34)
+size_flags_horizontal = 3
+text = "帮忙"
+
+[node name="StoryDeclineButton" type="Button" parent="HUD/ActionPanel/MarginContainer/VBoxContainer/StoryChoiceButtons"]
+custom_minimum_size = Vector2(0, 34)
+size_flags_horizontal = 3
+text = "算了"
+
+[node name="StoryRewardButtons" type="VBoxContainer" parent="HUD/ActionPanel/MarginContainer/VBoxContainer"]
+visible = false
+theme_override_constants/separation = 6
 
 [node name="ActionButtons" type="HBoxContainer" parent="HUD/ActionPanel/MarginContainer/VBoxContainer"]
 offset_right = 596.0

@@ -1,6 +1,6 @@
 extends Area2D
 
-signal collected(item_id: String)
+signal collected(item_id: String, pickup: Area2D)
 
 var item_id: String = "scrap"
 var _is_collected := false
@@ -36,6 +36,15 @@ func _load_texture() -> void:
 				var scale_factor := 28.0 / maxf(tex_size.x, tex_size.y)
 				sprite.scale = Vector2(scale_factor, scale_factor)
 		return
+	if item_id.begins_with("quest:") or item_id == "sentinel_battery":
+		sprite.texture = ItemIconFactory.get_quest_battery_texture(28)
+		sprite.modulate = Color("#8fd4ff")
+		if sprite.texture != null:
+			var tex_size := sprite.texture.get_size()
+			if tex_size.x > 0.0:
+				var scale_factor := 28.0 / maxf(tex_size.x, tex_size.y)
+				sprite.scale = Vector2(scale_factor, scale_factor)
+		return
 	sprite.texture = ItemIconFactory.get_texture(item_id, 28)
 	sprite.modulate = Color.WHITE
 	if sprite.texture != null:
@@ -52,6 +61,10 @@ func _refresh_label() -> void:
 		label.text = EvidenceData.title_of(_evidence_id())
 		label.add_theme_color_override("font_color", Color("#ffe28a"))
 		return
+	if item_id.begins_with("quest:") or item_id == "sentinel_battery":
+		label.text = ItemIconFactory.loot_display_name(item_id)
+		label.add_theme_color_override("font_color", Color("#b8e4ff"))
+		return
 	label.text = ItemDefs.get_item_name(item_id)
 	label.add_theme_color_override("font_color", ItemDefs.get_def(item_id).get("color", Color("#eef8ff")))
 
@@ -61,7 +74,7 @@ func _on_body_entered(body: Node) -> void:
 		return
 	if body.is_in_group("player"):
 		_is_collected = true
-		collected.emit(item_id)
+		collected.emit(item_id, self)
 		queue_free()
 
 func _is_evidence() -> bool:

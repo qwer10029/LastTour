@@ -37,7 +37,7 @@ func _ready() -> void:
 
 func _build_message_wall_popup() -> void:
 	_message_wall_popup = Window.new()
-	_message_wall_popup.title = "前代勘探者留言墙"
+	_message_wall_popup.title = "昆仑终端 · 已上传日志"
 	_message_wall_popup.initial_position = Window.WINDOW_INITIAL_POSITION_CENTER_PRIMARY_SCREEN
 	_message_wall_popup.size = Vector2i(560, 520)
 	_message_wall_popup.unresizable = true
@@ -134,43 +134,11 @@ func _build_message_wall_popup() -> void:
 func _refresh_message_wall_read() -> void:
 	if not is_instance_valid(_msg_read_content):
 		return
-	var messages: Array = MetaManager.message_wall
-	if messages.is_empty():
-		_msg_read_content.text = "[center][color=#6a8aaa]还没有留言。\n在下方选择一条或输入自定义留言，即可成为第一位勘探者。[/color][/center]"
-		return
-	var lines: PackedStringArray = []
-	for i in range(messages.size() - 1, -1, -1):
-		var entry: Dictionary = messages[i]
-		var text := str(entry.get("text", ""))
-		var layer := int(entry.get("layer", 0))
-		var day := int(entry.get("day_index", 0))
-		var choice := str(entry.get("choice_id", ""))
-		var meta := "第%d层" % layer
-		if day > 0:
-			meta += "·第%d天" % day
-		if choice != "":
-			var choice_title := "主菜单"
-			if choice == "terminal":
-				choice_title = "通信终端"
-			elif choice != "menu":
-				choice_title = RunEndingDefs.choice_title(choice)
-			meta += "·%s" % choice_title
-		lines.append("[color=#b8c7d8]%s[/color]  [color=#e8d090]%s[/color]" % [meta, text])
-		if i > 0:
-			lines.append("[color=#3a4a5a]──────────────────────────[/color]")
-	_msg_read_content.text = "\n".join(lines)
+	_msg_read_content.text = MetaManager.format_uploaded_logs_preview(8)
 
 
-func _submit_menu_message(text: String) -> void:
-	var cleaned := text.strip_edges()
-	if cleaned == "":
-		_set_msg_status("请输入或选择一条留言。", false)
-		return
-	MetaManager.append_message(cleaned, 3, 0, "menu")
-	MetaManager.save_meta()
-	_msg_custom_input.text = ""
-	_refresh_message_wall_read()
-	_set_msg_status("留言已保存！下局游戏可在顶层终端/仪式中读到。", true)
+func _submit_menu_message(_text: String) -> void:
+	_set_msg_status("日志仅在顶层通信终端上传与阅读。", false)
 
 
 func _set_msg_status(text: String, ok: bool) -> void:

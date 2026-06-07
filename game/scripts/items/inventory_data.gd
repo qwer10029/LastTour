@@ -14,16 +14,11 @@ func add(item_id: String, amount: int = 1) -> int:
 	var normalized := ItemDefs.normalize_item_id(item_id)
 	if normalized == "":
 		return 0
-	var def: Dictionary = ItemDefs.get_def(normalized)
-	if def.is_empty():
+	if ItemDefs.get_def(normalized).is_empty():
 		return 0
-	var max_stack := int(def.get("stack_max", 99))
 	var current := int(items.get(normalized, 0))
-	var room := max_stack - current
-	var added := mini(amount, room)
-	if added > 0:
-		items[normalized] = current + added
-	return added
+	items[normalized] = current + amount
+	return amount
 
 
 func remove(item_id: String, amount: int = 1) -> bool:

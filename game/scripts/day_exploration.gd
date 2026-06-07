@@ -30,6 +30,7 @@ func _ready() -> void:
 	_connect_buttons()
 	_setup_pause_ui()
 	_setup_backpack_ui()
+	_setup_story_controller()
 	_setup_run_end_ui()
 	_setup_stat_bars()
 	_setup_world_camera()

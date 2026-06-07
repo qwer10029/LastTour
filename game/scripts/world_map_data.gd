@@ -337,6 +337,13 @@ func building_label(index: int) -> String:
 			return "电梯楼"
 		"garage":
 			return "车库"
+		"barracks":
+			var story_id := str(cells[index].get("story_id", ""))
+			if story_id != "" and StoryData.has_story(story_id):
+				var custom := str(StoryData.get_story(story_id).get("building_label", ""))
+				if custom != "":
+					return custom
+			return "荒废军营"
 		"archive":
 			return "档案站"
 		"hub":
@@ -395,6 +402,7 @@ func _create_empty_cell(coord: Vector2i) -> Dictionary:
 		"seed": 0,
 		"approach_road_index": -1,
 		"entry_from_road": "",
+		"special_encounter": "",
 	}
 
 func _pick_cells(rng: RandomNumberGenerator, count: int) -> Array[Vector2i]:
@@ -978,6 +986,10 @@ func _ensure_elevator_district() -> void:
 	cells[fallback_index]["has_elevator"] = true
 
 
+func ensure_story_districts_from_data() -> void:
+	StoryData.ensure_story_districts(self)
+
+
 func to_dictionary() -> Dictionary:
 	var serialized_cells: Array = []
 	for cell in cells:
@@ -1050,6 +1062,9 @@ func _serialize_cell(cell: Dictionary) -> Dictionary:
 		"seed": int(cell.get("seed", 0)),
 		"approach_road_index": int(cell.get("approach_road_index", -1)),
 		"entry_from_road": str(cell.get("entry_from_road", "")),
+		"special_encounter": str(cell.get("special_encounter", "")),
+		"story_id": str(cell.get("story_id", "")),
+		"district_tag": str(cell.get("district_tag", "")),
 	}
 
 
@@ -1088,6 +1103,9 @@ func _deserialize_cell(data: Dictionary) -> Dictionary:
 		"seed": int(data.get("seed", 0)),
 		"approach_road_index": int(data.get("approach_road_index", -1)),
 		"entry_from_road": str(data.get("entry_from_road", "")),
+		"special_encounter": str(data.get("special_encounter", "")),
+		"story_id": str(data.get("story_id", "")),
+		"district_tag": str(data.get("district_tag", "")),
 	}
 
 

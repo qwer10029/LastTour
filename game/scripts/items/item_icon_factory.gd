@@ -81,6 +81,8 @@ static func _load_elevator_console_sprite() -> Texture2D:
 
 
 static func get_texture(item_id: String, size: int = ICON_SIZE) -> Texture2D:
+	if item_id.begins_with("quest:") or item_id == "quest_battery":
+		return get_quest_battery_texture(size)
 	var key := "%s_%d" % [item_id, size]
 	if _cache.has(key):
 		return _cache[key]
@@ -96,6 +98,61 @@ static func get_texture(item_id: String, size: int = ICON_SIZE) -> Texture2D:
 	var tex := ImageTexture.create_from_image(img)
 	_cache[key] = tex
 	return tex
+
+
+static func get_quest_battery_texture(size: int = ICON_SIZE) -> Texture2D:
+	var w := maxi(8, int(round(float(size) * 0.36)))
+	var h := maxi(18, int(round(float(size) * 1.05)))
+	var key := "quest_battery_slim_%d_%d" % [w, h]
+	if _cache.has(key):
+		return _cache[key]
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var shell := Color("#3a5870")
+	var body := Color("#58b8dc")
+	var dark := Color("#2a5870")
+	var light := Color("#c8ecff")
+	var cap := Color("#d8f4ff")
+	var mid_x := w >> 1
+	# 顶部正极帽
+	_fill_rect(img, Rect2i(mid_x - 2, 0, 4, 2), cap)
+	_fill_rect(img, Rect2i(mid_x - 1, 2, 2, 1), shell)
+	# 细长外壳
+	var body_rect := Rect2i(1, 3, w - 2, h - 5)
+	_fill_round_rect(img, body_rect, body, shell)
+	_fill_rect(img, Rect2i(body_rect.position.x + 1, body_rect.position.y + 2, body_rect.size.x - 2, body_rect.size.y - 4), dark.lightened(0.08))
+	# 电量条
+	_fill_rect(img, Rect2i(body_rect.position.x + 2, body_rect.position.y + 3, 2, body_rect.size.y - 8), light)
+	if w >= 10:
+		_fill_rect(img, Rect2i(body_rect.position.x + 5, body_rect.position.y + 5, 2, body_rect.size.y - 12), light.darkened(0.12))
+	# 底部
+	_fill_rect(img, Rect2i(1, h - 2, w - 2, 2), shell.darkened(0.15))
+	var tex := ImageTexture.create_from_image(img)
+	_cache[key] = tex
+	return tex
+
+
+static func quest_battery_draw_size(base_size: int) -> Vector2:
+	var tex := get_quest_battery_texture(base_size)
+	if tex == null:
+		return Vector2(float(base_size) * 0.36, float(base_size) * 1.05)
+	return Vector2(float(tex.get_width()), float(tex.get_height()))
+
+
+static func loot_draw_id(item_id: String) -> String:
+	if item_id.begins_with("quest:"):
+		return "quest_battery"
+	return item_id
+
+
+static func loot_display_name(item_id: String, fallback: String = "") -> String:
+	if fallback != "":
+		return fallback
+	if item_id.begins_with("quest:sentinel_battery") or item_id == "sentinel_battery":
+		return "能量电池"
+	if item_id.begins_with("quest:"):
+		return "任务物品"
+	return ItemDefs.get_item_name(item_id)
 
 
 static func _load_loot_sprite(item_id: String) -> Texture2D:

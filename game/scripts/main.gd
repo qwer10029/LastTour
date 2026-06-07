@@ -32,6 +32,7 @@ var _world_camera: Camera2D
 @export var total_layers: int = 3
 @export var base_elevator_repair_cost: int = 3
 @export var war_fog_enabled: bool = true
+@export var debug_start_at_story: bool = true
 
 var _map: WorldMapData = WorldMapData.new()
 var _mode: int = TravelMode.DRIVE
@@ -42,9 +43,12 @@ var _fuel: float = 0.0
 var _vehicle_hp: float = 100.0
 var _vehicle_hp_max: float = 100.0
 var _backpack: InventoryData = InventoryData.new()
+var _run_journal: RunJournal = RunJournal.new()
 var _survival: PlayerSurvival = PlayerSurvival.new()
 var _backpack_ui: BackpackUI
 var _backpack_open := false
+var _story_controller: StoryController
+var _story_reward_rows: Array[Button] = []
 var _current_node_index: int = -1
 var _previous_node_index: int = -1
 var _arrived_from_index: int = -1
@@ -110,6 +114,10 @@ var _night_result_applied := false
 @onready var minimap_view: MinimapView = $HUD/MapPanel/MarginContainer/VBoxContainer/MinimapView
 @onready var map_info_label: Label = $HUD/MapPanel/MarginContainer/VBoxContainer/MapInfoLabel
 @onready var prompt_label: Label = $HUD/ActionPanel/MarginContainer/VBoxContainer/PromptLabel
+@onready var story_choice_buttons: VBoxContainer = $HUD/ActionPanel/MarginContainer/VBoxContainer/StoryChoiceButtons
+@onready var story_accept_button: Button = $HUD/ActionPanel/MarginContainer/VBoxContainer/StoryChoiceButtons/StoryAcceptButton
+@onready var story_decline_button: Button = $HUD/ActionPanel/MarginContainer/VBoxContainer/StoryChoiceButtons/StoryDeclineButton
+@onready var story_reward_buttons: VBoxContainer = $HUD/ActionPanel/MarginContainer/VBoxContainer/StoryRewardButtons
 @onready var disembark_button: Button = $HUD/ActionPanel/MarginContainer/VBoxContainer/ActionButtons/DisembarkButton
 @onready var return_button: Button = $HUD/ActionPanel/MarginContainer/VBoxContainer/ActionButtons/ReturnButton
 @onready var repair_button: Button = $HUD/ActionPanel/MarginContainer/VBoxContainer/ActionButtons/RepairButton
@@ -134,6 +142,7 @@ func _ready() -> void:
 	_connect_buttons()
 	_setup_pause_ui()
 	_setup_backpack_ui()
+	_setup_story_controller()
 	_setup_run_end_ui()
 	_setup_stat_bars()
 	_setup_world_camera()
@@ -436,6 +445,8 @@ func _start_new_run() -> void:
 	_run_ended = false
 	_run_end_reason = ""
 	_final_choice_id = ""
+	_run_journal = RunJournal.new()
+	_story_controller.reset_for_new_run()
 	_init_player_loadout()
 	_generate_layer_map()
 	_fuel = fuel_max
@@ -450,7 +461,7 @@ func _start_new_run() -> void:
 		time_system.start_day(1)
 
 func _ensure_input_actions() -> void:
-	for action_name in ["move_up", "move_down", "move_left", "move_right", "interact", "repair", "pause", "enter_defense_mode", "toggle_backpack", "cycle_building"]:
+	for action_name in ["move_up", "move_down", "move_left", "move_right", "interact", "repair", "pause", "enter_defense_mode", "toggle_backpack", "toggle_journal", "cycle_building"]:
 		if not InputMap.has_action(action_name):
 			InputMap.add_action(action_name)
 	# 步行与驾车/选路均支持 WASD 与方向键（↑北 ↓南 ←西 →东）
@@ -473,6 +484,7 @@ func _ensure_input_actions() -> void:
 	_register_key_action("pause", KEY_P)
 	_register_key_action("enter_defense_mode", KEY_F)
 	_register_key_action("toggle_backpack", KEY_B)
+	_register_key_action("toggle_journal", KEY_J)
 	_register_key_action("cycle_building", KEY_Q)
 
 func _reset_action_keys(action_name: String) -> void:
@@ -491,6 +503,12 @@ func _register_key_action(action_name: String, keycode: Key) -> void:
 func _connect_buttons() -> void:
 	disembark_button.pressed.connect(_on_disembark_pressed)
 	return_button.pressed.connect(_on_return_pressed)
+	if is_instance_valid(story_accept_button):
+		HudTheme.apply_choice_button(story_accept_button, Color("#7ec8a0"))
+		story_accept_button.pressed.connect(_on_story_accept_pressed)
+	if is_instance_valid(story_decline_button):
+		HudTheme.apply_choice_button(story_decline_button, Color("#c8a080"))
+		story_decline_button.pressed.connect(_on_story_decline_pressed)
 	repair_button.pressed.connect(_on_repair_pressed)
 	if is_instance_valid(backpack_button):
 		backpack_button.pressed.connect(_toggle_backpack)
@@ -548,40 +566,9 @@ func _spawn_resources() -> void:
 			if pickup.has_signal("collected"):
 				pickup.collected.connect(_on_resource_collected.bind(district_index))
 			_resource_nodes.append(pickup)
-	_spawn_evidence_pickups()
-
-func _spawn_evidence_pickups() -> void:
-	var ids := EvidenceData.ids_for_layer(_current_layer)
-	if ids.is_empty():
-		return
-	var district_indices: Array = _map.district_indices.duplicate()
-	if district_indices.is_empty():
-		return
-	var rng := RandomNumberGenerator.new()
-	rng.randomize()
-	for evidence_id in ids:
-		if MetaManager.evidence_collected.has(evidence_id):
-			continue
-		var district_index: int = int(district_indices[rng.randi_range(0, district_indices.size() - 1)])
-		var rect := _map.cell_rect(district_index)
-		var spawn_offset := Vector2(
-			rng.randf_range(rect.size.x * 0.25, rect.size.x * 0.75),
-			rng.randf_range(rect.size.y * 0.25, rect.size.y * 0.75)
-		)
-		var pickup := resource_scene.instantiate()
-		add_child(pickup)
-		pickup.visible = false
-		pickup.position = rect.position + spawn_offset
-		pickup.set_meta("district_index", district_index)
-		pickup.set_meta("item_id", "evidence:%s" % evidence_id)
-		if pickup.has_method("setup_loot"):
-			pickup.setup_loot("evidence:%s" % evidence_id)
-		if pickup.has_signal("collected"):
-			pickup.collected.connect(_on_resource_collected.bind(district_index))
-		_resource_nodes.append(pickup)
 
 func _process(_delta: float) -> void:
-	if _run_ended or _game_paused or _backpack_open:
+	if _run_ended or _game_paused or _backpack_open or _story_blocks_ui():
 		return
 	if Input.is_action_just_pressed("enter_defense_mode"):
 		_try_enter_defense_mode()
@@ -613,8 +600,14 @@ func _physics_process(delta: float) -> void:
 		if _mode == TravelMode.FOOT:
 			_handle_foot_interact()
 		elif _mode == TravelMode.DRIVE and _segment_target_index < 0:
-			if not _get_enterable_buildings().is_empty():
-				_enter_selected_building()
+			if _story_controller.handle_drive_interact(_current_node_index):
+				pass
+			elif not _get_enterable_buildings().is_empty():
+				var district_index := _selected_enterable_district()
+				if not _can_enter_district(district_index):
+					_story_controller.try_enter_district(district_index)
+				else:
+					_enter_selected_building()
 			else:
 				_take_back_at_node()
 	_update_drive_exit_lock()
@@ -622,7 +615,13 @@ func _physics_process(delta: float) -> void:
 		var buildings := _get_enterable_buildings()
 		if buildings.size() > 1 and Input.is_action_just_pressed("cycle_building"):
 			_building_pick_index = (_building_pick_index + 1) % buildings.size()
-		_try_begin_drive_from_input()
+		var gate_active := (
+			is_instance_valid(_story_controller)
+			and is_instance_valid(_story_controller.gate_dialogue)
+			and _story_controller.gate_dialogue.is_active()
+		)
+		if not gate_active:
+			_try_begin_drive_from_input()
 	if Input.is_action_just_pressed("repair"):
 		_attempt_repair_elevator()
 
@@ -767,7 +766,9 @@ func _try_collect_interior_pickups() -> void:
 			continue
 		var loot_id := str(node.get_meta("item_id", "scrap"))
 		if node.has_signal("collected"):
-			node.collected.emit(loot_id)
+			node.collected.emit(loot_id, node)
+	if is_instance_valid(_story_controller):
+		_story_controller.try_collect_foot_loot(_current_district_index, _foot_local_pos)
 
 
 func _apply_foot_world_position() -> void:
@@ -784,12 +785,26 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 		if not _game_paused and not _backpack_open and _mode == TravelMode.DRIVE and _segment_target_index < 0:
+			var gate := _story_controller.gate_dialogue if is_instance_valid(_story_controller) else null
+			var story_id := _story_controller.story_id_at_node(_current_node_index) if is_instance_valid(_story_controller) else ""
+			if gate != null and story_id != "" and gate.phase == StoryGateDialogue.Phase.REWARD_CHOICE:
+				var choice_count := StoryData.reward_choice_count(story_id)
+				for i in range(mini(9, choice_count)):
+					var reward_key := Key.KEY_1 + i
+					if event.keycode == reward_key or event.physical_keycode == reward_key:
+						_story_controller.choose_reward_index(i)
+						get_viewport().set_input_as_handled()
+						return
 			var buildings := _get_enterable_buildings()
 			for i in range(mini(9, buildings.size())):
 				var key := Key.KEY_1 + i
 				if event.keycode == key or event.physical_keycode == key:
 					_building_pick_index = i
-					_enter_selected_building()
+					var district_index := int(buildings[i].get("district_index", -1))
+					if not _can_enter_district(district_index):
+						_story_controller.try_enter_district(district_index)
+					else:
+						_enter_selected_building()
 					get_viewport().set_input_as_handled()
 					return
 
@@ -799,6 +814,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event.is_action_pressed("toggle_backpack"):
 		_toggle_backpack()
+		get_viewport().set_input_as_handled()
+		return
+	if event.is_action_pressed("toggle_journal"):
+		_open_journal()
 		get_viewport().set_input_as_handled()
 		return
 	if _backpack_open and event.is_action_pressed("pause"):
@@ -1070,6 +1089,8 @@ func _begin_foot_mode(district_index: int = -1) -> void:
 		district_index = _current_district_index
 	if district_index < 0 or not _map.is_district(district_index):
 		return
+	if not _can_enter_district(district_index):
+		return
 	_current_district_index = district_index
 	_map.ensure_foot_layout(_current_district_index)
 	_mode = TravelMode.FOOT
@@ -1093,8 +1114,29 @@ func _begin_foot_mode(district_index: int = -1) -> void:
 	for node in _resource_nodes:
 		if is_instance_valid(node):
 			node.visible = false
+	_story_controller.on_entered_district_foot(_current_district_index)
+	_story_controller.fix_foot_loot_positions(_current_district_index)
 
 func _return_to_vehicle() -> void:
+	if _story_controller.on_exited_district_to_drive(_current_district_index):
+		_mode = TravelMode.DRIVE
+		_current_district_index = -1
+		if is_instance_valid(_player):
+			_player.set_blocked_checker(Callable())
+			_player.set_physics_process(true)
+			_player.set_active(false)
+		if is_instance_valid(_vehicle):
+			_vehicle.set_active(true)
+			if _map.is_valid_index(_current_node_index):
+				_vehicle.global_position = _road_center(_current_node_index)
+		_sync_day_entity_visibility()
+		for node in _resource_nodes:
+			if is_instance_valid(node):
+				node.visible = false
+		if _current_node_index >= 0:
+			_halt_at_node(_current_node_index)
+		_refresh_ui()
+		return
 	_mode = TravelMode.DRIVE
 	if is_instance_valid(_player):
 		_player.set_blocked_checker(Callable())
@@ -1112,18 +1154,39 @@ func _return_to_vehicle() -> void:
 		_halt_at_node(_current_node_index)
 
 func _on_disembark_pressed() -> void:
+	if is_instance_valid(_story_controller) and is_instance_valid(_story_controller.gate_dialogue):
+		var gate := _story_controller.gate_dialogue
+		if gate.phase == StoryGateDialogue.Phase.INTRO_CHOICE:
+			_story_controller.accept_gate_choice()
+			return
+		if gate.phase == StoryGateDialogue.Phase.REWARD_CHOICE:
+			return
 	if _mode == TravelMode.DRIVE and not _get_enterable_buildings().is_empty():
+		var district_index := _selected_enterable_district()
+		if not _can_enter_district(district_index):
+			_story_controller.try_enter_district(district_index)
+			return
 		_enter_selected_building()
+
 
 func _on_return_pressed() -> void:
 	if _mode == TravelMode.FOOT:
 		_return_to_vehicle()
+		return
+	if is_instance_valid(_story_controller) and is_instance_valid(_story_controller.gate_dialogue):
+		if _story_controller.gate_dialogue.phase == StoryGateDialogue.Phase.INTRO_CHOICE:
+			_story_controller.decline_gate_choice()
+			_refresh_ui()
 
 func _on_repair_pressed() -> void:
 	_attempt_repair_elevator()
 
 func _can_disembark() -> bool:
-	return _mode == TravelMode.DRIVE and _segment_target_index < 0 and not _get_enterable_buildings().is_empty()
+	if _mode != TravelMode.DRIVE or _segment_target_index >= 0:
+		return false
+	if _get_enterable_buildings().is_empty():
+		return false
+	return _can_enter_district(_selected_enterable_district())
 
 
 func _sync_day_entity_visibility() -> void:
@@ -1218,27 +1281,28 @@ func _attempt_repair_elevator() -> void:
 		return
 	_show_repair_choices()
 
-func _on_resource_collected(item_id: String, district_index: int) -> void:
-	if not _map.collect_resource(district_index):
-		return
+func _on_resource_collected(district_index: int, item_id: String, pickup: Area2D) -> void:
 	var loot_id := str(item_id)
 	if loot_id == "":
 		loot_id = "scrap"
-	if loot_id.begins_with("evidence:"):
-		var ev_id := loot_id.substr("evidence:".length())
-		if MetaManager.add_evidence(ev_id):
-			MetaManager.save_meta()
-			_show_evidence_pickup_toast(ev_id)
+	if loot_id.begins_with("quest:"):
+		if _story_controller.on_quest_item_collected(loot_id, district_index):
+			_refresh_ui()
+		if is_instance_valid(pickup):
+			pickup.queue_free()
+		return
+	var skip_map := is_instance_valid(pickup) and bool(pickup.get_meta("skip_map_resource", false))
+	if not skip_map and not _map.collect_resource(district_index):
 		return
 	var added := _backpack.add(loot_id, 1)
 	if added > 0:
 		_refresh_ui()
-		if is_instance_valid(_backpack_ui) and _backpack_ui.is_open():
-			_backpack_ui.show_backpack(_backpack)
+		_refresh_backpack_if_open()
 
-func _show_evidence_pickup_toast(evidence_id: String) -> void:
-	var title := EvidenceData.title_of(evidence_id)
-	print("[Evidence] 拾取：%s" % title)
+
+func _refresh_backpack_if_open() -> void:
+	if is_instance_valid(_backpack_ui) and _backpack_ui.is_open():
+		_backpack_ui.show_backpack(_backpack, _run_journal)
 
 func _current_focus_position() -> Vector2:
 	if _mode == TravelMode.FOOT and _current_district_index >= 0:
@@ -1369,7 +1433,7 @@ func _init_player_loadout() -> void:
 
 
 func _toggle_backpack() -> void:
-	if _run_ended:
+	if _run_ended or _story_blocks_ui():
 		return
 	if is_instance_valid(night_td) and night_td.visible:
 		if _backpack_open:
@@ -1383,13 +1447,26 @@ func _toggle_backpack() -> void:
 		_open_backpack()
 
 
-func _open_backpack() -> void:
+func _open_backpack(open_journal_tab: bool = false) -> void:
 	if not is_instance_valid(_backpack_ui):
 		return
 	_backpack_open = true
-	_backpack_ui.show_backpack(_backpack)
+	_backpack_ui.show_backpack(_backpack, _run_journal, open_journal_tab)
 	if is_instance_valid(time_system) and not _is_night_phase():
 		time_system.pause()
+
+
+func _open_journal() -> void:
+	if _run_ended or _story_blocks_ui():
+		return
+	if is_instance_valid(night_td) and night_td.visible:
+		return
+	if not _is_exploration_allowed() and not _backpack_open:
+		return
+	if _backpack_open:
+		_close_backpack()
+		return
+	_open_backpack(true)
 
 
 func _close_backpack() -> void:
@@ -1409,13 +1486,13 @@ func _on_backpack_closed() -> void:
 func _on_backpack_use_item(item_id: String) -> void:
 	if not _use_backpack_item(item_id):
 		return
-	_backpack_ui.show_backpack(_backpack)
+	_backpack_ui.show_backpack(_backpack, _run_journal)
 	_refresh_ui()
 
 
 func _on_backpack_discard_item(item_id: String) -> void:
 	if _backpack.remove(item_id, 1):
-		_backpack_ui.show_backpack(_backpack)
+		_backpack_ui.show_backpack(_backpack, _run_journal)
 		_refresh_ui()
 
 
@@ -1437,7 +1514,7 @@ func _on_backpack_craft_parts() -> void:
 	_backpack.add("parts", parts_out)
 
 	print("[Craft] 已将 %d 废料 + %d 燃料合成为 %d 零件。" % [scrap_cost, fuel_cost, parts_out])
-	_backpack_ui.show_backpack(_backpack)
+	_backpack_ui.show_backpack(_backpack, _run_journal)
 	_refresh_ui()
 
 
@@ -1677,10 +1754,8 @@ func _open_communication_terminal() -> void:
 	if not is_instance_valid(_communication_terminal):
 		_begin_final_ceremony()
 		return
-	var evidence_count := MetaManager.evidence_count()
-	var threshold := MetaManager.EVIDENCE_THRESHOLD_FOR_TRANSFER
 	var day_n := time_system.day_index if is_instance_valid(time_system) else 1
-	_communication_terminal.start_flow(evidence_count, threshold, _current_layer, day_n)
+	_communication_terminal.start_flow(_run_journal.get_entries(), _current_layer, day_n)
 
 
 func _on_terminal_strike() -> void:
@@ -1945,6 +2020,8 @@ func capture_save_data() -> Dictionary:
 			"player_x": player_pos.x,
 			"player_y": player_pos.y,
 		},
+		"journal": _run_journal.to_array(),
+		"stories": _story_controller.to_save_dict(),
 	}
 
 
@@ -1960,6 +2037,12 @@ func _apply_save_data(data: Dictionary) -> void:
 	_vehicle_hp = clampf(_vehicle_hp, 0.0, _vehicle_hp_max)
 
 	_map.load_from_dictionary(data.get("map", {}))
+	_run_journal = RunJournal.new()
+	_run_journal.load_from_array(data.get("journal", []))
+	var stories_save: Dictionary = data.get("stories", {})
+	if stories_save.is_empty() and data.has("sentinel"):
+		stories_save = _migrate_sentinel_save_to_stories(data.get("sentinel", {}))
+	_story_controller.load_save_dict(stories_save)
 	var travel: Dictionary = data.get("travel", {})
 	_mode = int(travel.get("mode", TravelMode.DRIVE))
 	_fuel = float(travel.get("fuel", fuel_max))
@@ -1992,6 +2075,7 @@ func _apply_save_data(data: Dictionary) -> void:
 		time_system.load_from_dictionary(data.get("time", {}))
 
 	_spawn_resources()
+	_story_controller.restore_after_load()
 	_refresh_resource_pickups()
 	if is_instance_valid(minimap_view):
 		minimap_view.set_world_map(_map)
@@ -2090,7 +2174,16 @@ func _refresh_resource_pickups() -> void:
 			continue
 		var district_index := int(node.get_meta("district_index"))
 		var remaining := _map.sector_resource_remaining(district_index)
-		node.visible = _mode == TravelMode.FOOT and district_index == _current_district_index and remaining > 0
+		var show_map_loot := (
+			_mode == TravelMode.FOOT
+			and district_index == _current_district_index
+			and remaining > 0
+			and not (
+				is_instance_valid(_story_controller)
+				and _story_controller.should_hide_map_loot(district_index)
+			)
+		)
+		node.visible = show_map_loot
 		var pickup_label := node.get_node_or_null("Label") as Label
 		if is_instance_valid(pickup_label):
 			var show_name := false
@@ -2101,6 +2194,8 @@ func _refresh_resource_pickups() -> void:
 			if show_name:
 				pickup_label.add_theme_font_size_override("font_size", 10)
 				HudTheme.apply_label(pickup_label)
+	_story_controller.refresh_quest_pickups(_mode == TravelMode.FOOT, _current_district_index)
+	_story_controller.refresh_unlocked_loot(_mode == TravelMode.FOOT, _current_district_index)
 
 
 func _should_show_loot_label_at(local_pos: Vector2) -> bool:
@@ -2492,6 +2587,8 @@ func _refresh_ui() -> void:
 func _update_prompts() -> void:
 	prompt_label.text = ""
 	prompt_label.visible = false
+	_set_story_choice_buttons_visible(false)
+	_clear_story_reward_buttons()
 	disembark_button.visible = false
 	return_button.visible = false
 	repair_button.visible = false
@@ -2499,6 +2596,135 @@ func _update_prompts() -> void:
 		back_track_button.visible = false
 	_sync_junction_buttons()
 	_sync_action_panel_visibility()
+	_update_story_gate_prompts()
+	_update_foot_prompts()
+
+
+func _update_foot_prompts() -> void:
+	if _mode != TravelMode.FOOT or _current_district_index < 0 or _is_night_phase():
+		return
+	if _game_paused or _backpack_open:
+		return
+	if _can_repair_elevator() and _is_near_elevator_console():
+		return
+	var hint := "E 返回车辆"
+	if is_instance_valid(_story_controller):
+		hint = _story_controller.foot_door_hint(_current_district_index)
+	$HUD/ActionPanel.visible = true
+	prompt_label.text = hint
+	prompt_label.visible = true
+	_sync_action_panel_visibility()
+
+
+func _update_story_gate_prompts() -> void:
+	if _mode != TravelMode.DRIVE or _segment_target_index >= 0 or _is_night_phase():
+		return
+	if not is_instance_valid(_story_controller):
+		return
+	var story_id := _story_controller.story_id_at_node(_current_node_index)
+	if story_id == "":
+		return
+	var prompt: Dictionary = _story_controller.build_prompt(story_id)
+	if (
+		str(prompt.get("text", "")).is_empty()
+		and not bool(prompt.get("show_story_choice", false))
+		and not bool(prompt.get("show_reward_choice", false))
+	):
+		return
+	$HUD/ActionPanel.visible = true
+	if bool(prompt.get("show_reward_choice", false)):
+		prompt_label.text = str(prompt.get("text", ""))
+		prompt_label.visible = not prompt_label.text.strip_edges().is_empty()
+		_show_story_reward_choices(story_id)
+		return
+	if bool(prompt.get("show_story_choice", false)):
+		prompt_label.text = str(prompt.get("text", ""))
+		prompt_label.visible = not prompt_label.text.strip_edges().is_empty()
+		story_accept_button.text = str(prompt.get("disembark", "帮忙"))
+		story_decline_button.text = str(prompt.get("decline", "算了"))
+		_set_story_choice_buttons_visible(true)
+		return
+	prompt_label.text = str(prompt.get("text", ""))
+	prompt_label.visible = true
+	if bool(prompt.get("show_disembark", false)):
+		disembark_button.text = str(prompt.get("disembark", "确认"))
+		disembark_button.visible = true
+	if bool(prompt.get("show_decline", false)):
+		return_button.text = str(prompt.get("decline", "取消"))
+		return_button.visible = true
+
+
+func _set_story_choice_buttons_visible(visible: bool) -> void:
+	if is_instance_valid(story_choice_buttons):
+		story_choice_buttons.visible = visible
+
+
+func _clear_story_reward_buttons() -> void:
+	_story_reward_rows.clear()
+	if not is_instance_valid(story_reward_buttons):
+		return
+	for child in story_reward_buttons.get_children():
+		child.queue_free()
+	story_reward_buttons.visible = false
+
+
+func _show_story_reward_choices(story_id: String) -> void:
+	_set_story_choice_buttons_visible(false)
+	_clear_story_reward_buttons()
+	if not is_instance_valid(story_reward_buttons):
+		return
+	var choices := StoryData.reward_choices(story_id)
+	var accents: Array[Color] = [
+		Color("#7ec8a0"),
+		Color("#8ec8e8"),
+		Color("#c8a080"),
+		Color("#bb8fce"),
+		Color("#e8a86e"),
+	]
+	for i in range(choices.size()):
+		if typeof(choices[i]) != TYPE_DICTIONARY:
+			continue
+		var choice: Dictionary = choices[i]
+		var btn := Button.new()
+		btn.custom_minimum_size = Vector2(0, 56)
+		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		var title := str(choice.get("prompt", choice.get("label", "")))
+		var desc := str(choice.get("description", ""))
+		btn.text = title if desc.is_empty() else "%s\n%s" % [title, desc]
+		btn.add_theme_font_size_override("font_size", 12)
+		HudTheme.apply_choice_button(btn, accents[i % accents.size()])
+		var index := i
+		btn.pressed.connect(func() -> void: _on_story_reward_pressed(index))
+		story_reward_buttons.add_child(btn)
+		_story_reward_rows.append(btn)
+	story_reward_buttons.visible = not _story_reward_rows.is_empty()
+
+
+func _on_story_reward_pressed(index: int) -> void:
+	if not is_instance_valid(_story_controller):
+		return
+	var gate := _story_controller.gate_dialogue
+	if not is_instance_valid(gate) or gate.phase != StoryGateDialogue.Phase.REWARD_CHOICE:
+		return
+	_story_controller.choose_reward_index(index)
+
+
+func _on_story_accept_pressed() -> void:
+	if not is_instance_valid(_story_controller):
+		return
+	var gate := _story_controller.gate_dialogue
+	if is_instance_valid(gate) and gate.phase == StoryGateDialogue.Phase.INTRO_CHOICE:
+		_story_controller.accept_gate_choice()
+
+
+func _on_story_decline_pressed() -> void:
+	if not is_instance_valid(_story_controller):
+		return
+	var gate := _story_controller.gate_dialogue
+	if is_instance_valid(gate) and gate.phase == StoryGateDialogue.Phase.INTRO_CHOICE:
+		_story_controller.decline_gate_choice()
+		_refresh_ui()
 
 
 func _sync_junction_buttons() -> void:
@@ -2523,6 +2749,10 @@ func _sync_action_panel_visibility() -> void:
 		if is_instance_valid(btn) and btn.visible:
 			has_content = true
 			break
+	if is_instance_valid(story_choice_buttons) and story_choice_buttons.visible:
+		has_content = true
+	if is_instance_valid(story_reward_buttons) and story_reward_buttons.visible:
+		has_content = true
 	panel.visible = has_content
 
 
@@ -2845,6 +3075,9 @@ func _draw_day_overworld() -> void:
 	if view_rect.has_point(vpos):
 		DayTopdownRender.draw_vehicle_marker(self, vpos, 1.0, _current_travel_axis(), _vehicle_facing)
 
+	if is_instance_valid(_story_controller):
+		_story_controller.draw_gate_bubbles(self, vpos, Callable(self, "_draw_world_speech_bubble"))
+
 	if _segment_target_index < 0 and _map.is_valid_index(_current_node_index):
 		var node_center := _map.cell_center(_current_node_index)
 		if view_rect.has_point(node_center):
@@ -2864,14 +3097,23 @@ func _draw_day_overworld() -> void:
 				draw_rect(Rect2(tip - Vector2(8, 8), Vector2(16, 16)), Color("#e8fff0"), true)
 
 
-func _draw_door_exit_hint(door_rect: Rect2) -> void:
-	if not _is_near_foot_door():
+func _draw_world_speech_bubble(anchor: Vector2, text: String, fill: Color, border: Color) -> void:
+	var bubble_w := clampf(float(text.length()) * 11.0 + 20.0, 72.0, 220.0)
+	var bubble_h := 22.0
+	var bubble_pos := Vector2(anchor.x - bubble_w * 0.5, anchor.y - bubble_h - 6.0)
+	draw_rect(Rect2(bubble_pos, Vector2(bubble_w, bubble_h)), Color(0.05, 0.09, 0.13, 0.84), true)
+	draw_rect(Rect2(bubble_pos, Vector2(bubble_w, bubble_h)), border, false, 1.0)
+	HudTheme.draw_string(self, bubble_pos + Vector2(8.0, 14.0), text, 11, fill)
+
+
+func _draw_door_exit_hint(_door_rect: Rect2) -> void:
+	if _current_district_index < 0 or _mode != TravelMode.FOOT:
 		return
-	var door_center := door_rect.position + door_rect.size * 0.5
-	var text := "E 返回车辆"
-	var bubble_w := 72.0
+	var text := _story_controller.foot_door_hint(_current_district_index) if is_instance_valid(_story_controller) else "E 返回车辆"
+	var player_panel := _foot_local_to_panel(_foot_local_pos, _current_district_index)
+	var bubble_w := clampf(float(text.length()) * 10.0 + 24.0, 72.0, 140.0)
 	var bubble_h := 16.0
-	var bubble_pos := Vector2(door_center.x - bubble_w * 0.5, door_rect.position.y - 20.0)
+	var bubble_pos := Vector2(player_panel.x - bubble_w * 0.5, player_panel.y - 28.0)
 	draw_rect(Rect2(bubble_pos, Vector2(bubble_w, bubble_h)), Color(0.05, 0.09, 0.13, 0.74), true)
 	draw_rect(Rect2(bubble_pos, Vector2(bubble_w, bubble_h)), Color("#c8a060", 0.42), false, 1.0)
 	HudTheme.draw_string(self, bubble_pos + Vector2(10.0, 12.0), text, 10, Color("#f0d8a0"))
@@ -2880,7 +3122,7 @@ func _draw_door_exit_hint(door_rect: Rect2) -> void:
 func _handle_foot_interact() -> void:
 	if _is_near_elevator_console():
 		_attempt_repair_elevator()
-	elif _is_near_foot_door():
+	else:
 		_return_to_vehicle()
 
 
@@ -3052,17 +3294,47 @@ func _draw_foot_interior() -> void:
 		_foot_is_walking,
 	)
 	var foot_origin := _map.get_foot_origin(_current_district_index)
-	for node in _resource_nodes:
+	var hide_map_loot := (
+		is_instance_valid(_story_controller)
+		and _story_controller.should_hide_map_loot(_current_district_index)
+	)
+	if not hide_map_loot:
+		for node in _resource_nodes:
+			if not is_instance_valid(node):
+				continue
+			if int(node.get_meta("district_index", -1)) != _current_district_index:
+				continue
+			var loot_local := node.global_position - foot_origin
+			var loot_panel := _foot_local_to_panel(loot_local, _current_district_index)
+			var loot_id := str(node.get_meta("item_id", "scrap"))
+			var loot_radius := maxf(tile_px, tile_py) * 0.36
+			var show_loot_name := _should_show_loot_label_at(loot_local)
+			DayTopdownRender.draw_loot_pickup(self, loot_panel, loot_id, loot_radius, show_loot_name)
+	_draw_interior_story_loot(tile_px, tile_py)
+
+
+func _draw_interior_story_loot(tile_px: float, tile_py: float) -> void:
+	if not is_instance_valid(_story_controller) or _current_district_index < 0:
+		return
+	var loot_radius := maxf(tile_px, tile_py) * 0.36
+	for node in _story_controller.get_foot_loot_nodes():
 		if not is_instance_valid(node):
 			continue
-		if int(node.get_meta("district_index", -1)) != _current_district_index:
+		if not _story_controller.is_foot_loot_visible(node, _current_district_index):
 			continue
-		var loot_local := node.global_position - foot_origin
-		var loot_panel := _foot_local_to_panel(loot_local, _current_district_index)
+		var loot_local: Vector2 = _story_controller.get_foot_loot_local(node, _current_district_index)
+		var loot_panel: Vector2 = _foot_local_to_panel(loot_local, _current_district_index)
 		var loot_id := str(node.get_meta("item_id", "scrap"))
-		var loot_radius := maxf(tile_px, tile_py) * 0.36
 		var show_loot_name := _should_show_loot_label_at(loot_local)
-		DayTopdownRender.draw_loot_pickup(self, loot_panel, loot_id, loot_radius, show_loot_name)
+		var label_text := _story_controller.foot_loot_label(node)
+		DayTopdownRender.draw_loot_pickup(
+			self,
+			loot_panel,
+			loot_id,
+			loot_radius,
+			show_loot_name,
+			label_text,
+		)
 
 func _draw_night_camp_background() -> void:
 	var view_size := get_viewport_rect().size
@@ -3083,8 +3355,62 @@ func _draw_night_camp_background() -> void:
 		draw_circle(Vector2(star_x, star_y), 1.5, Color(0.7, 0.75, 0.9, 0.35))
 
 
+func _setup_story_controller() -> void:
+	_story_controller = StoryController.new()
+	_story_controller.name = "StoryController"
+	add_child(_story_controller)
+	_story_controller.setup(self)
+	_story_controller.ui_refresh_requested.connect(_on_story_ui_refresh)
+
+
+func _on_story_ui_refresh() -> void:
+	_refresh_ui()
+	_refresh_backpack_if_open()
+
+
+func _story_blocks_ui() -> bool:
+	return is_instance_valid(_story_controller) and _story_controller.is_ui_locked()
+
+
+func _selected_enterable_district() -> int:
+	var buildings := _get_enterable_buildings()
+	if buildings.is_empty():
+		return -1
+	_building_pick_index = clampi(_building_pick_index, 0, buildings.size() - 1)
+	return int(buildings[_building_pick_index].get("district_index", -1))
+
+
+func _can_enter_district(district_index: int) -> bool:
+	if not is_instance_valid(_story_controller):
+		return district_index >= 0
+	return _story_controller.can_enter_district(district_index)
+
+
+func _migrate_sentinel_save_to_stories(sentinel: Dictionary) -> Dictionary:
+	var phase := StoryRunState.PHASE_NONE
+	if bool(sentinel.get("completed", false)):
+		phase = StoryRunState.PHASE_DONE
+	elif bool(sentinel.get("quest_active", false)):
+		if int(sentinel.get("batteries_collected", 0)) >= 2:
+			phase = StoryRunState.PHASE_REWARD
+		else:
+			phase = StoryRunState.PHASE_QUEST
+	return {
+		"sentinel_s09": {
+			"phase": phase,
+			"district": int(sentinel.get("district_index", -1)),
+			"collect_count": int(sentinel.get("batteries_collected", 0)),
+		},
+	}
+
+
 func _generate_layer_map() -> void:
+	if is_instance_valid(_story_controller):
+		_story_controller.reset_for_new_run()
 	_map.generate(map_columns, map_rows, cell_size)
+	StoryData.ensure_story_districts(_map)
+	if debug_start_at_story:
+		StoryData.set_debug_start_near_story(_map)
 	_elevator_repair_progress = 0
 	_current_district_index = -1
 
