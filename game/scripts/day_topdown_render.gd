@@ -949,6 +949,40 @@ static func draw_interior_door(canvas: CanvasItem, tile_rect: Rect2, emphasized:
 	)
 
 
+static func draw_elevator_console(
+	canvas: CanvasItem,
+	tile_rect: Rect2,
+	highlighted: bool = false,
+	progress: float = 0.0,
+) -> void:
+	var icon_px := int(minf(tile_rect.size.x, tile_rect.size.y) * 0.82)
+	var tex := ItemIconFactory.get_elevator_console_texture(icon_px)
+	var center := tile_rect.position + tile_rect.size * 0.5
+	if highlighted:
+		canvas.draw_circle(center, float(icon_px) * 0.56, Color("#f0c168", 0.20))
+	if tex != null:
+		var half := float(icon_px) * 0.5
+		canvas.draw_texture_rect(
+			tex,
+			Rect2(center - Vector2(half, half), Vector2(icon_px, icon_px)),
+			false,
+		)
+	if progress <= 0.0:
+		return
+	var bar_w := tile_rect.size.x * 0.62
+	var bar_h := 3.0
+	var bar_pos := Vector2(
+		center.x - bar_w * 0.5,
+		tile_rect.end.y - bar_h - 2.0,
+	)
+	canvas.draw_rect(Rect2(bar_pos, Vector2(bar_w, bar_h)), Color(0.06, 0.09, 0.12, 0.55), true)
+	canvas.draw_rect(
+		Rect2(bar_pos, Vector2(bar_w * clampf(progress, 0.0, 1.0), bar_h)),
+		Color("#52a872", 0.88),
+		true,
+	)
+
+
 static func reload_player_sprite() -> void:
 	_player_sprite_ready = false
 	_tex_player_foot = null

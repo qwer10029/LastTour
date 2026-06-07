@@ -79,7 +79,13 @@ var _pause_layer: CanvasLayer
 var _pause_panel: PanelContainer
 var _pause_confirm: ConfirmationDialog
 var _war_fog_checkbox: CheckBox
-var _repair_choice_popup: Window
+var _repair_choice_panel: PanelContainer
+var _repair_progress_label: Label
+var _repair_progress_bar: ProgressBar
+var _repair_hint_label: Label
+var _repair_parts_btn: Button
+var _repair_scrap_btn: Button
+var _repair_wood_scrap_btn: Button
 var _pda_panel: PdaHudPanel
 
 @onready var time_system: TimeSystem = $Systems/TimeSystem
@@ -213,57 +219,217 @@ func _setup_minimap_hud() -> void:
 
 
 func _setup_repair_choice_popup() -> void:
-	_repair_choice_popup = Window.new()
-	_repair_choice_popup.title = "选择修复材料"
-	_repair_choice_popup.initial_position = Window.WINDOW_INITIAL_POSITION_CENTER_PRIMARY_SCREEN
-	_repair_choice_popup.size = Vector2i(320, 220)
-	_repair_choice_popup.unresizable = true
-	_repair_choice_popup.visible = false
-	_repair_choice_popup.close_requested.connect(_repair_choice_popup.hide)
+	var hud: CanvasLayer = get_node_or_null("HUD") as CanvasLayer
+	if hud == null:
+		return
+
+	_repair_choice_panel = PanelContainer.new()
+	_repair_choice_panel.name = "RepairChoicePanel"
+	_repair_choice_panel.visible = false
+	_repair_choice_panel.z_index = 120
+	_repair_choice_panel.set_anchors_preset(Control.PRESET_CENTER)
+	_repair_choice_panel.offset_left = -172.0
+	_repair_choice_panel.offset_right = 172.0
+	_repair_choice_panel.offset_top = -156.0
+	_repair_choice_panel.offset_bottom = 156.0
+	_repair_choice_panel.add_theme_stylebox_override("panel", HudTheme.panel_style(0.94))
+	hud.add_child(_repair_choice_panel)
 
 	var margin := MarginContainer.new()
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	margin.add_theme_constant_override("margin_left", 16)
-	margin.add_theme_constant_override("margin_top", 12)
+	margin.add_theme_constant_override("margin_top", 14)
 	margin.add_theme_constant_override("margin_right", 16)
-	margin.add_theme_constant_override("margin_bottom", 12)
+	margin.add_theme_constant_override("margin_bottom", 14)
+	_repair_choice_panel.add_child(margin)
 
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 8)
+	margin.add_child(vbox)
+
+	var title := Label.new()
+	title.text = "选择修复材料"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 15)
+	title.add_theme_color_override("font_color", Color("#eef6ff"))
+	HudTheme.apply_label(title)
+	vbox.add_child(title)
 
 	var label := Label.new()
 	label.text = "请选择修复材料："
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 12)
+	label.add_theme_color_override("font_color", Color("#c8d8e8"))
+	HudTheme.apply_label(label)
 	vbox.add_child(label)
+
+	_repair_progress_label = Label.new()
+	_repair_progress_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_repair_progress_label.add_theme_font_size_override("font_size", 13)
+	_repair_progress_label.add_theme_color_override("font_color", Color("#f0d878"))
+	HudTheme.apply_label(_repair_progress_label)
+	_repair_progress_label.text = "修复进度 0 / 0"
+	vbox.add_child(_repair_progress_label)
+
+	_repair_progress_bar = ProgressBar.new()
+	_repair_progress_bar.custom_minimum_size = Vector2(0, 10)
+	_repair_progress_bar.show_percentage = false
+	_repair_progress_bar.max_value = 100.0
+	HudTheme.apply_progress_bar(_repair_progress_bar, Color("#52a872"))
+	vbox.add_child(_repair_progress_bar)
+
+	_repair_hint_label = Label.new()
+	_repair_hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_repair_hint_label.custom_minimum_size = Vector2(0, 20)
+	_repair_hint_label.add_theme_font_size_override("font_size", 13)
+	_repair_hint_label.add_theme_color_override("font_color", Color("#8a9aaa"))
+	HudTheme.apply_label(_repair_hint_label)
+	_repair_hint_label.text = ""
+	vbox.add_child(_repair_hint_label)
 
 	var sep := HSeparator.new()
 	vbox.add_child(sep)
 
-	var parts_btn := Button.new()
-	parts_btn.name = "PartsBtn"
-	parts_btn.text = "零件 ×%d（优先）" % ItemDefs.REPAIR_PARTS_EACH
-	parts_btn.pressed.connect(_repair_with_material.bind("parts"))
-	vbox.add_child(parts_btn)
+	_repair_parts_btn = Button.new()
+	_repair_parts_btn.text = "零件 ×%d" % ItemDefs.REPAIR_PARTS_EACH
+	_repair_parts_btn.focus_mode = Control.FOCUS_NONE
+	_repair_parts_btn.pressed.connect(_on_repair_option_pressed.bind("parts"))
+	_repair_parts_btn.set_meta("repair_base_text", _repair_parts_btn.text)
+	_style_repair_option_button(_repair_parts_btn)
+	vbox.add_child(_repair_parts_btn)
 
-	var scrap_btn := Button.new()
-	scrap_btn.name = "ScrapBtn"
-	scrap_btn.text = "废料 ×%d（应急）" % ItemDefs.REPAIR_SCRAP_EACH
-	scrap_btn.pressed.connect(_repair_with_material.bind("scrap"))
-	vbox.add_child(scrap_btn)
+	_repair_scrap_btn = Button.new()
+	_repair_scrap_btn.text = "废料 ×%d" % ItemDefs.REPAIR_SCRAP_EACH
+	_repair_scrap_btn.focus_mode = Control.FOCUS_NONE
+	_repair_scrap_btn.pressed.connect(_on_repair_option_pressed.bind("scrap"))
+	_repair_scrap_btn.set_meta("repair_base_text", _repair_scrap_btn.text)
+	_style_repair_option_button(_repair_scrap_btn)
+	vbox.add_child(_repair_scrap_btn)
 
-	var wood_scrap_btn := Button.new()
-	wood_scrap_btn.name = "WoodScrapBtn"
-	wood_scrap_btn.text = "木材 ×%d + 废料 ×%d" % [ItemDefs.REPAIR_WOOD_EACH, ItemDefs.REPAIR_SCRAP_ALT_EACH]
-	wood_scrap_btn.pressed.connect(_repair_with_material.bind("wood_scrap"))
-	vbox.add_child(wood_scrap_btn)
+	_repair_wood_scrap_btn = Button.new()
+	_repair_wood_scrap_btn.text = "木材 ×%d + 废料 ×%d" % [ItemDefs.REPAIR_WOOD_EACH, ItemDefs.REPAIR_SCRAP_ALT_EACH]
+	_repair_wood_scrap_btn.focus_mode = Control.FOCUS_NONE
+	_repair_wood_scrap_btn.pressed.connect(_on_repair_option_pressed.bind("wood_scrap"))
+	_repair_wood_scrap_btn.set_meta("repair_base_text", _repair_wood_scrap_btn.text)
+	_style_repair_option_button(_repair_wood_scrap_btn)
+	vbox.add_child(_repair_wood_scrap_btn)
 
 	var cancel_btn := Button.new()
-	cancel_btn.text = "取消"
-	cancel_btn.pressed.connect(_repair_choice_popup.hide)
+	cancel_btn.text = "关闭"
+	cancel_btn.focus_mode = Control.FOCUS_NONE
+	cancel_btn.pressed.connect(_close_repair_choice_popup)
+	_style_repair_option_button(cancel_btn)
 	vbox.add_child(cancel_btn)
 
-	margin.add_child(vbox)
-	_repair_choice_popup.add_child(margin)
-	add_child(_repair_choice_popup)
+
+func _style_repair_option_button(button: Button) -> void:
+	HudTheme.apply_button(button)
+	var normal := StyleBoxFlat.new()
+	normal.bg_color = Color(0.10, 0.14, 0.20, 0.96)
+	normal.border_color = Color(0.32, 0.44, 0.56, 0.65)
+	normal.set_border_width_all(1)
+	normal.set_corner_radius_all(4)
+	normal.content_margin_top = 6
+	normal.content_margin_bottom = 6
+	button.add_theme_stylebox_override("normal", normal)
+	var hover := normal.duplicate() as StyleBoxFlat
+	hover.bg_color = Color(0.14, 0.20, 0.28, 0.98)
+	hover.border_color = Color("#8ec8e8", 0.75)
+	button.add_theme_stylebox_override("hover", hover)
+	var pressed := hover.duplicate() as StyleBoxFlat
+	pressed.bg_color = Color(0.08, 0.12, 0.18, 0.98)
+	button.add_theme_stylebox_override("pressed", pressed)
+	var disabled := normal.duplicate() as StyleBoxFlat
+	disabled.bg_color = Color(0.05, 0.07, 0.10, 0.82)
+	disabled.border_color = Color(0.18, 0.22, 0.28, 0.35)
+	button.add_theme_stylebox_override("disabled", disabled)
+	button.add_theme_color_override("font_disabled_color", Color(0.38, 0.42, 0.48, 0.62))
+	button.set_meta("repair_style_normal", normal)
+	button.set_meta("repair_style_hover", hover)
+	button.set_meta("repair_style_pressed", pressed)
+	button.set_meta("repair_style_dim", disabled)
+
+
+func _set_repair_option_enabled(button: Button, enabled: bool) -> void:
+	if button == null:
+		return
+	var base_text := str(button.get_meta("repair_base_text", button.text))
+	button.text = base_text if enabled else "%s · 资源不足" % base_text
+	button.disabled = false
+	button.mouse_filter = Control.MOUSE_FILTER_STOP
+	button.set_meta("repair_enabled", enabled)
+	var normal := button.get_meta("repair_style_normal") as StyleBoxFlat
+	var hover := button.get_meta("repair_style_hover") as StyleBoxFlat
+	var pressed := button.get_meta("repair_style_pressed") as StyleBoxFlat
+	var dim := button.get_meta("repair_style_dim") as StyleBoxFlat
+	if enabled and normal != null and hover != null and pressed != null:
+		button.add_theme_stylebox_override("normal", normal)
+		button.add_theme_stylebox_override("hover", hover)
+		button.add_theme_stylebox_override("pressed", pressed)
+		button.add_theme_color_override("font_color", Color("#e6eef6"))
+	elif dim != null:
+		button.add_theme_stylebox_override("normal", dim)
+		button.add_theme_stylebox_override("hover", dim)
+		button.add_theme_stylebox_override("pressed", dim)
+		button.add_theme_color_override("font_color", Color(0.42, 0.46, 0.52, 0.78))
+
+
+func _has_repair_material(material: String) -> bool:
+	match material:
+		"parts":
+			return _backpack.has("parts", ItemDefs.REPAIR_PARTS_EACH)
+		"scrap":
+			return _backpack.has("scrap", ItemDefs.REPAIR_SCRAP_EACH)
+		"wood_scrap":
+			return _backpack.has("wood", ItemDefs.REPAIR_WOOD_EACH) and _backpack.has("scrap", ItemDefs.REPAIR_SCRAP_ALT_EACH)
+	return false
+
+
+func _show_repair_choice_hint(text: String, warning: bool = true) -> void:
+	if not is_instance_valid(_repair_hint_label):
+		return
+	if text.is_empty():
+		_repair_hint_label.text = ""
+		_repair_hint_label.add_theme_color_override("font_color", Color("#8a9aaa"))
+		return
+	_repair_hint_label.text = text
+	_repair_hint_label.add_theme_color_override("font_color", Color("#ff7070") if warning else Color("#7ed08b"))
+
+
+func _close_repair_choice_popup() -> void:
+	if is_instance_valid(_repair_choice_panel):
+		_repair_choice_panel.visible = false
+	_show_repair_choice_hint("")
+
+
+func _refresh_repair_choice_popup(status_text: String = "", status_warning: bool = true) -> void:
+	if not is_instance_valid(_repair_choice_panel):
+		return
+	var total := _current_repair_cost()
+	if is_instance_valid(_repair_progress_label):
+		_repair_progress_label.text = "修复进度 %d / %d" % [_elevator_repair_progress, total]
+	if is_instance_valid(_repair_progress_bar):
+		_repair_progress_bar.max_value = float(maxi(total, 1))
+		_repair_progress_bar.value = float(_elevator_repair_progress)
+	_set_repair_option_enabled(_repair_parts_btn, _backpack.has("parts", ItemDefs.REPAIR_PARTS_EACH))
+	_set_repair_option_enabled(_repair_scrap_btn, _backpack.has("scrap", ItemDefs.REPAIR_SCRAP_EACH))
+	_set_repair_option_enabled(
+		_repair_wood_scrap_btn,
+		_backpack.has("wood", ItemDefs.REPAIR_WOOD_EACH) and _backpack.has("scrap", ItemDefs.REPAIR_SCRAP_ALT_EACH),
+	)
+	if not status_text.is_empty():
+		_show_repair_choice_hint(status_text, status_warning)
+	elif _elevator_repair_progress >= total:
+		_show_repair_choice_hint("电梯修复完成", false)
+	else:
+		_show_repair_choice_hint("")
+
+
+func _on_repair_option_pressed(material: String) -> void:
+	if not _has_repair_material(material):
+		_refresh_repair_choice_popup("资源不足", true)
+		return
+	_repair_with_material(material)
 
 
 func _start_new_run() -> void:
@@ -445,7 +611,7 @@ func _physics_process(delta: float) -> void:
 
 	if Input.is_action_just_pressed("interact"):
 		if _mode == TravelMode.FOOT:
-			_return_to_vehicle()
+			_handle_foot_interact()
 		elif _mode == TravelMode.DRIVE and _segment_target_index < 0:
 			if not _get_enterable_buildings().is_empty():
 				_enter_selected_building()
@@ -1006,31 +1172,14 @@ func _show_repair_choices() -> void:
 	var needed := _current_repair_cost() - _elevator_repair_progress
 	if needed <= 0:
 		return
-
-	var has_parts := _backpack.has("parts", ItemDefs.REPAIR_PARTS_EACH)
-	var has_scrap := _backpack.has("scrap", ItemDefs.REPAIR_SCRAP_EACH)
-	var has_wood_scrap := _backpack.has("wood", ItemDefs.REPAIR_WOOD_EACH) and _backpack.has("scrap", ItemDefs.REPAIR_SCRAP_ALT_EACH)
-
-	if not has_parts and not has_scrap and not has_wood_scrap:
-		return
-
-	var parts_btn := _repair_choice_popup.get_node_or_null("MarginContainer/VBoxContainer/PartsBtn") as Button
-	var scrap_btn := _repair_choice_popup.get_node_or_null("MarginContainer/VBoxContainer/ScrapBtn") as Button
-	var wood_scrap_btn := _repair_choice_popup.get_node_or_null("MarginContainer/VBoxContainer/WoodScrapBtn") as Button
-
-	if parts_btn:
-		parts_btn.disabled = not has_parts
-	if scrap_btn:
-		scrap_btn.disabled = not has_scrap
-	if wood_scrap_btn:
-		wood_scrap_btn.disabled = not has_wood_scrap
-
-	_repair_choice_popup.popup_centered()
-	_repair_choice_popup.show()
+	_refresh_repair_choice_popup()
+	_repair_choice_panel.visible = true
 
 
 func _repair_with_material(material: String) -> void:
-	_repair_choice_popup.hide()
+	if not _has_repair_material(material):
+		_refresh_repair_choice_popup("资源不足", true)
+		return
 
 	var consumed := false
 	match material:
@@ -1042,6 +1191,7 @@ func _repair_with_material(material: String) -> void:
 			consumed = _backpack.remove("wood", ItemDefs.REPAIR_WOOD_EACH) and _backpack.remove("scrap", ItemDefs.REPAIR_SCRAP_ALT_EACH)
 
 	if not consumed:
+		_refresh_repair_choice_popup("资源不足", true)
 		return
 
 	var needed := _current_repair_cost() - _elevator_repair_progress
@@ -1052,13 +1202,20 @@ func _repair_with_material(material: String) -> void:
 	_refresh_ui()
 
 	if _elevator_repair_progress >= _current_repair_cost():
+		_refresh_repair_choice_popup("电梯修复完成", false)
+		_close_repair_choice_popup()
 		if _current_layer >= total_layers:
 			_open_communication_terminal()
 		else:
 			_advance_layer()
+		return
+
+	_refresh_repair_choice_popup("已推进 1 步修复", false)
 
 
 func _attempt_repair_elevator() -> void:
+	if not _can_repair_elevator() or not _is_near_elevator_console():
+		return
 	_show_repair_choices()
 
 func _on_resource_collected(item_id: String, district_index: int) -> void:
@@ -2708,10 +2865,9 @@ func _draw_day_overworld() -> void:
 
 
 func _draw_door_exit_hint(door_rect: Rect2) -> void:
-	var door_center := door_rect.position + door_rect.size * 0.5
-	var player_panel := _foot_local_to_panel(_foot_local_pos, _current_district_index)
-	if player_panel.distance_to(door_center) > maxf(door_rect.size.x, door_rect.size.y) * 2.4:
+	if not _is_near_foot_door():
 		return
+	var door_center := door_rect.position + door_rect.size * 0.5
 	var text := "E 返回车辆"
 	var bubble_w := 72.0
 	var bubble_h := 16.0
@@ -2719,6 +2875,95 @@ func _draw_door_exit_hint(door_rect: Rect2) -> void:
 	draw_rect(Rect2(bubble_pos, Vector2(bubble_w, bubble_h)), Color(0.05, 0.09, 0.13, 0.74), true)
 	draw_rect(Rect2(bubble_pos, Vector2(bubble_w, bubble_h)), Color("#c8a060", 0.42), false, 1.0)
 	HudTheme.draw_string(self, bubble_pos + Vector2(10.0, 12.0), text, 10, Color("#f0d8a0"))
+
+
+func _handle_foot_interact() -> void:
+	if _is_near_elevator_console():
+		_attempt_repair_elevator()
+	elif _is_near_foot_door():
+		_return_to_vehicle()
+
+
+func _foot_tile_panel_rect(district_index: int, tile: Vector2i) -> Rect2:
+	var panel := _interior_panel_rect(district_index)
+	var cell := _map.get_cell(district_index)
+	var cols: int = maxi(int(cell.get("foot_grid_cols", 1)), 1)
+	var rows: int = maxi(int(cell.get("foot_grid_rows", 1)), 1)
+	var tile_px := panel.size.x / float(cols)
+	var tile_py := panel.size.y / float(rows)
+	return Rect2(
+		panel.position + Vector2(float(tile.x) * tile_px, float(tile.y) * tile_py),
+		Vector2(tile_px, tile_py),
+	)
+
+
+func _foot_door_panel_rect(district_index: int = _current_district_index) -> Rect2:
+	return _foot_tile_panel_rect(district_index, _map.get_foot_door_tile(district_index))
+
+
+func _elevator_console_panel_rect(district_index: int = _current_district_index) -> Rect2:
+	return _foot_tile_panel_rect(district_index, _map.get_foot_console_tile(district_index))
+
+
+func _is_near_foot_door() -> bool:
+	if _current_district_index < 0 or _mode != TravelMode.FOOT:
+		return false
+	var door_rect := _foot_door_panel_rect()
+	var player_panel := _foot_local_to_panel(_foot_local_pos, _current_district_index)
+	var door_center := door_rect.position + door_rect.size * 0.5
+	return player_panel.distance_to(door_center) <= maxf(door_rect.size.x, door_rect.size.y) * 2.4
+
+
+func _is_near_elevator_console() -> bool:
+	if not _can_repair_elevator():
+		return false
+	var console_rect := _elevator_console_panel_rect()
+	var player_panel := _foot_local_to_panel(_foot_local_pos, _current_district_index)
+	var console_center := console_rect.position + console_rect.size * 0.5
+	return player_panel.distance_to(console_center) <= maxf(console_rect.size.x, console_rect.size.y) * 1.45
+
+
+func _elevator_repair_progress_ratio() -> float:
+	var total := maxf(_current_repair_cost(), 1)
+	return clampf(float(_elevator_repair_progress) / float(total), 0.0, 1.0)
+
+
+func _elevator_console_hint_text() -> String:
+	var needed := _current_repair_cost() - _elevator_repair_progress
+	if needed <= 0:
+		return "电梯已就绪"
+	return "E 修复电梯 · %d/%d" % [_elevator_repair_progress, _current_repair_cost()]
+
+
+func _draw_elevator_console_hint(console_rect: Rect2) -> void:
+	if not _can_repair_elevator() or not _is_near_elevator_console():
+		return
+	var center := console_rect.position + console_rect.size * 0.5
+	var text := _elevator_console_hint_text()
+	var bubble_w := maxf(96.0, float(text.length()) * 7.0 + 16.0)
+	var bubble_h := 16.0
+	var bubble_pos := Vector2(center.x - bubble_w * 0.5, console_rect.position.y - 22.0)
+	draw_rect(Rect2(bubble_pos, Vector2(bubble_w, bubble_h)), Color(0.05, 0.09, 0.13, 0.78), true)
+	draw_rect(Rect2(bubble_pos, Vector2(bubble_w, bubble_h)), Color("#f0c168", 0.5), false, 1.0)
+	HudTheme.draw_string(self, bubble_pos + Vector2(8.0, 12.0), text, 10, Color("#f8ecd8"))
+
+
+func _draw_interior_building_label(panel: Rect2, title: String) -> void:
+	if title.is_empty():
+		return
+	var view_size := get_viewport_rect().size
+	if view_size == Vector2.ZERO:
+		view_size = Vector2(1280.0, 720.0)
+	var gap := 14.0
+	var label_w := maxf(56.0, float(title.length()) * 13.0 + 20.0)
+	var label_h := 24.0
+	var pos := Vector2(
+		minf(panel.end.x + gap, view_size.x - label_w - HudTheme.SAFE_MARGIN),
+		panel.position.y + 10.0,
+	)
+	draw_rect(Rect2(pos, Vector2(label_w, label_h)), Color(0.04, 0.07, 0.11, 0.82), true)
+	draw_rect(Rect2(pos, Vector2(label_w, label_h)), Color("#6a8ca8", 0.62), false, 1.0)
+	HudTheme.draw_string(self, pos + Vector2(10.0, 16.0), title, 13, Color("#d8e8f4"))
 
 
 func _interior_panel_rect(district_index: int) -> Rect2:
@@ -2769,24 +3014,33 @@ func _draw_foot_interior() -> void:
 			tile = Vector2i(int(raw.get("x", 0)), int(raw.get("y", 0)))
 		blocked_set[tile] = true
 	DayTopdownRender.draw_interior_floor_grid(self, panel, cols, rows)
+	var is_elevator := _map.district_has_elevator(_current_district_index)
+	var console_tile := _map.get_foot_console_tile(_current_district_index)
 	for gx in range(cols):
 		for gy in range(rows):
 			if not blocked_set.has(Vector2i(gx, gy)):
+				continue
+			var tile := Vector2i(gx, gy)
+			if is_elevator and tile == console_tile:
 				continue
 			var tile_rect := Rect2(
 				panel.position + Vector2(float(gx) * tile_px, float(gy) * tile_py),
 				Vector2(tile_px, tile_py),
 			)
 			DayTopdownRender.draw_interior_tile(self, tile_rect, true)
-	var door_tile := _map.get_foot_door_tile(_current_district_index)
-	var door_rect := Rect2(
-		panel.position + Vector2(float(door_tile.x) * tile_px, float(door_tile.y) * tile_py),
-		Vector2(tile_px, tile_py),
-	)
+	var door_rect := _foot_door_panel_rect(_current_district_index)
 	DayTopdownRender.draw_interior_door(self, door_rect, true)
+	if is_elevator:
+		var console_rect := _elevator_console_panel_rect(_current_district_index)
+		DayTopdownRender.draw_elevator_console(
+			self,
+			console_rect,
+			_is_near_elevator_console(),
+			_elevator_repair_progress_ratio(),
+		)
+		_draw_elevator_console_hint(console_rect)
 	draw_rect(panel, Color("#4a6070"), false, 2.0)
-	var title := _map.building_label(_current_district_index)
-	HudTheme.draw_string(self, panel.position + Vector2(8.0, -18.0), title, 14, Color("#b8d4e8"))
+	_draw_interior_building_label(panel, _map.building_label(_current_district_index))
 	_draw_door_exit_hint(door_rect)
 	var player_panel := _foot_local_to_panel(_foot_local_pos, _current_district_index)
 	DayTopdownRender.draw_player_marker(

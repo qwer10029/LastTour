@@ -3,6 +3,8 @@ extends RefCounted
 
 const ICON_SIZE := 32
 const LOOT_SPRITE_DIR := "res://assets/sprites/loot/"
+const BACKPACK_SPRITE_PATH := "res://assets/sprites/ui/backpack.png"
+const ELEVATOR_CONSOLE_SPRITE_PATH := "res://assets/sprites/ui/elevator_console.png"
 
 static var _cache: Dictionary = {}
 static var _file_cache: Dictionary = {}
@@ -12,6 +14,11 @@ static func get_backpack_texture(size: int = ICON_SIZE) -> Texture2D:
 	var key := "backpack_%d" % size
 	if _cache.has(key):
 		return _cache[key]
+	var file_tex := _load_backpack_sprite()
+	if file_tex != null:
+		var scaled := _scale_texture(file_tex, size)
+		_cache[key] = scaled
+		return scaled
 	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
 	var body := Color("#5a7890")
@@ -25,6 +32,51 @@ static func get_backpack_texture(size: int = ICON_SIZE) -> Texture2D:
 	_fill_rect(img, Rect2i(pack.position.x + 4, pack.position.y + 6, pack.size.x - 8, 2), dark)
 	var tex := ImageTexture.create_from_image(img)
 	_cache[key] = tex
+	return tex
+
+
+static func _load_backpack_sprite() -> Texture2D:
+	if _file_cache.has("backpack"):
+		return _file_cache["backpack"]
+	var tex := ArtAssetLoader.load_texture_icon_alpha_key(BACKPACK_SPRITE_PATH)
+	_file_cache["backpack"] = tex
+	return tex
+
+
+static func get_elevator_console_texture(size: int = ICON_SIZE) -> Texture2D:
+	var key := "elevator_console_%d" % size
+	if _cache.has(key):
+		return _cache[key]
+	var file_tex := _load_elevator_console_sprite()
+	if file_tex != null:
+		var scaled := _scale_texture(file_tex, size)
+		_cache[key] = scaled
+		return scaled
+	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var frame := Color("#2a3848")
+	var panel := Color("#1a2838")
+	var screen := Color("#3a5870")
+	var accent := Color("#f0c168")
+	var light := Color("#9ec8e8")
+	var body := Rect2i(4, 5, size - 8, size - 8)
+	_fill_round_rect(img, body, panel, frame)
+	var screen_rect := Rect2i(body.position.x + 3, body.position.y + 3, body.size.x - 6, body.size.y - 10)
+	_fill_rect(img, screen_rect, screen)
+	_fill_rect(img, Rect2i(screen_rect.position.x + 2, screen_rect.position.y + 2, screen_rect.size.x - 4, 3), light)
+	_fill_rect(img, Rect2i(body.position.x + 5, body.end.y - 5, 5, 3), accent)
+	_fill_rect(img, Rect2i(body.end.x - 10, body.end.y - 5, 5, 3), accent)
+	_fill_rect(img, Rect2i(body.position.x + body.size.x / 2 - 2, body.end.y - 5, 4, 3), Color("#6a9a72"))
+	var tex := ImageTexture.create_from_image(img)
+	_cache[key] = tex
+	return tex
+
+
+static func _load_elevator_console_sprite() -> Texture2D:
+	if _file_cache.has("elevator_console"):
+		return _file_cache["elevator_console"]
+	var tex := ArtAssetLoader.load_texture_icon_alpha_key(ELEVATOR_CONSOLE_SPRITE_PATH)
+	_file_cache["elevator_console"] = tex
 	return tex
 
 

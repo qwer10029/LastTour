@@ -149,6 +149,72 @@ static func apply_sampled_background_key(tex: Texture2D, tolerance: float = 0.05
 	return ImageTexture.create_from_image(img)
 
 
+static func apply_flood_background_key(tex: Texture2D, tolerance: float = 0.055) -> Texture2D:
+	if tex == null:
+		return null
+	var img := tex.get_image()
+	if img == null or img.is_empty():
+		return tex
+	if img.get_format() != Image.FORMAT_RGBA8:
+		img = img.duplicate()
+		img.convert(Image.FORMAT_RGBA8)
+	else:
+		img = img.duplicate()
+	var bg := img.get_pixel(0, 0)
+	var w := img.get_width()
+	var h := img.get_height()
+	var visited := PackedByteArray()
+	visited.resize(w * h)
+	var queue: Array[Vector2i] = []
+
+	var try_seed := func(pos: Vector2i) -> void:
+		if pos.x < 0 or pos.y < 0 or pos.x >= w or pos.y >= h:
+			return
+		var idx := pos.y * w + pos.x
+		if visited[idx] != 0:
+			return
+		var c := img.get_pixel(pos.x, pos.y)
+		if c.a <= 0.0 or not _color_near(c, bg, tolerance):
+			return
+		visited[idx] = 1
+		queue.append(pos)
+
+	for x in range(w):
+		try_seed.call(Vector2i(x, 0))
+		try_seed.call(Vector2i(x, h - 1))
+	for y in range(h):
+		try_seed.call(Vector2i(0, y))
+		try_seed.call(Vector2i(w - 1, y))
+
+	var dirs := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+	while not queue.is_empty():
+		var pos: Vector2i = queue.pop_front()
+		var c := img.get_pixel(pos.x, pos.y)
+		c.a = 0.0
+		img.set_pixel(pos.x, pos.y, c)
+		for dir in dirs:
+			try_seed.call(pos + dir)
+
+	return ImageTexture.create_from_image(img)
+
+
+static func load_texture_icon_alpha_key(
+	preferred_path: String,
+	tolerance: float = 0.055,
+	fallback_path: String = "",
+) -> Texture2D:
+	var cache_key := "icon|%s|%.3f|%s" % [preferred_path, tolerance, fallback_path]
+	if _alpha_key_cache.has(cache_key):
+		return _alpha_key_cache[cache_key]
+	var tex := load_texture(preferred_path, fallback_path)
+	if tex == null:
+		_alpha_key_cache[cache_key] = null
+		return null
+	tex = apply_flood_background_key(tex, tolerance)
+	_alpha_key_cache[cache_key] = tex
+	return tex
+
+
 ## 角色/道具精灵：先采样去灰底，再补抠近黑底。
 static func load_texture_sprite_alpha_key(
 	preferred_path: String,

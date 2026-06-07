@@ -6,6 +6,7 @@ const INTERIOR_COLS := 14
 const INTERIOR_ROWS := 10
 ## 各资源区固定障碍格（网格坐标，通常为正中格）
 const FOOT_ANCHOR_OBSTACLE := Vector2i(6, 4)
+const FOOT_ELEVATOR_CONSOLE_TILE := FOOT_ANCHOR_OBSTACLE
 const FOOT_DOOR_TILE := Vector2i(6, 9)
 
 const DIRECTIONS := {
@@ -802,6 +803,21 @@ func get_foot_door_world_pos(index: int) -> Vector2:
 	return foot_origin + Vector2(
 		float(door_tile.x) * FOOT_TILE_SIZE + FOOT_TILE_SIZE * 0.5,
 		float(door_tile.y) * FOOT_TILE_SIZE + FOOT_TILE_SIZE * 0.5,
+	)
+
+
+func get_foot_console_tile(_index: int) -> Vector2i:
+	return FOOT_ELEVATOR_CONSOLE_TILE
+
+
+func get_foot_console_world_pos(index: int) -> Vector2:
+	if not is_valid_index(index):
+		return Vector2.ZERO
+	var foot_origin := get_foot_origin(index)
+	var console_tile := get_foot_console_tile(index)
+	return foot_origin + Vector2(
+		float(console_tile.x) * FOOT_TILE_SIZE + FOOT_TILE_SIZE * 0.5,
+		float(console_tile.y) * FOOT_TILE_SIZE + FOOT_TILE_SIZE * 0.5,
 	)
 
 
