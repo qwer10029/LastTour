@@ -2,10 +2,41 @@ extends Control
 
 @onready var phase_label: Label = %PhaseLabel
 @onready var day_label: Label = %DayLabel
+@onready var layer_label: Label = %LayerLabel
 @onready var timer_label: Label = %TimerLabel
 @onready var progress_bar: ProgressBar = %DayProgressBar
+@onready var _vbox: VBoxContainer = $VBox
 
 var _time_system: TimeSystem
+var _layer_current := 1
+var _layer_total := 1
+
+
+func set_layer(current: int, total: int) -> void:
+	_layer_current = maxi(current, 1)
+	_layer_total = maxi(total, 1)
+	_update_layer_label()
+
+
+func _update_layer_label() -> void:
+	if is_instance_valid(layer_label):
+		layer_label.text = "第 %d / %d 层" % [_layer_current, _layer_total]
+
+
+func _ready() -> void:
+	if is_instance_valid(_vbox):
+		_vbox.add_theme_constant_override("separation", 1)
+		_vbox.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+		_vbox.alignment = BoxContainer.ALIGNMENT_BEGIN
+	for lbl in [phase_label, day_label, layer_label, timer_label]:
+		if is_instance_valid(lbl):
+			lbl.add_theme_font_size_override("font_size", 10)
+			lbl.set_meta("hud_compact", true)
+			HudTheme.apply_compact_label(lbl)
+			lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	if is_instance_valid(progress_bar):
+		HudTheme.apply_slim_progress_bar(progress_bar, Color("#52a872"))
+		progress_bar.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 
 
 func bind_time_system(time_system: TimeSystem) -> void:

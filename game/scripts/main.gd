@@ -80,6 +80,7 @@ var _pause_panel: PanelContainer
 var _pause_confirm: ConfirmationDialog
 var _war_fog_checkbox: CheckBox
 var _repair_choice_popup: Window
+var _pda_panel: PdaHudPanel
 
 @onready var time_system: TimeSystem = $Systems/TimeSystem
 @onready var night_defense: NightDefenseSystem = $Systems/NightDefenseSystem
@@ -130,6 +131,8 @@ func _ready() -> void:
 	_setup_run_end_ui()
 	_setup_stat_bars()
 	_setup_world_camera()
+	_setup_minimap_hud()
+	_setup_hud_theme()
 	_setup_repair_choice_popup()
 	_spawn_vehicle()
 	_spawn_player()
@@ -152,6 +155,61 @@ func _setup_road_tuning_panel() -> void:
 	var panel := RoadTuningPanel.new()
 	panel.setup(road_render_settings, self)
 	add_child(panel)
+
+
+func _setup_hud_theme() -> void:
+	var hud: CanvasLayer = get_node_or_null("HUD") as CanvasLayer
+	if hud == null:
+		return
+	HudTheme.layout_hud(hud)
+	if is_instance_valid(_vitals_top_bar):
+		HudTheme.apply_vitals_bar(_vitals_top_bar)
+	_setup_pda_hud()
+
+
+func _setup_pda_hud() -> void:
+	if not has_node("HUD/InfoPanel/MarginContainer/VBoxContainer"):
+		return
+	var vbox: VBoxContainer = $HUD/InfoPanel/MarginContainer/VBoxContainer
+	for legacy in [fuel_label, inventory_label, vitals_label, status_label, backpack_button]:
+		if is_instance_valid(legacy):
+			legacy.visible = false
+			legacy.text = ""
+			legacy.queue_free()
+	if is_instance_valid(_pda_panel):
+		return
+	_pda_panel = PdaHudPanel.new()
+	_pda_panel.name = "PdaHudPanel"
+	_pda_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	vbox.add_child(_pda_panel)
+	_pda_panel.backpack_pressed.connect(_toggle_backpack)
+	_pda_panel.item_use_requested.connect(_on_pda_use_item)
+
+
+func _on_pda_use_item(item_id: String) -> void:
+	if not _use_backpack_item(item_id):
+		return
+	_refresh_ui()
+
+
+func _setup_minimap_hud() -> void:
+	if not has_node("HUD/MapPanel"):
+		return
+	var panel: Panel = $HUD/MapPanel
+	var transparent := StyleBoxFlat.new()
+	transparent.bg_color = Color(0.0, 0.0, 0.0, 0.0)
+	transparent.set_border_width_all(0)
+	transparent.set_content_margin_all(0)
+	panel.add_theme_stylebox_override("panel", transparent)
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.offset_left = -196.0
+	panel.offset_top = -212.0
+	panel.offset_right = -HudTheme.SAFE_MARGIN
+	panel.offset_bottom = -HudTheme.SAFE_MARGIN
+	if is_instance_valid(minimap_view):
+		minimap_view.custom_minimum_size = Vector2(168, 168)
+	if is_instance_valid(map_info_label):
+		map_info_label.visible = false
 
 
 func _setup_repair_choice_popup() -> void:
@@ -465,6 +523,19 @@ func _camera_world_view_rect() -> Rect2:
 	var half := (vp / _world_camera.zoom) * 0.5
 	var center := _world_camera.global_position
 	return Rect2(center - half, half * 2.0)
+
+
+func _world_rect_to_screen_rect(world_rect: Rect2) -> Rect2:
+	var xf := get_viewport().get_canvas_transform()
+	var top_left := xf * world_rect.position
+	var bottom_right := xf * (world_rect.position + world_rect.size)
+	return Rect2(top_left, bottom_right - top_left)
+
+
+func _building_sign_overlaps_inventory_hud(district_rect: Rect2, toward_road: Vector2) -> bool:
+	var sign_world := DayTopdownRender.district_building_sign_rect(district_rect, toward_road)
+	var sign_screen := _world_rect_to_screen_rect(sign_world)
+	return HudTheme.inventory_hud_screen_rect().intersects(sign_screen)
 
 func _process_drive(delta: float) -> void:
 	if _segment_target_index < 0 or not _map.is_valid_index(_segment_target_index):
@@ -895,6 +966,8 @@ func _sync_day_entity_visibility() -> void:
 	if _mode == TravelMode.FOOT:
 		if is_instance_valid(_player):
 			_player.visible = false
+			if is_instance_valid(_player.sprite):
+				_player.sprite.visible = false
 		if is_instance_valid(_vehicle):
 			_vehicle.visible = false
 		return
@@ -939,8 +1012,6 @@ func _show_repair_choices() -> void:
 	var has_wood_scrap := _backpack.has("wood", ItemDefs.REPAIR_WOOD_EACH) and _backpack.has("scrap", ItemDefs.REPAIR_SCRAP_ALT_EACH)
 
 	if not has_parts and not has_scrap and not has_wood_scrap:
-		if is_instance_valid(prompt_label) and _can_repair_elevator():
-			prompt_label.text = ItemDefs.get_repair_requirement_text(_backpack)
 		return
 
 	var parts_btn := _repair_choice_popup.get_node_or_null("MarginContainer/VBoxContainer/PartsBtn") as Button
@@ -971,8 +1042,6 @@ func _repair_with_material(material: String) -> void:
 			consumed = _backpack.remove("wood", ItemDefs.REPAIR_WOOD_EACH) and _backpack.remove("scrap", ItemDefs.REPAIR_SCRAP_ALT_EACH)
 
 	if not consumed:
-		if is_instance_valid(prompt_label) and _can_repair_elevator():
-			prompt_label.text = ItemDefs.get_repair_requirement_text(_backpack)
 		return
 
 	var needed := _current_repair_cost() - _elevator_repair_progress
@@ -1282,24 +1351,14 @@ func _setup_stat_bars() -> void:
 		return
 	_vitals_top_bar = PanelContainer.new()
 	_vitals_top_bar.name = "VitalsTopBar"
-	_vitals_top_bar.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	_vitals_top_bar.offset_left = -340.0
-	_vitals_top_bar.offset_top = 10.0
-	_vitals_top_bar.offset_right = 340.0
-	_vitals_top_bar.offset_bottom = 58.0
-	var panel_style := StyleBoxFlat.new()
-	panel_style.bg_color = Color(0.04, 0.07, 0.12, 0.82)
-	panel_style.border_color = Color(0.25, 0.32, 0.42, 0.9)
-	panel_style.set_border_width_all(1)
-	panel_style.set_corner_radius_all(6)
-	_vitals_top_bar.add_theme_stylebox_override("panel", panel_style)
+	HudTheme.apply_vitals_bar(_vitals_top_bar)
 	hud.add_child(_vitals_top_bar)
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override("margin_left", 10)
+	margin.add_theme_constant_override("margin_left", HudTheme.TOP_BAR_INNER)
 	margin.add_theme_constant_override("margin_top", 6)
-	margin.add_theme_constant_override("margin_right", 10)
+	margin.add_theme_constant_override("margin_right", HudTheme.TOP_BAR_INNER)
 	margin.add_theme_constant_override("margin_bottom", 6)
 	_vitals_top_bar.add_child(margin)
 
@@ -1309,18 +1368,18 @@ func _setup_stat_bars() -> void:
 	row.add_theme_constant_override("separation", 14)
 	margin.add_child(row)
 
-	# 参考 Mini DayZ：顶部横排，图标 + 彩色条 + 数字
+	# 顶部横排：图标 + 中文名 + 彩色条 + 数字
 	var specs: Array = [
-		["⚡", "_stamina_bar", "_stamina_bar_label", Color("#58d68d")],
-		["◎", "_fuel_bar", "_fuel_bar_label", Color("#f4d03f")],
-		["▲", "_vehicle_hp_bar", "_vehicle_hp_bar_label", Color("#bb8fce")],
+		["⚡", "体力", "_stamina_bar", "_stamina_bar_label", HudTheme.desaturate(Color("#58d68d"))],
+		["◎", "燃料", "_fuel_bar", "_fuel_bar_label", HudTheme.desaturate(Color("#f4d03f"))],
+		["▲", "耐久", "_vehicle_hp_bar", "_vehicle_hp_bar_label", HudTheme.desaturate(Color("#bb8fce"))],
 	]
 	for spec in specs:
-		var slot := _build_vital_slot(str(spec[0]), spec[3])
+		var slot := _build_vital_slot(str(spec[0]), str(spec[1]), spec[4])
 		var bar: ProgressBar = slot.get_node("VBox/ProgressBar")
 		var value_lbl: Label = slot.get_node("VBox/ValueLabel")
 		row.add_child(slot)
-		match spec[1]:
+		match spec[2]:
 			"_stamina_bar":
 				_stamina_bar = bar
 				_stamina_bar_label = value_lbl
@@ -1333,9 +1392,14 @@ func _setup_stat_bars() -> void:
 	_update_stat_bars()
 
 
-func _build_vital_slot(icon_text: String, fill_color: Color) -> HBoxContainer:
+func _build_vital_slot(icon_text: String, title: String, fill_color: Color) -> HBoxContainer:
 	var slot := HBoxContainer.new()
 	slot.add_theme_constant_override("separation", 6)
+	slot.alignment = BoxContainer.ALIGNMENT_BEGIN
+
+	var icon_column := VBoxContainer.new()
+	icon_column.alignment = BoxContainer.ALIGNMENT_CENTER
+	icon_column.add_theme_constant_override("separation", 2)
 
 	var icon_bg := PanelContainer.new()
 	icon_bg.custom_minimum_size = Vector2(28, 28)
@@ -1350,8 +1414,19 @@ func _build_vital_slot(icon_text: String, fill_color: Color) -> HBoxContainer:
 	icon.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	icon.add_theme_font_size_override("font_size", 16)
 	icon.add_theme_color_override("font_color", fill_color)
+	icon.set_meta("hud_glyph", true)
+	HudTheme.apply_glyph_label(icon)
 	icon_bg.add_child(icon)
-	slot.add_child(icon_bg)
+	icon_column.add_child(icon_bg)
+
+	var title_lbl := Label.new()
+	title_lbl.text = title
+	title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title_lbl.add_theme_font_size_override("font_size", 9)
+	title_lbl.add_theme_color_override("font_color", Color("#a8bcc8"))
+	HudTheme.apply_label(title_lbl)
+	icon_column.add_child(title_lbl)
+	slot.add_child(icon_column)
 
 	var column := VBoxContainer.new()
 	column.name = "VBox"
@@ -1371,6 +1446,7 @@ func _build_vital_slot(icon_text: String, fill_color: Color) -> HBoxContainer:
 	value_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	value_lbl.add_theme_font_size_override("font_size", 11)
 	value_lbl.add_theme_color_override("font_color", Color("#d8e4f0"))
+	HudTheme.apply_label(value_lbl)
 	column.add_child(value_lbl)
 
 	slot.add_child(column)
@@ -1378,14 +1454,7 @@ func _build_vital_slot(icon_text: String, fill_color: Color) -> HBoxContainer:
 
 
 func _apply_vital_bar_theme(bar: ProgressBar, fill_color: Color) -> void:
-	var bg := StyleBoxFlat.new()
-	bg.bg_color = Color(0.1, 0.12, 0.16, 1.0)
-	bg.set_corner_radius_all(3)
-	var fill := StyleBoxFlat.new()
-	fill.bg_color = fill_color
-	fill.set_corner_radius_all(3)
-	bar.add_theme_stylebox_override("background", bg)
-	bar.add_theme_stylebox_override("fill", fill)
+	HudTheme.apply_progress_bar(bar, fill_color)
 
 
 func _update_stat_bars() -> void:
@@ -1809,6 +1878,7 @@ func _restore_foot_mode_from_save(foot: Dictionary) -> void:
 	for node in _resource_nodes:
 		if is_instance_valid(node):
 			node.visible = int(node.get_meta("district_index", -1)) == _current_district_index
+	_sync_day_entity_visibility()
 
 
 func _restore_drive_state_after_load() -> void:
@@ -1864,6 +1934,22 @@ func _refresh_resource_pickups() -> void:
 		var district_index := int(node.get_meta("district_index"))
 		var remaining := _map.sector_resource_remaining(district_index)
 		node.visible = _mode == TravelMode.FOOT and district_index == _current_district_index and remaining > 0
+		var pickup_label := node.get_node_or_null("Label") as Label
+		if is_instance_valid(pickup_label):
+			var show_name := false
+			if node.visible and _current_district_index >= 0:
+				var foot_origin := _map.get_foot_origin(_current_district_index)
+				show_name = _should_show_loot_label_at(node.global_position - foot_origin)
+			pickup_label.visible = show_name
+			if show_name:
+				pickup_label.add_theme_font_size_override("font_size", 10)
+				HudTheme.apply_label(pickup_label)
+
+
+func _should_show_loot_label_at(local_pos: Vector2) -> bool:
+	if Input.is_key_pressed(KEY_ALT):
+		return true
+	return local_pos.distance_to(_foot_local_pos) <= 72.0
 
 
 func _save_and_exit_to_menu() -> void:
@@ -1887,6 +1973,8 @@ func _return_to_menu_without_save() -> void:
 func _setup_day_night() -> void:
 	if is_instance_valid(time_hud) and time_hud.has_method("bind_time_system"):
 		time_hud.bind_time_system(time_system)
+	if is_instance_valid(time_hud) and time_hud.has_method("set_layer"):
+		time_hud.set_layer(_current_layer, total_layers)
 	if is_instance_valid(night_td):
 		night_defense.bind_td_controller(night_td)
 	if is_instance_valid(night_defense):
@@ -2203,161 +2291,90 @@ func _force_return_to_vehicle_for_night() -> void:
 func _refresh_ui() -> void:
 	var in_td := is_instance_valid(night_td) and night_td.visible
 	if is_instance_valid(backpack_button):
-		backpack_button.visible = not in_td and _is_exploration_allowed()
-		backpack_button.text = "关闭背包 (B)" if _backpack_open else "打开背包 (B)"
+		backpack_button.visible = false
+	if is_instance_valid(_pda_panel):
+		_pda_panel.visible = not in_td
 	if has_node("HUD/InfoPanel"):
 		$HUD/InfoPanel.visible = not in_td
 	if has_node("HUD/MapPanel"):
 		$HUD/MapPanel.visible = not in_td
 	if has_node("HUD/ActionPanel"):
-		$HUD/ActionPanel.visible = not in_td
+		$HUD/ActionPanel.visible = false
 	if has_node("HUD/TimePanel"):
 		$HUD/TimePanel.visible = not in_td
+	if is_instance_valid(time_hud) and time_hud.has_method("set_layer"):
+		time_hud.set_layer(_current_layer, total_layers)
 	if is_instance_valid(_vitals_top_bar):
 		_vitals_top_bar.visible = not in_td
 	if is_instance_valid(evening_notice) and not in_td:
-		evening_notice.offset_top = 68.0
+		evening_notice.offset_top = HudTheme.TOP_HUD_Y + HudTheme.TOP_BAR_HEIGHT + 8.0
 	if is_instance_valid(fuel_label):
 		fuel_label.visible = false
 	if is_instance_valid(vitals_label):
 		vitals_label.visible = false
 	_update_stat_bars()
 	if is_instance_valid(inventory_label):
-		inventory_label.text = "背包: %s" % _inventory_summary()
+		inventory_label.visible = false
+	_refresh_resource_pickups()
 
-	var district_text := ""
-	if _current_district_index >= 0 and _map.is_valid_index(_current_district_index):
-		district_text = " | %s" % _map.building_label(_current_district_index)
+	if is_instance_valid(_pda_panel):
+		_pda_panel.refresh({
+			"entries": _backpack.get_sorted_entries(),
+			"backpack_open": _backpack_open,
+			"backpack_enabled": _is_exploration_allowed(),
+		})
 	if is_instance_valid(status_label):
-		var layer_text := "第 %d / %d 层" % [_current_layer, total_layers]
-		var elevator_text := "电梯进度: %d / %d" % [_elevator_repair_progress, _current_repair_cost()]
-		var run_text := "%s · %s" % [_run_difficulty_name, _run_squad_name]
-		var day_text := ""
-		if is_instance_valid(time_system):
-			day_text = " | %s 第%d天" % [time_system.get_phase_name(), time_system.day_index]
-		status_label.text = "%s | %s | %s%s | 探索: %d / %d | 剩余资源: %d%s" % [run_text, layer_text, elevator_text, day_text, _map.explored_count(), _map.cells.size(), _map.total_resources_remaining(), district_text]
+		status_label.visible = false
 	if is_instance_valid(map_info_label):
-		map_info_label.text = "大地图 · 相机跟车 · 右下角缩略图 | 路边招牌建筑旁 E 进入"
+		map_info_label.visible = false
 	_sync_minimap_navigation()
 
 	if is_instance_valid(prompt_label):
 		_update_prompts()
 
 func _update_prompts() -> void:
-	var can_enter_buildings := _can_disembark()
-	var in_foot := _mode == TravelMode.FOOT
-	var waiting_turn := _mode == TravelMode.DRIVE and _segment_target_index < 0
 	prompt_label.text = ""
+	prompt_label.visible = false
 	disembark_button.visible = false
 	return_button.visible = false
 	repair_button.visible = false
 	if is_instance_valid(back_track_button):
 		back_track_button.visible = false
-
-	if _is_night_phase():
-		if is_instance_valid(night_td) and night_td.visible:
-			prompt_label.text = "夜晚塔防：俯视图布防 → 接敌交互 → 结算（白天探索已暂停）"
-		else:
-			prompt_label.text = "夜晚结算中…"
-		_sync_junction_buttons()
-		return
-	if is_instance_valid(time_system) and time_system.can_manual_enter_defense():
-		if _mode == TravelMode.DRIVE and _segment_target_index >= 0:
-			prompt_label.text = "傍晚：行驶中按 F 可停车并进入布防"
-		elif _mode == TravelMode.DRIVE:
-			prompt_label.text = "傍晚：按 F 直接进入布防模式"
-		elif _mode == TravelMode.FOOT:
-			prompt_label.text = "傍晚：按 F 回车并进入布防模式"
-		else:
-			prompt_label.text = "傍晚提醒：按 F 进入布防模式"
-		if can_enter_buildings and _mode == TravelMode.DRIVE:
-			prompt_label.text = _building_menu_prompt_text()
-		elif in_foot:
-			return_button.visible = true
-		_sync_junction_buttons()
-		return
-
-	if waiting_turn:
-		var lines: PackedStringArray = [_halt_prompt_text()]
-		if _drive_exit_locked:
-			lines.append("（先松开方向键，再按要选的路）")
-		if can_enter_buildings:
-			lines.append(_building_menu_prompt_text())
-		prompt_label.text = "\n".join(lines)
-		_sync_junction_buttons()
-		var back_index := _get_back_neighbor_index()
-		if is_instance_valid(back_track_button) and back_index >= 0 and not can_enter_buildings:
-			var back_dir := _map.direction_between(_current_node_index, back_index)
-			back_track_button.visible = true
-			back_track_button.text = "原路返回 %s (E)" % _direction_label(back_dir)
-	elif in_foot:
-		if _can_repair_elevator() and _current_layer >= total_layers:
-			prompt_label.text = "室内 · 顶层电梯：修复完成将触发归档仪式与最终抉择"
-			repair_button.visible = true
-		elif _can_repair_elevator():
-			prompt_label.text = "室内 · 电梯楼：按 R 选择材料修复\n进度 %d/%d，满后进入上层。" % [_elevator_repair_progress, _current_repair_cost()]
-			repair_button.visible = true
-			repair_button.text = _repair_button_label()
-		else:
-			prompt_label.text = "室内搜刮：从门口出生，WASD 移动，靠近物资自动拾取。E 离开 · B 背包。"
-		return_button.visible = true
-	elif _segment_target_index >= 0:
-		var axis := _map.get_segment_axis(_segment_from_index, _segment_target_index)
-		if axis == "ns":
-			prompt_label.text = "俯视驾驶 · 南北路：W/↑ 前进  S/↓ 后退"
-		elif axis == "ew":
-			prompt_label.text = "俯视驾驶 · 东西路：D/→ 前进  A/← 后退"
-		else:
-			prompt_label.text = "俯视驾驶 · 沿当前路段用 WASD 或方向键前进/后退"
-	else:
-		prompt_label.text = "沿路驾驶（WASD）· 镜头跟车 · 开到路边房子门口高亮时按 E 进入"
 	_sync_junction_buttons()
+	_sync_action_panel_visibility()
 
 
 func _sync_junction_buttons() -> void:
-	var waiting_turn := _mode == TravelMode.DRIVE and _segment_target_index < 0 and not _is_night_phase()
 	var junction_root := get_node_or_null("HUD/ActionPanel/MarginContainer/VBoxContainer/JunctionButtons")
 	if junction_root != null:
-		junction_root.visible = waiting_turn
-	var button_map: Dictionary = {
-		"up": up_button,
-		"down": down_button,
-		"left": left_button,
-		"right": right_button,
-	}
-	for direction in button_map.keys():
-		var btn: Button = button_map[direction]
-		if not is_instance_valid(btn):
-			continue
-		var available := waiting_turn and _exit_options.has(direction)
-		btn.visible = available
-		btn.disabled = not available
-		if available:
-			btn.text = _direction_label(direction)
+		junction_root.visible = false
 
 
-func _building_menu_prompt_text() -> String:
+func _sync_action_panel_visibility() -> void:
+	if not has_node("HUD/ActionPanel"):
+		return
+	if is_instance_valid(night_td) and night_td.visible:
+		return
+	if _mode == TravelMode.FOOT or _is_night_phase():
+		$HUD/ActionPanel.visible = false
+		return
+	var panel: Panel = $HUD/ActionPanel
+	var has_content := false
+	if is_instance_valid(prompt_label) and not prompt_label.text.strip_edges().is_empty():
+		has_content = true
+	for btn in [disembark_button, return_button, repair_button, back_track_button]:
+		if is_instance_valid(btn) and btn.visible:
+			has_content = true
+			break
+	panel.visible = has_content
+
+
+func _enterable_hotkey_map() -> Dictionary:
+	var result: Dictionary = {}
 	var buildings := _get_enterable_buildings()
-	if buildings.is_empty():
-		return ""
-	_building_pick_index = clampi(_building_pick_index, 0, buildings.size() - 1)
-	var lines: PackedStringArray = ["路边建筑（停车后 E 进入 · Q 切换 · 1-9 快选）："]
-	for i in range(buildings.size()):
-		var entry: Dictionary = buildings[i]
-		var prefix := "▶ " if i == _building_pick_index else "  "
-		var num := "[%d] " % (i + 1) if i < 9 else ""
-		var remain := int(entry.get("remaining", 0))
-		var loot_hint := "剩余约 %d" % remain if remain > 0 else "可调查"
-		lines.append("%s%s路边 · %s · %s" % [prefix, num, str(entry.get("label", "建筑")), loot_hint])
-	return "\n".join(lines)
-
-func _halt_prompt_text() -> String:
-	var parts: PackedStringArray = []
-	for direction in ["up", "down", "left", "right"]:
-		if _exit_options.has(direction):
-			parts.append(_direction_label(direction))
-	var exits := "、".join(parts) if not parts.is_empty() else "无"
-	return "岔口选路（WASD/方向键，与地图一致）：%s" % exits
+	for i in range(mini(9, buildings.size())):
+		result[int(buildings[i].get("district_index", -1))] = i + 1
+	return result
 
 func _exit_directions_array() -> Array[String]:
 	var result: Array[String] = []
@@ -2623,6 +2640,7 @@ func _draw_day_overworld() -> void:
 
 	var can_enter := not _get_enterable_buildings().is_empty()
 	var enterables := _get_enterable_buildings()
+	var hotkey_map := _enterable_hotkey_map() if can_enter else {}
 	for index in range(_map.cells.size()):
 		if not _map.is_drive_node(index):
 			continue
@@ -2644,6 +2662,7 @@ func _draw_day_overworld() -> void:
 					highlight = true
 			var dcell := _map.get_cell(district_index)
 			var district_rect := _map.cell_rect(district_index)
+			var show_sign := not _building_sign_overlaps_inventory_hud(district_rect, -side.normalized())
 			var entrance: Vector2 = DayTopdownRender.draw_roadside_facade(
 				self,
 				road_rect,
@@ -2652,7 +2671,15 @@ func _draw_day_overworld() -> void:
 				_map.building_label(district_index),
 				highlight,
 				district_rect,
+				show_sign,
 			)
+			if index == _current_node_index and hotkey_map.has(district_index):
+				DayTopdownRender.draw_hotkey_badge(
+					self,
+					entrance,
+					str(hotkey_map[district_index]),
+					highlight,
+				)
 			if highlight:
 				draw_circle(entrance, 32.0, Color("#f0c168", 0.28))
 				draw_arc(entrance, 32.0, 0.0, TAU, 32, Color("#f0c168"), 4.0)
@@ -2678,6 +2705,21 @@ func _draw_day_overworld() -> void:
 						tip += Vector2(arm, 0.0)
 				draw_line(node_center, tip, Color("#7dffb2"), 6.0)
 				draw_rect(Rect2(tip - Vector2(8, 8), Vector2(16, 16)), Color("#e8fff0"), true)
+
+
+func _draw_door_exit_hint(door_rect: Rect2) -> void:
+	var door_center := door_rect.position + door_rect.size * 0.5
+	var player_panel := _foot_local_to_panel(_foot_local_pos, _current_district_index)
+	if player_panel.distance_to(door_center) > maxf(door_rect.size.x, door_rect.size.y) * 2.4:
+		return
+	var text := "E 返回车辆"
+	var bubble_w := 72.0
+	var bubble_h := 16.0
+	var bubble_pos := Vector2(door_center.x - bubble_w * 0.5, door_rect.position.y - 20.0)
+	draw_rect(Rect2(bubble_pos, Vector2(bubble_w, bubble_h)), Color(0.05, 0.09, 0.13, 0.74), true)
+	draw_rect(Rect2(bubble_pos, Vector2(bubble_w, bubble_h)), Color("#c8a060", 0.42), false, 1.0)
+	HudTheme.draw_string(self, bubble_pos + Vector2(10.0, 12.0), text, 10, Color("#f0d8a0"))
+
 
 func _interior_panel_rect(district_index: int) -> Rect2:
 	var cell := _map.get_cell(district_index)
@@ -2744,8 +2786,8 @@ func _draw_foot_interior() -> void:
 	DayTopdownRender.draw_interior_door(self, door_rect, true)
 	draw_rect(panel, Color("#4a6070"), false, 2.0)
 	var title := _map.building_label(_current_district_index)
-	draw_string(ThemeDB.fallback_font, panel.position + Vector2(8.0, -18.0), title, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#b8d4e8"))
-	draw_string(ThemeDB.fallback_font, door_rect.position + Vector2(0.0, -4.0), "↓ 门口 · E 返回车辆", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#f0c168"))
+	HudTheme.draw_string(self, panel.position + Vector2(8.0, -18.0), title, 14, Color("#b8d4e8"))
+	_draw_door_exit_hint(door_rect)
 	var player_panel := _foot_local_to_panel(_foot_local_pos, _current_district_index)
 	DayTopdownRender.draw_player_marker(
 		self,
@@ -2765,7 +2807,8 @@ func _draw_foot_interior() -> void:
 		var loot_panel := _foot_local_to_panel(loot_local, _current_district_index)
 		var loot_id := str(node.get_meta("item_id", "scrap"))
 		var loot_radius := maxf(tile_px, tile_py) * 0.36
-		DayTopdownRender.draw_loot_pickup(self, loot_panel, loot_id, loot_radius)
+		var show_loot_name := _should_show_loot_label_at(loot_local)
+		DayTopdownRender.draw_loot_pickup(self, loot_panel, loot_id, loot_radius, show_loot_name)
 
 func _draw_night_camp_background() -> void:
 	var view_size := get_viewport_rect().size

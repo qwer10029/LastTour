@@ -33,6 +33,8 @@ func _ready() -> void:
 	_setup_run_end_ui()
 	_setup_stat_bars()
 	_setup_world_camera()
+	_setup_minimap_hud()
+	_setup_hud_theme()
 	_setup_repair_choice_popup()
 	_spawn_vehicle()
 	_spawn_player()

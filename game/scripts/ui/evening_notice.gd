@@ -9,13 +9,6 @@ var _visible_timer: float = 0.0
 func _ready() -> void:
 	visible = false
 	modulate.a = 0.0
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.12, 0.08, 0.05, 0.92)
-	style.border_color = Color("#e87840")
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(8)
-	style.set_content_margin_all(12)
-	add_theme_stylebox_override("panel", style)
 
 
 func _process(delta: float) -> void:

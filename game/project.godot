@@ -41,6 +41,18 @@ global_script_classes=[{
 "icon": "",
 "language": &"GDScript",
 "path": "res://scripts/day_topdown_render.gd"
+}, {
+"base": &"RefCounted",
+"class": &"HudTheme",
+"icon": "",
+"language": &"GDScript",
+"path": "res://scripts/ui/hud_theme.gd"
+}, {
+"base": &"Control",
+"class": &"PdaHudPanel",
+"icon": "",
+"language": &"GDScript",
+"path": "res://scripts/ui/pda_hud_panel.gd"
 }]
 
 [physics]

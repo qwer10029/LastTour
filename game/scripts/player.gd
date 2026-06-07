@@ -21,25 +21,25 @@ func _ready() -> void:
 func _load_texture() -> void:
 	if is_instance_valid(sprite):
 		var tex: Texture2D = ArtAssetLoader.load_texture_sprite_alpha_key(
-			"res://assets/sprites/player_foot_walk_up.png",
+			"res://assets/sprites/player_foot_walk_all.png",
 			0.12,
-			"res://assets/sprites/player_foot.png",
+			"res://assets/sprites/player_foot_walk_up.png",
 		)
-		if tex == null:
-			tex = ArtAssetLoader.load_texture_sprite_alpha_key(
-				"res://assets/sprites/player_foot.png",
-				0.12,
-				"res://assets/dummy/player_dummy.png",
-			)
 		if tex == null:
 			tex = ArtAssetLoader.load_texture("res://assets/dummy/player_dummy.svg")
 		sprite.texture = tex
-		# Auto-scale large PNG/SVG so player icon fits expected size on screen
+		sprite.hframes = 1
+		sprite.frame = 0
 		if tex != null:
-			var desired_px := 40.0
+			var desired_px := 52.0
 			var sz: Vector2i = tex.get_size()
 			if sz.x > 0 and sz.y > 0:
-				var factor: float = minf(minf(desired_px / float(sz.x), desired_px / float(sz.y)), 1.0)
+				var sheet_frames := 8 if float(sz.x) / float(sz.y) >= 3.5 and float(sz.x) / 8.0 / float(sz.y) < 0.68 else 1
+				if sheet_frames > 1:
+					sprite.hframes = sheet_frames
+					sprite.frame = 1
+				var frame_w := float(sz.x) / float(sprite.hframes)
+				var factor: float = desired_px / maxf(frame_w, float(sz.y))
 				sprite.scale = Vector2(factor, factor)
 
 func set_active(active: bool) -> void:

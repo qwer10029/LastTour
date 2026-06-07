@@ -117,7 +117,39 @@ static func apply_black_alpha_key(tex: Texture2D, threshold: float = 0.12) -> Te
 	return ImageTexture.create_from_image(img)
 
 
-## 角色/道具精灵：只去近黑底，避免把灰色头盔等中性色抠掉。
+static func _color_near(a: Color, b: Color, tolerance: float) -> bool:
+	return absf(a.r - b.r) <= tolerance and absf(a.g - b.g) <= tolerance and absf(a.b - b.b) <= tolerance
+
+
+## 用左上角背景色去底（精灵表灰底）；容差宜小，避免误抠头盔灰。
+static func apply_sampled_background_key(tex: Texture2D, tolerance: float = 0.055) -> Texture2D:
+	if tex == null:
+		return null
+	var img := tex.get_image()
+	if img == null or img.is_empty():
+		return tex
+	if img.get_format() != Image.FORMAT_RGBA8:
+		img = img.duplicate()
+		img.convert(Image.FORMAT_RGBA8)
+	else:
+		img = img.duplicate()
+	var bg := img.get_pixel(0, 0)
+	var changed := false
+	for y in range(img.get_height()):
+		for x in range(img.get_width()):
+			var c := img.get_pixel(x, y)
+			if c.a <= 0.0:
+				continue
+			if _color_near(c, bg, tolerance):
+				c.a = 0.0
+				img.set_pixel(x, y, c)
+				changed = true
+	if not changed:
+		return tex
+	return ImageTexture.create_from_image(img)
+
+
+## 角色/道具精灵：先采样去灰底，再补抠近黑底。
 static func load_texture_sprite_alpha_key(
 	preferred_path: String,
 	threshold: float = 0.12,
@@ -130,9 +162,12 @@ static func load_texture_sprite_alpha_key(
 	if tex == null:
 		_alpha_key_cache[cache_key] = null
 		return null
-	tex = apply_black_alpha_key(tex, threshold)
-	_alpha_key_cache[cache_key] = tex
-	return tex
+	var keyed := apply_sampled_background_key(tex)
+	if not texture_has_visible_pixels(keyed):
+		keyed = tex
+	keyed = apply_black_alpha_key(keyed, threshold)
+	_alpha_key_cache[cache_key] = keyed
+	return keyed
 
 
 static func load_texture_alpha_key(

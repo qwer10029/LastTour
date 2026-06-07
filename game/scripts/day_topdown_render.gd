@@ -23,8 +23,13 @@ static var _tex_interior_floor: Texture2D
 static var _tex_interior_obstacle: Texture2D
 
 const PLAYER_FOOT_SPRITE := "res://assets/sprites/player_foot.png"
+const PLAYER_FOOT_WALK_SHEET := "res://assets/sprites/player_foot_walk_all.png"
 const PLAYER_FOOT_WALK_UP := "res://assets/sprites/player_foot_walk_up.png"
-const PLAYER_WALK_FRAME_COUNT := 4
+const PLAYER_WALK_SHEET_FRAMES := 8
+## 8 帧横条：0-2 背(上) 3-4 正(下) 5-7 右(左镜像)
+const PLAYER_WALK_FRAMES_UP := [0, 1, 2]
+const PLAYER_WALK_FRAMES_DOWN := [3, 4, 3]
+const PLAYER_WALK_FRAMES_SIDE := [5, 6, 7]
 const VEHICLE_TOPDOWN_SPRITE := "res://assets/sprites/vehicle_topdown.png"
 const VEHICLE_SPRITE_FORWARD := Vector2.LEFT  ## 贴图默认车头朝左
 static var _player_sprite_ready := false
@@ -722,6 +727,16 @@ static func _building_colors(building_type: String) -> Dictionary:
 	return {"wall": wall_fill, "roof": roof_fill}
 
 
+static func district_building_sign_rect(district_rect: Rect2, toward_road: Vector2) -> Rect2:
+	var unit := minf(district_rect.size.x, district_rect.size.y)
+	var center := district_rect.position + district_rect.size * 0.5
+	if toward_road.length_squared() > 0.01:
+		center += toward_road.normalized() * unit * 0.16
+	var body_size := unit * 0.42
+	var body := Rect2(center - Vector2(body_size, body_size) * 0.5, Vector2(body_size, body_size))
+	return Rect2(body.position + Vector2(body_size * 0.5 - 36.0, -10.0), Vector2(72, 14))
+
+
 static func draw_district_building(
 	canvas: CanvasItem,
 	district_rect: Rect2,
@@ -729,6 +744,7 @@ static func draw_district_building(
 	label: String,
 	toward_road: Vector2,
 	highlight_entrance: bool = false,
+	show_label: bool = true,
 ) -> void:
 	var unit := minf(district_rect.size.x, district_rect.size.y)
 	var center := district_rect.position + district_rect.size * 0.5
@@ -745,9 +761,19 @@ static func draw_district_building(
 	canvas.draw_rect(roof, colors["roof"], true)
 	if highlight_entrance:
 		canvas.draw_rect(body.grow(4.0), Color("#f0c168", 0.35), false, 2.0)
-	var sign_pos := body.position + Vector2(body_size * 0.5 - 36.0, -10.0)
-	canvas.draw_rect(Rect2(sign_pos, Vector2(72, 14)), Color("#2a2218", 0.9), true)
-	canvas.draw_string(ThemeDB.fallback_font, sign_pos + Vector2(4, 10), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color("#f8ecd8"))
+	if not show_label or label.is_empty():
+		return
+	var sign_rect := district_building_sign_rect(district_rect, toward_road)
+	canvas.draw_rect(sign_rect, Color("#2a2218", 0.9), true)
+	canvas.draw_string(
+		ThemeDB.fallback_font,
+		sign_rect.position + Vector2(4, 10),
+		label,
+		HORIZONTAL_ALIGNMENT_LEFT,
+		-1,
+		10,
+		Color("#f8ecd8"),
+	)
 
 
 static func draw_roadside_entrance(
@@ -772,6 +798,29 @@ static func draw_roadside_entrance(
 	return edge
 
 
+static func draw_hotkey_badge(
+	canvas: CanvasItem,
+	anchor: Vector2,
+	hotkey: String,
+	selected: bool = false,
+) -> void:
+	if hotkey.is_empty():
+		return
+	var badge := 16.0
+	var rect := Rect2(anchor + Vector2(6.0, -badge - 8.0), Vector2(badge, badge))
+	var bg := Color("#121820", 0.94) if not selected else Color("#3a2a10", 0.96)
+	var border := Color("#7a9cb0", 0.85) if not selected else Color("#f0c168", 0.95)
+	canvas.draw_rect(rect, bg, true)
+	canvas.draw_rect(rect, border, false, 1.5)
+	HudTheme.draw_string(
+		canvas,
+		rect.position + Vector2(4.0, 12.0),
+		hotkey,
+		11,
+		Color("#eef8ff") if not selected else Color("#fff0c8"),
+	)
+
+
 static func draw_roadside_facade(
 	canvas: CanvasItem,
 	road_rect: Rect2,
@@ -780,9 +829,18 @@ static func draw_roadside_facade(
 	label: String,
 	highlight_entrance: bool = false,
 	district_rect: Rect2 = Rect2(),
+	show_label: bool = true,
 ) -> Vector2:
 	if district_rect.size != Vector2.ZERO:
-		draw_district_building(canvas, district_rect, building_type, label, -side_dir, highlight_entrance)
+		draw_district_building(
+			canvas,
+			district_rect,
+			building_type,
+			label,
+			-side_dir,
+			highlight_entrance,
+			show_label,
+		)
 	return draw_roadside_entrance(canvas, road_rect, side_dir, highlight_entrance)
 
 
@@ -814,7 +872,13 @@ static func draw_roadside_building(canvas: CanvasItem, road_rect: Rect2, distric
 	draw_world_building(canvas, road_rect, district_rect, building_type, label, false)
 
 
-static func draw_loot_pickup(canvas: CanvasItem, center: Vector2, item_id: String, radius: float) -> void:
+static func draw_loot_pickup(
+	canvas: CanvasItem,
+	center: Vector2,
+	item_id: String,
+	radius: float,
+	show_label: bool = false,
+) -> void:
 	var icon_px := maxi(20, int(round(radius * 2.4)))
 	var tex := ItemIconFactory.get_texture(item_id, icon_px)
 	if tex != null:
@@ -829,8 +893,13 @@ static func draw_loot_pickup(canvas: CanvasItem, center: Vector2, item_id: Strin
 			color = Color(str(color))
 		canvas.draw_circle(center, radius + 3.0, Color(0.0, 0.0, 0.0, 0.45))
 		canvas.draw_circle(center, radius, color)
+	if not show_label:
+		return
 	var name := ItemDefs.get_item_name(item_id)
-	canvas.draw_string(ThemeDB.fallback_font, center + Vector2(-radius * 1.6, radius + 14.0), name, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#f0f4f8"))
+	var label_pos := center + Vector2(-20.0, -radius - 10.0)
+	var bubble := Rect2(label_pos + Vector2(-4.0, -12.0), Vector2(maxf(40.0, float(name.length()) * 7.0 + 8.0), 14.0))
+	canvas.draw_rect(bubble, Color(0.04, 0.07, 0.10, 0.72), true)
+	HudTheme.draw_string(canvas, label_pos, name, 10, Color("#e8f0f8"))
 
 
 static func draw_building_icon(canvas: CanvasItem, center: Vector2, building_type: String) -> void:
@@ -880,15 +949,19 @@ static func draw_interior_door(canvas: CanvasItem, tile_rect: Rect2, emphasized:
 	)
 
 
+static func reload_player_sprite() -> void:
+	_player_sprite_ready = false
+	_tex_player_foot = null
+
+
 static func _ensure_player_foot_sprite() -> void:
 	if _player_sprite_ready:
 		return
 	_player_sprite_ready = true
-	# 灰头盔不能被路面灰底抠图吃掉，只去近黑背景
 	_tex_player_foot = ArtAssetLoader.load_texture_sprite_alpha_key(
-		PLAYER_FOOT_WALK_UP,
+		PLAYER_FOOT_WALK_SHEET,
 		0.12,
-		PLAYER_FOOT_SPRITE,
+		PLAYER_FOOT_WALK_UP,
 	)
 
 
@@ -901,20 +974,42 @@ static func _foot_cardinal_direction(move_dir: Vector2) -> String:
 
 
 static func _foot_walk_flip(cardinal: String) -> Vector2:
-	# 贴图为背面行走（朝上走）；其余方向暂用翻转，有正面/侧面图后可换贴图
+	if cardinal == "left":
+		return Vector2(-1.0, 1.0)
+	return Vector2(1.0, 1.0)
+
+
+static func _foot_walk_frame_list(cardinal: String) -> Array:
 	match cardinal:
 		"down":
-			return Vector2(1.0, -1.0)
-		"left":
-			return Vector2(-1.0, 1.0)
+			return PLAYER_WALK_FRAMES_DOWN
+		"right", "left":
+			return PLAYER_WALK_FRAMES_SIDE
 		_:
-			return Vector2(1.0, 1.0)
+			return PLAYER_WALK_FRAMES_UP
 
 
-static func _foot_walk_frame_index(walk_phase: float, is_walking: bool) -> int:
-	if not is_walking:
+static func _foot_walk_sheet_frame_count(tex_size: Vector2i) -> int:
+	if tex_size.x <= 0 or tex_size.y <= 0:
+		return 1
+	# 8 帧表：单帧宽约等于半高（如 128×254）；4 帧表：单帧近方形
+	var fw8 := float(tex_size.x) / float(PLAYER_WALK_SHEET_FRAMES)
+	if absf(fw8 / float(tex_size.y) - 0.5) < 0.18:
+		return PLAYER_WALK_SHEET_FRAMES
+	var fw4 := float(tex_size.x) / 4.0
+	if absf(fw4 / float(tex_size.y) - 1.0) < 0.28:
+		return 4
+	return maxi(1, int(round(float(tex_size.x) / float(tex_size.y))))
+
+
+static func _foot_walk_frame_index(walk_phase: float, is_walking: bool, cardinal: String) -> int:
+	var frames: Array = _foot_walk_frame_list(cardinal)
+	if frames.is_empty():
 		return 0
-	return int(floor(walk_phase * 2.0 / PI)) % PLAYER_WALK_FRAME_COUNT
+	if not is_walking:
+		return int(frames[mini(1, frames.size() - 1)])
+	var step := int(floor(walk_phase * 2.0 / PI)) % frames.size()
+	return int(frames[step])
 
 
 static func draw_player_marker(
@@ -930,19 +1025,18 @@ static func draw_player_marker(
 	if _tex_player_foot != null:
 		var tex_size := _tex_player_foot.get_size()
 		if tex_size.x > 0.0 and tex_size.y > 0.0:
-			var frame_count := 1
-			if float(tex_size.x) >= float(tex_size.y) * 3.2:
-				frame_count = PLAYER_WALK_FRAME_COUNT
-			var frame_w := float(tex_size.x) / float(frame_count)
+			var sheet_frames := _foot_walk_sheet_frame_count(tex_size)
+			var frame_w := float(tex_size.x) / float(sheet_frames)
 			var frame_h := float(tex_size.y)
-			var frame := _foot_walk_frame_index(walk_phase, is_walking) % frame_count
+			var cardinal := _foot_cardinal_direction(move_dir)
+			var frame := _foot_walk_frame_index(walk_phase, is_walking, cardinal)
+			frame = clampi(frame, 0, sheet_frames - 1)
 			var bob := 0.0
 			var sway := 0.0
 			if is_walking:
 				bob = sin(walk_phase) * 3.0 * s
 				sway = sin(walk_phase * 2.0) * 1.5 * s
 			var draw_center := center + Vector2(sway, -bob)
-			var cardinal := _foot_cardinal_direction(move_dir)
 			var flip := _foot_walk_flip(cardinal)
 			var display_h := 52.0 * s
 			var display_w := display_h * (frame_w / maxf(frame_h, 1.0))

@@ -8,6 +8,26 @@ static var _cache: Dictionary = {}
 static var _file_cache: Dictionary = {}
 
 
+static func get_backpack_texture(size: int = ICON_SIZE) -> Texture2D:
+	var key := "backpack_%d" % size
+	if _cache.has(key):
+		return _cache[key]
+	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var body := Color("#5a7890")
+	var dark := Color("#2a3848")
+	var light := Color("#9ec8e8")
+	var pack := Rect2i(7, 11, size - 14, size - 15)
+	_fill_round_rect(img, pack, body, dark)
+	_fill_rect(img, Rect2i(9, 8, size - 18, 5), light)
+	_fill_rect(img, Rect2i(11, 6, 3, 7), dark)
+	_fill_rect(img, Rect2i(size - 14, 6, 3, 7), dark)
+	_fill_rect(img, Rect2i(pack.position.x + 4, pack.position.y + 6, pack.size.x - 8, 2), dark)
+	var tex := ImageTexture.create_from_image(img)
+	_cache[key] = tex
+	return tex
+
+
 static func get_texture(item_id: String, size: int = ICON_SIZE) -> Texture2D:
 	var key := "%s_%d" % [item_id, size]
 	if _cache.has(key):
