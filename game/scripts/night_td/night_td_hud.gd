@@ -5,6 +5,7 @@ signal start_wave_pressed
 signal continue_pressed
 signal tower_power_step(tower_id: int, delta_step: float)
 signal power_tower_selected(tower_id: int)
+signal overlay_toggled(state: bool)
 
 @onready var top_bar: PanelContainer = $TopBar
 @onready var side_panel: PanelContainer = $Sidebar
@@ -34,6 +35,8 @@ var _continue_locked := false
 var _breach_count := 0
 var _tower_cards: Dictionary = {}
 var _cards_vbox: VBoxContainer = null
+var _overlay_btn: Button = null
+var _overlay_active := false
 
 # Tooltip
 var _tooltip: PanelContainer = null
@@ -49,6 +52,7 @@ var _power_list: VBoxContainer = null
 var _power_empty_label: Label = null
 var _power_rows: Dictionary = {}
 var _selected_power_tower_id := -1
+var _power_pulse_tween: Tween = null
 
 const COLORS := {
 	"bg": "#0b1018", "panel": "#141c28", "border": "#2a3a4f",
@@ -66,6 +70,7 @@ func _ready() -> void:
 	if is_instance_valid(continue_btn):
 		continue_btn.pressed.connect(_on_continue_pressed)
 	_build_power_panel()
+	_build_overlay_button()
 	if is_instance_valid(breach_label): breach_label.visible = false
 	_select("jammer")
 
@@ -88,6 +93,7 @@ func show_session_ui() -> void:
 		breach_label.text = "⚠ 突破: 0"
 	clear_log()
 	hide_result_dialog()
+	if is_instance_valid(_overlay_btn): _overlay_btn.show()
 
 
 func hide_session_ui() -> void:
@@ -95,6 +101,7 @@ func hide_session_ui() -> void:
 	if is_instance_valid(top_bar): top_bar.hide()
 	if is_instance_valid(side_panel): side_panel.hide()
 	if is_instance_valid(breach_label): breach_label.visible = false
+	if is_instance_valid(_overlay_btn): _overlay_btn.hide()
 	hide()
 
 
@@ -135,7 +142,6 @@ func _build_tooltip() -> void:
 func _show_tooltip(type_id: String) -> void:
 	var tdef: Dictionary = NightTdDefs.get_tower_def(type_id)
 	var parts: PackedStringArray = []
-	# Single line: range | damage | firerate | special
 	if int(tdef.get("range", 0)) > 0:
 		parts.append("射程%dpx" % int(tdef.get("range", 0)))
 	if float(tdef.get("damage", 0)) > 0:
@@ -157,7 +163,6 @@ func _show_tooltip(type_id: String) -> void:
 	if desc != "":
 		parts.insert(0, desc)
 	_tooltip_label.text = " · ".join(parts)
-	# Position: left of the sidebar
 	var card: PanelContainer = _tower_cards[type_id]["panel"]
 	var p := card.global_position
 	_tooltip.position = Vector2(p.x - 210, p.y - 2)
@@ -179,7 +184,6 @@ func _build_cards_in_sidebar() -> void:
 	_cards_vbox = VBoxContainer.new()
 	_cards_vbox.name = "TowerCards"
 	_cards_vbox.add_theme_constant_override("separation", 3)
-	# Insert at the top of sidebar VBox
 	vbox.add_child(_cards_vbox)
 	vbox.move_child(_cards_vbox, 0)
 
@@ -248,7 +252,6 @@ func _select(type_id: String) -> void:
 	_refresh_card_highlights()
 
 
-## Backward-compat: called by NightTdController._update_hud_tools().
 func refresh_tool_buttons() -> void:
 	_refresh_card_highlights()
 
@@ -284,6 +287,69 @@ func update_card_costs(backpack_counts: Dictionary) -> void:
 			if int(backpack_counts.get(item_id, 0)) < int(build_cost[item_id]):
 				ok = false; break
 		cost_lbl.add_theme_color_override("font_color", Color(COLORS["accent"]) if ok else Color(COLORS["danger"]))
+
+
+# -- Overlay Toggle Button ------------------------------------------
+
+func _build_overlay_button() -> void:
+	_overlay_btn = Button.new()
+	_overlay_btn.name = "OverlayBtn"
+	_overlay_btn.text = "📊 热力图: 关"
+	_overlay_btn.flat = true
+	_overlay_btn.add_theme_font_size_override("font_size", 11)
+	_overlay_btn.custom_minimum_size = Vector2(120, 28)
+
+	var s := StyleBoxFlat.new()
+	s.bg_color = Color(COLORS["panel"])
+	s.border_color = Color(COLORS["border"])
+	s.set_border_width_all(1); s.set_corner_radius_all(4)
+	_overlay_btn.add_theme_stylebox_override("normal", s)
+
+	var sh := StyleBoxFlat.new()
+	sh.bg_color = Color(COLORS["accent"], 0.2)
+	sh.border_color = Color(COLORS["accent"])
+	sh.set_border_width_all(1); sh.set_corner_radius_all(4)
+	_overlay_btn.add_theme_stylebox_override("hover", sh)
+
+	_overlay_btn.pressed.connect(_on_overlay_btn_pressed)
+
+	# Position: inside top bar, next to the timer/phase labels
+	if is_instance_valid(top_bar):
+		var hbox := top_bar.get_node_or_null("HBox")
+		if hbox != null:
+			hbox.add_child(_overlay_btn)
+		else:
+			add_child(_overlay_btn)
+			_overlay_btn.position = Vector2(300, 10)
+	else:
+		add_child(_overlay_btn)
+		_overlay_btn.position = Vector2(300, 10)
+
+	_overlay_btn.show()
+
+
+func _on_overlay_btn_pressed() -> void:
+	_overlay_active = not _overlay_active
+	_refresh_overlay_btn_text()
+	overlay_toggled.emit(_overlay_active)
+
+
+func _refresh_overlay_btn_text() -> void:
+	if is_instance_valid(_overlay_btn):
+		if _overlay_active:
+			_overlay_btn.text = "📊 热力图: 开"
+			var s := StyleBoxFlat.new()
+			s.bg_color = Color(COLORS["accent"], 0.18)
+			s.border_color = Color(COLORS["accent"])
+			s.set_border_width_all(2); s.set_corner_radius_all(4)
+			_overlay_btn.add_theme_stylebox_override("normal", s)
+		else:
+			_overlay_btn.text = "📊 热力图: 关"
+			var s := StyleBoxFlat.new()
+			s.bg_color = Color(COLORS["panel"])
+			s.border_color = Color(COLORS["border"])
+			s.set_border_width_all(1); s.set_corner_radius_all(4)
+			_overlay_btn.add_theme_stylebox_override("normal", s)
 
 
 # -- Phase --------------------------------------------------------
@@ -327,6 +393,10 @@ func clear_log() -> void:
 		for child in event_log_vbox.get_children():
 			child.queue_free()
 
+func _scroll_to_bottom() -> void:
+	if is_instance_valid(event_scroll):
+		event_scroll.scroll_vertical = int(event_scroll.get_v_scroll_bar().max_value)
+
 
 func append_log(line: String, text_color: Color = Color(COLORS["subtitle"])) -> void:
 	if not is_instance_valid(event_log_vbox): return
@@ -337,9 +407,9 @@ func append_log(line: String, text_color: Color = Color(COLORS["subtitle"])) -> 
 	entry.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	entry.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	event_log_vbox.add_child(entry)
+	# 用 call_deferred 替代 await，避免每次日志创建协程对象（GDScriptFunctionState）
 	if is_instance_valid(event_scroll):
-		await get_tree().process_frame
-		event_scroll.scroll_vertical = int(event_scroll.get_v_scroll_bar().max_value)
+		_scroll_to_bottom.call_deferred()
 
 
 # -- Mode Switching ------------------------------------------------
@@ -350,6 +420,7 @@ func set_place_mode(active: bool) -> void:
 	if is_instance_valid(_cards_vbox): _cards_vbox.visible = active
 	show_power_panel(false)
 	_update_card_states(active)
+	if is_instance_valid(_overlay_btn): _overlay_btn.show()
 
 
 func set_combat_mode() -> void:
@@ -358,6 +429,7 @@ func set_combat_mode() -> void:
 	if is_instance_valid(_cards_vbox): _cards_vbox.visible = false
 	_update_card_states(false)
 	show_power_panel(true)
+	if is_instance_valid(_overlay_btn): _overlay_btn.show()
 
 
 func _update_card_states(enabled: bool) -> void:
@@ -382,7 +454,6 @@ func show_result(text: String) -> void:
 # -- Power Panel ---------------------------------------------------
 
 func _build_power_panel() -> void:
-	# 电力面板放在屏幕左侧，不挤占右侧边栏
 	_power_panel = VBoxContainer.new()
 	_power_panel.name = "PowerPanel"
 	_power_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
@@ -435,35 +506,44 @@ func update_power_list(towers: Array) -> void:
 
 
 func clear_power_highlight() -> void:
+	if _power_pulse_tween != null and _power_pulse_tween.is_valid():
+		_power_pulse_tween.kill()
 	if _selected_power_tower_id >= 0:
 		var prev: Dictionary = _power_rows.get(_selected_power_tower_id, {})
 		if not prev.is_empty() and is_instance_valid(prev["panel"]):
 			prev["panel"].remove_theme_stylebox_override("panel")
+			prev["panel"].modulate = Color.WHITE
 	_selected_power_tower_id = -1
 
 
 func highlight_power_row(tower_id: int) -> void:
-	# Clear previous
+	if _power_pulse_tween != null and _power_pulse_tween.is_valid():
+		_power_pulse_tween.kill()
 	if _selected_power_tower_id >= 0:
 		var prev: Dictionary = _power_rows.get(_selected_power_tower_id, {})
 		if not prev.is_empty() and is_instance_valid(prev["panel"]):
 			prev["panel"].remove_theme_stylebox_override("panel")
+			prev["panel"].modulate = Color.WHITE
 
 	var d: Dictionary = _power_rows.get(tower_id, {})
 	if d.is_empty(): return
 	var panel: PanelContainer = d["panel"]
 	_selected_power_tower_id = tower_id
+	panel.modulate = Color.WHITE
 
-	# Amber border to indicate selection
 	var s := StyleBoxFlat.new()
-	s.bg_color = Color(COLORS["amber"], 0.12)
+	s.bg_color = Color(COLORS["amber"], 0.25)
 	s.border_color = Color(COLORS["amber"])
-	s.set_border_width_all(2); s.set_corner_radius_all(4)
+	s.set_border_width_all(3); s.set_corner_radius_all(4)
 	panel.add_theme_stylebox_override("panel", s)
+
+	_power_pulse_tween = create_tween()
+	_power_pulse_tween.set_loops()
+	_power_pulse_tween.tween_property(s, "bg_color:a", 0.10, 0.35)
+	_power_pulse_tween.tween_property(s, "bg_color:a", 0.30, 0.35)
 
 
 func _add_power_row(tower_id: int) -> void:
-	# Use PanelContainer so the highlight border is visible
 	var panel := PanelContainer.new()
 	panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	panel.gui_input.connect(func(event: InputEvent):

@@ -32,6 +32,18 @@ func max_threat() -> float:
 	return _max_threat
 
 
+func get_threat_array() -> PackedFloat32Array:
+	return _threat
+
+
+## 从另一 Influence 浅拷贝威胁数据（供热力图快照复用）。
+func copy_from(other: NightTdInfluence) -> void:
+	cols = other.cols
+	rows = other.rows
+	_threat = other._threat
+	_max_threat = other._max_threat
+
+
 func total_threat() -> float:
 	var t := 0.0
 	for v in _threat:

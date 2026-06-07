@@ -29,12 +29,15 @@ var _drag_end_pos: Vector2 = Vector2.ZERO
 var _is_dragging := false
 # Breach flash effects
 var _breach_flashes: Array[Dictionary] = []  # {pos, timer, max_timer}
+# 缓存字体引用，避免每帧在 draw_string 中查 ThemeDB
+var _font: Font = null
 
 
 func _ready() -> void:
 	_controller = get_parent() as NightTdController
 	set_process_unhandled_input(true)
 	z_index = 1
+	_font = ThemeDB.fallback_font
 	_reflow_layout()
 	base_local_pos = get_vehicle_center_local()
 
@@ -48,7 +51,9 @@ func _process(delta: float) -> void:
 	if view_size != _last_view_size:
 		_reflow_layout()
 	_process_breach_flashes(delta)
-	if get_parent() != null and get_parent().visible:
+	# 节流：重绘由 controller 的帧计数器统一控制（~20fps），
+	# 此处不再每帧 queue_redraw，仅响应尺寸变化或突破闪效等独立事件。
+	if view_size != _last_view_size:
 		queue_redraw()
 
 
@@ -220,7 +225,7 @@ func _is_pointer_over_ui() -> bool:
 	while control != null:
 		if control is BaseButton:
 			return true
-		if str(control.name) in ["SidePanel", "Sidebar", "TopBar", "ResultOverlay", "Hud", "ResultPanel", "ContinueBtn"]:
+		if str(control.name) in ["SidePanel", "Sidebar", "TopBar", "ResultOverlay", "Hud", "ResultPanel", "ContinueBtn", "OverlayBtn"]:
 			return true
 		control = control.get_parent() as Control
 	return false
@@ -230,13 +235,11 @@ func _draw() -> void:
 	var grid_color := Color("#05080c")
 	var line_color := Color("#8ec7ff")
 	var spawn_color := Color(0.95, 0.2, 0.2, 0.55)
-	var buildable_color := Color(0.12, 0.45, 0.24, 0.18)
-	var buildable_border := Color(0.55, 0.95, 0.66, 0.34)
 	var field_rect := get_field_rect_local()
 	draw_rect(field_rect, grid_color, true)
 	draw_rect(field_rect, Color("#d7f1ff"), false, 4.0)
 	draw_rect(field_rect.grow(-5.0), Color(0.0, 0.0, 0.0, 0.10), false, 1.0)
-	draw_string(ThemeDB.fallback_font, field_origin + Vector2(8, -10), "布防区", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#eef8ff"))
+	draw_string(_font, field_origin + Vector2(8, -10), "布防区", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#eef8ff"))
 
 	for x in range(grid_cols + 1):
 		var px := field_origin.x + x * _layout_tile_size
@@ -245,24 +248,23 @@ func _draw() -> void:
 		var py := field_origin.y + y * _layout_tile_size
 		draw_line(Vector2(field_origin.x, py), Vector2(field_origin.x + grid_cols * _layout_tile_size, py), line_color, 1.5)
 
-	for x in range(grid_cols):
-		for y in range(grid_rows):
-			if not is_spawn_lane(Vector2i(x, y)):
-				continue
-			var r := Rect2(field_origin + Vector2(x * _layout_tile_size, y * _layout_tile_size), Vector2(_layout_tile_size, _layout_tile_size))
-			draw_rect(r, spawn_color, true)
-			draw_rect(r.grow(-4.0), Color(1.0, 0.9, 0.9, 0.35), false, 1.0)
+	# 可建造区域：整块填充 + 逐行棋盘格（18 行 vs 504 格，draw_rect 从 1200 降到 ~25）
+	var buildable_rect := get_field_rect_local()
+	draw_rect(buildable_rect, Color(0.14, 0.52, 0.28, 0.14), true)
+	for y in range(grid_rows):
+		if y % 2 == 0:
+			var row_rect := Rect2(
+				field_origin + Vector2(0, y * _layout_tile_size),
+				Vector2(grid_cols * _layout_tile_size, _layout_tile_size)
+			)
+			draw_rect(row_rect, Color(0.14, 0.52, 0.28, 0.08), true)
 
-	for x in range(grid_cols):
-		for y in range(grid_rows):
-			if is_vehicle_cell(Vector2i(x, y)):
-				continue
-			var build_rect := Rect2(field_origin + Vector2(x * _layout_tile_size, y * _layout_tile_size), Vector2(_layout_tile_size, _layout_tile_size))
-			var checker := 0.10 if (x + y) % 2 == 0 else 0.18
-			draw_rect(build_rect, Color(0.14, 0.52, 0.28, checker), true)
-			draw_rect(build_rect, buildable_border, false, 1.0)
-			if is_spawn_lane(Vector2i(x, y)):
-				draw_rect(build_rect, Color(0.82, 0.26, 0.26, 0.08), true)
+	# 出生带：4 个矩形替代 ~60 个格子绘制
+	var ts := _layout_tile_size
+	draw_rect(Rect2(field_origin, Vector2(2 * ts, grid_rows * ts)), spawn_color, true)
+	draw_rect(Rect2(field_origin + Vector2((grid_cols - 2) * ts, 0), Vector2(2 * ts, grid_rows * ts)), spawn_color, true)
+	draw_rect(Rect2(field_origin, Vector2(grid_cols * ts, 2 * ts)), spawn_color, true)
+	draw_rect(Rect2(field_origin + Vector2(0, (grid_rows - 2) * ts), Vector2(grid_cols * ts, 2 * ts)), spawn_color, true)
 
 	for cell in vehicle_cells:
 		var rect := Rect2(field_origin + Vector2(cell.x * _layout_tile_size, cell.y * _layout_tile_size), Vector2(_layout_tile_size, _layout_tile_size))
@@ -272,9 +274,14 @@ func _draw() -> void:
 	var veh_center := get_vehicle_center_local()
 	var veh_scale := (_layout_tile_size * 2.28) / maxf(DayTopdownRender.vehicle_display_width(), 1.0)
 	DayTopdownRender.draw_vehicle_marker(self, veh_center, veh_scale, "", Vector2.UP)
-	draw_string(ThemeDB.fallback_font, veh_center + Vector2(-22, -36), "防守核心", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#ffb1a8", 0.9))
+	draw_string(_font, veh_center + Vector2(-22, -36), "防守核心", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#ffb1a8", 0.9))
 
 	if _controller != null:
+		# 覆盖层：热力图 + 指挥官策略（按钮控制，布防与战斗阶段通用）
+		if _controller.show_overlay:
+			_draw_influence_heatmap()
+			_draw_commander_overlay()
+		# 流场调试箭头：仅在布防阶段且 debug_draw_routes 开启时绘制
 		if (
 			_controller.show_route_overlay
 			and _controller.debug_draw_routes
@@ -300,15 +307,165 @@ func _draw_arrow_head(tip: Vector2, direction: Vector2, size: float, color: Colo
 	draw_colored_polygon(PackedVector2Array([tip, base + wing, base - wing]), color)
 
 
+## 威胁热力图：用颜色覆盖层展示每格的威胁值（火力覆盖密度）。
+## 红色 = 高威胁（敌人在此会被猛烈打击），蓝色/透明 = 无覆盖（防线缺口）。
+## 颜色由归一化威胁值映射：深蓝 → 青 → 绿 → 黄 → 红。
+func _draw_influence_heatmap() -> void:
+	if _controller == null:
+		return
+	var data: Dictionary = _controller.get_influence_display_data()
+	if data.is_empty():
+		return
+	var threat: PackedFloat32Array = data.get("threat", PackedFloat32Array())
+	var max_t: float = float(data.get("max_threat", 0.0))
+	var cols: int = int(data.get("cols", 0))
+	var rows: int = int(data.get("rows", 0))
+	if threat.size() == 0 or cols == 0 or max_t <= 0.0:
+		# 无威胁数据：可能没有放置攻击塔，画一个均匀透明层提示
+		var field_rect := get_field_rect_local()
+		draw_rect(field_rect, Color(0.1, 0.12, 0.2, 0.12), true)
+		draw_string(_font, field_origin + Vector2(8, -28),
+			"威胁热力图  (无火力覆盖)", HORIZONTAL_ALIGNMENT_LEFT, -1, 12,
+			Color(0.4, 0.5, 0.7, 0.8))
+		return
+	var label := "威胁热力图  (%.0f DPS 峰值)" % max_t
+	draw_string(_font, field_origin + Vector2(8, -28),
+		label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12,
+		Color(0.95, 0.4, 0.3, 0.85))
+	# 仅绘制非零威胁格，大幅减少实际绘制调用。
+	# 典型布防下只有 ~50-150 格有火力覆盖（而非全部 504 格）。
+	var tile := _layout_tile_size
+	for y in range(rows):
+		for x in range(cols):
+			var idx := y * cols + x
+			if idx >= threat.size():
+				continue
+			var v := threat[idx]
+			if v <= 0.0:
+				continue
+			var t := clampf(v / max_t, 0.0, 1.0)
+			draw_rect(Rect2(
+				field_origin + Vector2(x * tile, y * tile),
+				Vector2(tile, tile)
+			), _heat_color(t), true)
+
+
+## 归一化威胁值 → 热力图颜色（弧形渐变：蓝→青→绿→黄→红）
+func _heat_color(t: float) -> Color:
+	# 低→高：深蓝(0) → 青(0.25) → 绿(0.5) → 黄(0.75) → 红(1.0)
+	var r: float
+	var g: float
+	var b: float
+	if t < 0.25:
+		var s := t / 0.25
+		r = 0.08; g = 0.18 + s * 0.5; b = 0.35 + s * 0.5
+	elif t < 0.5:
+		var s := (t - 0.25) / 0.25
+		r = 0.08 + s * 0.15; g = 0.68 + s * 0.3; b = 0.85 - s * 0.55
+	elif t < 0.75:
+		var s := (t - 0.5) / 0.25
+		r = 0.23 + s * 0.72; g = 0.98 - s * 0.1; b = 0.3 - s * 0.2
+	else:
+		var s := (t - 0.75) / 0.25
+		r = 0.95 - s * 0.05; g = 0.88 - s * 0.65; b = 0.1 - s * 0.05
+	return Color(r, g, b, 0.32)
+
+
+## 指挥官覆盖层：画出集结区域、攻坚目标、佯攻方向。
+func _draw_commander_overlay() -> void:
+	if _controller == null:
+		return
+	var cd: Dictionary = _controller.get_commander_display_data()
+	if cd.is_empty():
+		return
+	if bool(cd.get("suppressed", false)):
+		draw_string(_font, field_origin + Vector2(8, -44),
+			"指挥官: 失能中", HORIZONTAL_ALIGNMENT_LEFT, -1, 11,
+			Color(0.8, 0.4, 0.3, 0.9))
+		return
+
+	var missions: Array = cd.get("missions", [])
+	var pressure_active: bool = bool(cd.get("pressure_active", false))
+
+	var label_text := "指挥官: 活跃"
+	if missions.is_empty():
+		label_text += " (暂无攻坚任务)"
+	draw_string(_font, field_origin + Vector2(8, -44),
+		label_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11,
+		Color(1.0, 0.82, 0.29, 0.9))
+
+	for m in missions:
+		var target_cell: Vector2i = m["target_cell"]
+		var staging_cell: Vector2i = m["staging_cell"]
+		var state: String = str(m["state"])
+
+		# 集结区域：黄色虚线圆
+		var staging_pos := _cell_to_local(staging_cell)
+		var r := _layout_tile_size * 1.2
+		var dash_len := _layout_tile_size * 0.25
+		var segments := 16
+		for i in range(segments):
+			var a0 := TAU * i / segments
+			var a1 := TAU * (i + 0.5) / segments
+			draw_line(
+				staging_pos + Vector2(cos(a0) * r, sin(a0) * r),
+				staging_pos + Vector2(cos(a1) * r, sin(a1) * r),
+				Color(1.0, 0.85, 0.2, 0.55), 2.0
+			)
+
+		# 集结标签
+		draw_string(_font, staging_pos + Vector2(-14, -r - 10),
+			"集结", HORIZONTAL_ALIGNMENT_CENTER, -1, 9,
+			Color(1.0, 0.85, 0.2, 0.8))
+
+		# 突击目标：红色闪烁十字
+		var target_pos := _cell_to_local(target_cell)
+		var cross := _layout_tile_size * 0.55
+		var line_color: Color
+		if state == "push":
+			line_color = Color(1.0, 0.2, 0.2, 0.85)
+		else:
+			line_color = Color(0.8, 0.5, 0.3, 0.5)
+		draw_line(target_pos + Vector2(-cross, -cross), target_pos + Vector2(cross, cross), line_color, 2.5)
+		draw_line(target_pos + Vector2(cross, -cross), target_pos + Vector2(-cross, cross), line_color, 2.5)
+
+		# 从集结到目标的连线（虚线）
+		var sx := staging_pos.x
+		var sy := staging_pos.y
+		var tx := target_pos.x
+		var ty := target_pos.y
+		var steps := 8
+		for i in range(steps):
+			var f0 := float(i) / steps
+			var f1 := float(i + 0.5) / steps
+			draw_line(
+				Vector2(lerpf(sx, tx, f0), lerpf(sy, ty, f0)),
+				Vector2(lerpf(sx, tx, f1), lerpf(sy, ty, f1)),
+				Color(1.0, 0.6, 0.15, 0.4), 1.5
+			)
+
+		# Push 状态标签
+		if state == "push":
+			draw_string(_font, target_pos + Vector2(-16, -22),
+				"突击!", HORIZONTAL_ALIGNMENT_CENTER, -1, 10,
+				Color(1.0, 0.25, 0.2, 0.9))
+
+	# 佯攻指示
+	if pressure_active:
+		var p_pos := get_vehicle_center_local()
+		draw_string(_font, p_pos + Vector2(-30, -48),
+			"佯攻", HORIZONTAL_ALIGNMENT_CENTER, -1, 9,
+			Color(0.7, 0.55, 0.9, 0.75))
+
+
 func _draw_flow_overlay() -> void:
 	# Draw a cyan gradient-arrow overlay showing the flow-field direction for each reachable cell.
-	# Replaces the old red route-line overlay; routes in the wave plan are now unused for pathing.
 	var ff: NightTdFlowField = _controller._flow
 	if ff == null or ff.cols == 0:
 		return
 	draw_string(
-		ThemeDB.fallback_font,
-		field_origin + Vector2(8, -28),
+		_font,
+		field_origin + Vector2(8, -58),
 		"流场方向 →",
 		HORIZONTAL_ALIGNMENT_LEFT,
 		-1,
@@ -316,7 +473,6 @@ func _draw_flow_overlay() -> void:
 		Color(0.55, 0.85, 0.95, 0.75),
 	)
 	var arrow_len := _layout_tile_size * 0.3
-	# Integration value range for brightness tinting: sample a rough max from corners.
 	var int_max := maxf(
 		ff.integration_at(Vector2i(0, 0)),
 		maxf(
@@ -341,9 +497,8 @@ func _draw_flow_overlay() -> void:
 			if dir.length_squared() < 0.0001:
 				continue
 			var center := _cell_to_local(cell)
-			# Tint: cells closer to base (lower integration) are slightly brighter.
 			var t := clampf(ff.integration_at(cell) / int_max, 0.0, 1.0)
-			var alpha := lerpf(0.72, 0.32, t)  # near=bright, far=dim
+			var alpha := lerpf(0.72, 0.32, t)
 			var color := Color(0.55, 0.85, 0.95, alpha)
 			var tip := center + dir * arrow_len
 			draw_line(center - dir * arrow_len * 0.4, tip, color, 1.5)
@@ -372,10 +527,21 @@ func _draw_combat_entities() -> void:
 		draw_arc(local_pos, radius + 5.0, 0.0, TAU, 32, ring, 2.5)
 		if is_ally:
 			label = "友" + label.left(1)
-		draw_string(ThemeDB.fallback_font, local_pos + Vector2(-14, -20), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#fff8f8"))
+		draw_string(_font, local_pos + Vector2(-14, -20), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#fff8f8"))
 		# 牧羊者：加一圈金色指挥光环
 		if bool(enemy.get("is_shepherd", false)) and not is_ally:
 			draw_arc(local_pos, radius + 10.0, 0.0, TAU, 40, Color(1.0, 0.82, 0.29, 0.7), 2.0)
+		# 战斗中显示指挥官分配的组标签
+		if _controller.phase == NightTdController.Phase.COMBAT:
+			var goal_key: String = str(enemy.get("goal_key", ""))
+			if goal_key.begins_with("m:"):
+				draw_string(_font, local_pos + Vector2(-10, -32),
+					"突击", HORIZONTAL_ALIGNMENT_CENTER, -1, 8,
+					Color(1.0, 0.5, 0.2, 0.8))
+			elif goal_key == "pressure":
+				draw_string(_font, local_pos + Vector2(-10, -32),
+					"佯攻", HORIZONTAL_ALIGNMENT_CENTER, -1, 8,
+					Color(0.6, 0.5, 0.9, 0.8))
 		if _controller.phase == NightTdController.Phase.COMBAT:
 			var move_dir: Vector2 = enemy.get("move_dir", Vector2.ZERO)
 			if move_dir.length_squared() > 0.0001:
@@ -408,7 +574,7 @@ func _draw_placement_preview() -> void:
 	if can_place_tower(hover, occupied):
 		draw_rect(build_rect, Color(0.43, 0.82, 0.55, 0.42), true)
 		draw_rect(build_rect, Color("#ffffff"), false, 2.5)
-		draw_string(ThemeDB.fallback_font, build_rect.position + Vector2(6, 18), "可放置", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#f1fff3"))
+		draw_string(_font, build_rect.position + Vector2(6, 18), "可放置", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#f1fff3"))
 	else:
 		draw_rect(build_rect, Color(0.95, 0.35, 0.35, 0.28), true)
 		draw_rect(build_rect, Color(1.0, 0.8, 0.8, 0.8), false, 2.0)
@@ -424,7 +590,7 @@ func _draw_vehicle_hp_bar() -> void:
 	var ratio: float = clampf(_controller.base_hp / _controller.base_max_hp, 0.0, 1.0)
 	draw_rect(Rect2(bar_x, bar_y, bar_w, 12), Color("#1a2533"), true)
 	draw_rect(Rect2(bar_x, bar_y, bar_w * ratio, 12), Color("#d89246"), true)
-	draw_string(ThemeDB.fallback_font, Vector2(bar_x, bar_y - 18), "车辆耐久", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#d8e4f0"))
+	draw_string(_font, Vector2(bar_x, bar_y - 18), "车辆耐久", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#d8e4f0"))
 
 
 func play_breach_flash(world_pos: Vector2) -> void:
@@ -452,7 +618,6 @@ func clear_tower_selection() -> void:
 
 
 func _process_breach_flashes(delta: float) -> void:
-	var to_remove: Array[int] = []
 	for i in range(_breach_flashes.size() - 1, -1, -1):
 		_breach_flashes[i]["timer"] += delta
 		if _breach_flashes[i]["timer"] >= _breach_flashes[i]["max_timer"]:
@@ -485,6 +650,12 @@ func _draw_placed_towers() -> void:
 		var local_pos := _cell_to_local(cell)
 		var tdef: Dictionary = NightTdDefs.get_tower_def(str(tower["type"]))
 		var radius: float = float(tdef.get("radius", 12))
+		# 功率指示：超频塔外圈发光
+		var power_scale := float(tower.get("power_scale", 1.0))
+		if power_scale > 1.05:
+			draw_circle(local_pos, radius + 6.0, Color(1.0, 0.7, 0.2, 0.25 * (power_scale - 1.0)))
+		elif power_scale < 0.95 and float(tdef.get("upkeep", 0.0)) > 0.0:
+			draw_circle(local_pos, radius + 4.0, Color(0.3, 0.3, 0.3, 0.4))
 		match str(tower["type"]):
 			"jammer":
 				draw_circle(local_pos, radius, tdef.get("color", Color.WHITE))
@@ -506,16 +677,13 @@ func _draw_placed_towers() -> void:
 				draw_arc(local_pos, float(tdef.get("range", 150)), 0.0, TAU, 48, Color(0.35, 0.78, 0.88, 0.18), 2.0)
 				draw_circle(local_pos, radius, hk_color)
 				draw_circle(local_pos, radius * 0.5, Color("#0a2030"))
-				# 选中高亮：等待玩家指派目标
 				if _controller.phase == NightTdController.Phase.COMBAT and int(tower.get("id", -1)) == _controller._selected_hacker_id:
 					draw_arc(local_pos, radius + 6.0, 0.0, TAU, 40, Color("#9af0ff"), 2.5)
-				# 黑入进度条
 				var prog := float(tower.get("hack_progress", 0.0))
 				if prog > 0.0:
 					var ratio := clampf(prog / 100.0, 0.0, 1.0)
 					draw_rect(Rect2(local_pos.x - 16, local_pos.y - 24, 32, 4), Color(0.05, 0.1, 0.12, 0.9), true)
 					draw_rect(Rect2(local_pos.x - 16, local_pos.y - 24, 32 * ratio, 4), Color("#5ac8e0"), true)
-				# 引导光束：连到当前目标敌人
 				var teid := int(tower.get("target_eid", -1))
 				if teid >= 0:
 					for e in _controller._enemies:
@@ -524,18 +692,14 @@ func _draw_placed_towers() -> void:
 							break
 			"sniper":
 				var sn_color: Color = tdef.get("color", Color("#7aa6ff"))
-				# 细长射程环：体现超远狙击范围
 				draw_arc(local_pos, float(tdef.get("range", 220)), 0.0, TAU, 64, Color(0.48, 0.65, 1.0, 0.18), 1.5)
 				draw_circle(local_pos, radius, sn_color)
-				# 内圆十字准星暗示
 				draw_circle(local_pos, radius * 0.35, Color("#0a1830"))
 			"splash":
 				var sp_color: Color = tdef.get("color", Color("#e0a23a"))
-				# 溅射半径：淡填充圆提示范围
 				var splash_r := float(tdef.get("splash_radius", 56.0))
 				draw_circle(local_pos, splash_r, Color(0.88, 0.64, 0.23, 0.10))
 				draw_arc(local_pos, splash_r, 0.0, TAU, 48, Color(0.88, 0.64, 0.23, 0.28), 1.5)
-				# 射程环
 				draw_arc(local_pos, float(tdef.get("range", 120)), 0.0, TAU, 48, Color(0.88, 0.64, 0.23, 0.22), 2.0)
 				draw_circle(local_pos, radius, sp_color)
 				draw_circle(local_pos, radius * 0.45, Color("#1a0e00"))
@@ -556,7 +720,6 @@ func _draw_placed_towers() -> void:
 			draw_rect(Rect2(local_pos.x - bar_w * 0.5, bar_y, bar_w, bar_h), Color("#1a2533"), true)
 			draw_rect(Rect2(local_pos.x - bar_w * 0.5, bar_y, bar_w * ratio, bar_h), Color("#6ed08b"), true)
 		if is_selected:
-			# Gold border around HP bar to indicate selection
 			var bar_y := local_pos.y - radius - 10.0
 			draw_rect(Rect2(local_pos.x - 16.0, bar_y - 1.0, 32.0, 6.0), Color("#ffcc6f"), false, 1.5)
 

@@ -15,7 +15,7 @@ enum Phase { PLACE, COMBAT, RESULT }
 @export var spawn_interval_sec: float = 1.2
 @export var use_wave_plan: bool = true
 @export_file("*.json") var wave_plan_path: String = "res://data/night_td/waves/night_wave_demo.json"
-@export var debug_draw_routes: bool = true
+@export var debug_draw_routes: bool = false   # 默认关闭流场箭头，仅在调试时开启（极耗性能）
 @export var td_base_deploy: int = 14
 
 @onready var field: NightTdField = $Field
@@ -23,6 +23,7 @@ enum Phase { PLACE, COMBAT, RESULT }
 
 var phase: int = Phase.PLACE
 var show_route_overlay: bool = false
+var show_overlay: bool = false   # 热力图/指挥官覆盖层开关（按钮切换）
 var _allow_placement := true
 var _starting_inventory: int = 0
 var _exploration_inventory: int = 0
@@ -51,10 +52,14 @@ const SEPARATION_WEIGHT := 0.6   # 分离转向权重：防止同场单位排成
 const BARRIER_FLOW_COST := 6.0   # 路障作为软性高代价格：流场优先绕行，被逼到墙角才硬挤
 var _flow: NightTdFlowField = null
 var _flow_dirty := true
+var _flow_rebuild_cooldown := 0.0    # 流场重建最小间隔（秒），防止 brownout 振荡导致每帧 Dijkstra
+const FLOW_REBUILD_INTERVAL := 0.25
 
 # --- 威胁影响图（P2）---
 const ENERGY_CONFIG_PATH := "res://data/night_td/energy.json"
 var _influence: NightTdInfluence = null
+var _display_influence: NightTdInfluence = null   # 独立的热力图缓存（布防/战斗两阶段均可查询）
+var _display_influence_dirty := true
 var _danger_weight := 0.0   # 由难度决定：0=无视火力（简单），高=主动绕开杀伤区（困难）
 
 # --- 指挥官 / 牧羊人 AI（P3）---
@@ -81,6 +86,7 @@ var _salvage_pending: Dictionary = {}   # 夜末待结算的废料掉落 item_id
 var _session_paused := false             # 由 GameManager / 父场景控制暂停
 var _breach_losses: Dictionary = {}      # 突破被拖走的物资 item_id -> count（夜末汇报）
 var _combat_tower_ids: Array[int] = []   # 进入战斗时的塔 id 快照（排除布防阶段已撤销的塔）
+var _redraw_frame := 0                   # 帧计数器，用于节流 queue_redraw
 
 
 func _ready() -> void:
@@ -96,6 +102,7 @@ func _ready() -> void:
 		hud.continue_pressed.connect(_finish_session)
 		hud.tower_power_step.connect(_on_tower_power_step)
 		hud.power_tower_selected.connect(_on_power_tower_selected)
+		hud.overlay_toggled.connect(_on_overlay_toggled)
 
 
 func set_session_paused(paused: bool) -> void:
@@ -113,9 +120,13 @@ func _process(delta: float) -> void:
 			_process_combat(delta)
 		Phase.RESULT:
 			pass
-	if is_instance_valid(field):
-		field.queue_redraw()
-	queue_redraw()
+	# 节流重绘：每 3 帧 (~20fps) 才触发一次 _draw，避免 60fps 下 GPU 被 2000+ 绘制命令淹没。
+	# 游戏逻辑仍以完整帧率运行，只降低渲染刷新频率。
+	_redraw_frame = (_redraw_frame + 1) % 3
+	if _redraw_frame == 0:
+		if is_instance_valid(field):
+			field.queue_redraw()
+		queue_redraw()
 
 
 func start_session(
@@ -172,6 +183,8 @@ func start_session(
 	_shepherd_degrade_until = 0.0
 	_combat_time = 0.0
 	_flow_dirty = true
+	_flow_rebuild_cooldown = 0.0
+	_display_influence_dirty = true
 	_wave_queue = _build_wave_queue()
 	_wave_scheduler = NightTdWaveScheduler.new()
 	wave_plan = null
@@ -188,6 +201,7 @@ func start_session(
 	_last_result = {}
 	phase = Phase.PLACE if allow_placement and placement_time_sec > 0.0 else Phase.COMBAT
 	show_route_overlay = phase == Phase.PLACE
+	show_overlay = false   # 覆盖层默认关闭，玩家可通过按钮开启
 	visible = true
 	if is_instance_valid(hud):
 		hud.show_session_ui()
@@ -233,10 +247,15 @@ func _update_hud_tools() -> void:
 func hide_session() -> void:
 	phase = Phase.PLACE
 	show_route_overlay = false
+	show_overlay = false
 	_combat_done = false
 	visible = false
 	_towers.clear()
 	_enemies.clear()
+	# 清除污流场数据和显示缓存，防止下次布防阶段绘制过期箭头/热力图
+	_flow = null
+	_display_influence = null
+	_display_influence_dirty = true
 	if is_instance_valid(hud):
 		hud.hide_session_ui()
 
@@ -260,6 +279,7 @@ func _process_combat(delta: float) -> void:
 	if _combat_done:
 		return
 	_combat_time += delta
+	_flow_rebuild_cooldown = maxf(_flow_rebuild_cooldown - delta, 0.0)
 	if _wave_scheduler != null:
 		for spec in _wave_scheduler.tick(delta):
 			_spawn_from_spec(spec)
@@ -377,9 +397,11 @@ func _offgrid_spawn_pos(edge_cell: Vector2i) -> Vector2:
 
 func _update_enemies(delta: float) -> void:
 	var base_pos: Vector2 = field.get_vehicle_center_world()
-	# 流场按需重建（P1.3）：dirty 标记由放/拆塔、供电、黑入等触发，每帧至多重建一次。
-	if _flow_dirty:
+	# 流场按需重建（P1.3）：dirty 标记由放/拆塔、供电、黑入等触发。
+	# 加冷却时间防止 brownout 振荡导致每帧 Dijkstra（504 格 × 5 场 = 极高开销）。
+	if _flow_dirty and _flow_rebuild_cooldown <= 0.0:
 		_rebuild_flow_field()
+		_flow_rebuild_cooldown = FLOW_REBUILD_INTERVAL
 	var to_remove: Array[int] = []
 	for i in range(_enemies.size()):
 		var enemy: Dictionary = _enemies[i]
@@ -606,6 +628,7 @@ func _damage_tower(tower: Dictionary, amount: float) -> void:
 
 func _mark_flow_dirty() -> void:
 	_flow_dirty = true
+	_mark_display_influence_dirty()
 
 
 ## 重建流场（P1.3）：目标=车辆格；路障作为软性高代价格（见 _build_flow_extra_cost）。
@@ -808,6 +831,73 @@ func _on_cell_combat_clicked(cell: Vector2i) -> void:
 func _on_power_tower_selected(tower_id: int) -> void:
 	if is_instance_valid(field) and field.has_method("set_highlighted_tower"):
 		field.set_highlighted_tower(tower_id)
+
+
+## 覆盖层切换（HUD 按钮 → controller → field）
+func _on_overlay_toggled(state: bool) -> void:
+	show_overlay = state
+	_display_influence_dirty = true
+	if is_instance_valid(field):
+		field.queue_redraw()
+
+
+## 获取热力图数据（供 field 绘制）：{cols, rows, threat:PackedFloat32Array, max_threat:float}
+func get_influence_display_data() -> Dictionary:
+	_ensure_display_influence_fresh()
+	if _display_influence == null:
+		return {}
+	var threat := _display_influence.get_threat_array()
+	return {
+		"cols": _display_influence.cols,
+		"rows": _display_influence.rows,
+		"threat": threat,
+		"max_threat": _display_influence.max_threat(),
+	}
+
+
+## 确保热力图缓存有效：布防阶段按需重建，战斗阶段同步自流场用的 _influence。
+func _ensure_display_influence_fresh() -> void:
+	if _display_influence == null:
+		_display_influence = NightTdInfluence.new()
+		_display_influence_dirty = true
+
+	if not _display_influence_dirty:
+		return
+
+	if phase == Phase.COMBAT:
+		# 战斗阶段：直接复用流场重建时写入的 _influence（已经在 _build_danger_cost 更新）
+		# 但 _influence 可能只在 _build_danger_cost 中才被 rebuild，这里做一次浅拷贝引用即可。
+		# 若 _influence 尚未创建，则从当前塔数据重建。
+		if _influence != null and _influence.cols > 0:
+			# 从 _influence 复制威胁数据
+			_display_influence.copy_from(_influence)
+			_display_influence_dirty = false
+			return
+
+	# 布防阶段 / 无现有数据 → 从当前塔重建
+	var tile := field.get_layout_tile_size() if is_instance_valid(field) else 48.0
+	if tile <= 0.0:
+		tile = 48.0
+	var threats := _collect_tower_threats()
+	_display_influence.rebuild(field.grid_cols, field.grid_rows, threats)
+	_display_influence_dirty = false
+
+
+## 布防/拆塔 / 供电变化时标记热力图脏。
+func _mark_display_influence_dirty() -> void:
+	_display_influence_dirty = true
+
+
+## 获取指挥官可视化数据（供 field 绘制集结/突击标记）
+func get_commander_display_data() -> Dictionary:
+	if _commander == null or not _commander.enabled:
+		return {}
+	return {
+		"missions": _commander.last_missions,
+		"pressure_active": _commander.last_pressure_active,
+		"assault_keys": _commander.last_assault_keys,
+		"suppressed": _commander.suppressed,
+	}
 
 
 func _enemy_at_cell(cell: Vector2i) -> Dictionary:

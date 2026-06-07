@@ -76,6 +76,28 @@
 			"armor": 0.0,
 			"hack_resist": 1.0,
 			"is_shepherd": false
+		},
+		"sprinter": {
+			"name": "高速突破机",
+			"hp": 12.0,
+			"speed": 90.0,
+			"base_damage": 3.0,
+			"color": "#7df9ff",
+			"radius": 8.0,
+			"armor": 0.0,
+			"hack_resist": 1.0,
+			"is_shepherd": false
+		},
+		"tank": {
+			"name": "重型攻坚机",
+			"hp": 200.0,
+			"speed": 18.0,
+			"base_damage": 28.0,
+			"color": "#ff4444",
+			"radius": 22.0,
+			"armor": 0.5,
+			"hack_resist": 1.8,
+			"is_shepherd": false
 		}
 	}
 }
