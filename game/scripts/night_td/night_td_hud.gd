@@ -248,6 +248,10 @@ func _select(type_id: String) -> void:
 	_refresh_card_highlights()
 
 
+## Backward-compat: called by NightTdController._update_hud_tools().
+func refresh_tool_buttons() -> void:
+	_refresh_card_highlights()
+
 func get_selected_tower() -> String:
 	return _selected
 
