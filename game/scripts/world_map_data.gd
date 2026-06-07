@@ -50,7 +50,9 @@ func generate(new_columns: int, new_rows: int, new_cell_size: Vector2i, rng_seed
 		cells[index]["building_type"] = "hub"
 		hub_indices.append(index)
 
-	var district_coords: Array[Vector2i] = _pick_cells(rng, max(5, min(8, columns)))
+	var district_coords: Array[Vector2i] = _pick_district_coords(
+		rng, max(5, min(8, columns)), hub_coords
+	)
 	for coord in district_coords:
 		var index := index_from_coord(coord)
 		if index in hub_indices:
@@ -80,28 +82,11 @@ func generate(new_columns: int, new_rows: int, new_cell_size: Vector2i, rng_seed
 
 	if district_indices.is_empty():
 		return
-	for district_index in district_indices:
-		var district_coord := coord_from_index(district_index)
-		var closest_hub := _closest_coord(district_coord, hub_coords)
-		if closest_hub != Vector2i(-1, -1):
-			_carve_l_path(district_coord, closest_hub, rng)
-
-	for i in range(max(0, hub_coords.size() - 1)):
-		_carve_l_path(hub_coords[i], hub_coords[i + 1], rng)
-
-	# Build a simple full grid road network so every adjacent cell is connected.
-	for y in range(rows):
-		for x in range(columns):
-			var c := Vector2i(x, y)
-			# link right neighbor
-			if x < columns - 1:
-				_link_coords(c, Vector2i(x + 1, y))
-			# link down neighbor
-			if y < rows - 1:
-				_link_coords(c, Vector2i(x, y + 1))
-
+	# 路在格与格之间的边沿：所有非建筑格（空地/hub）四向连通，建筑格本身不可通行
+	_link_traversable_grid()
 	_finalize_cell_kinds()
 	_setup_district_roadside(rng)
+	_finalize_cell_kinds()
 	_mark_start_node()
 
 func get_world_size() -> Vector2:
@@ -166,9 +151,9 @@ func get_roadside_districts(road_index: int) -> Array[int]:
 	var result: Array[int] = []
 	if not is_valid_index(road_index) or is_district(road_index):
 		return result
-	for neighbor in get_connected_indices(road_index):
-		if is_district(neighbor):
-			result.append(neighbor)
+	for district_index in district_indices:
+		if int(cells[district_index].get("approach_road_index", -1)) == road_index:
+			result.append(district_index)
 	return result
 
 
@@ -430,6 +415,48 @@ func _pick_cells(rng: RandomNumberGenerator, count: int) -> Array[Vector2i]:
 		result.append(coord)
 	return result
 
+
+func _pick_district_coords(
+	rng: RandomNumberGenerator,
+	count: int,
+	hub_coords: Array[Vector2i],
+) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	var attempts := 0
+	var max_attempts := maxi(count * 80, 320)
+	while result.size() < count and attempts < max_attempts:
+		attempts += 1
+		var coord := Vector2i(rng.randi_range(0, columns - 1), rng.randi_range(0, rows - 1))
+		if _can_place_district_at(coord, result, hub_coords):
+			result.append(coord)
+	return result
+
+
+func _can_place_district_at(
+	coord: Vector2i,
+	placed: Array[Vector2i],
+	hub_coords: Array[Vector2i],
+) -> bool:
+	if coord in placed:
+		return false
+	for existing in placed:
+		if abs(existing.x - coord.x) + abs(existing.y - coord.y) < 2:
+			return false
+	for hub in hub_coords:
+		if hub == coord:
+			return false
+		if abs(hub.x - coord.x) + abs(hub.y - coord.y) < 2:
+			return false
+	for delta: Vector2i in DIRECTIONS.values():
+		var neighbor := coord + delta
+		if neighbor.x < 0 or neighbor.y < 0 or neighbor.x >= columns or neighbor.y >= rows:
+			continue
+		if neighbor in placed:
+			return false
+		if neighbor in hub_coords:
+			return false
+	return true
+
 func _closest_coord(source: Vector2i, candidates: Array[Vector2i]) -> Vector2i:
 	var best := Vector2i(-1, -1)
 	var best_distance := 999999
@@ -447,13 +474,27 @@ func _carve_l_path(a: Vector2i, b: Vector2i, rng: RandomNumberGenerator) -> void
 		_current_step_y_then_x(a, b)
 
 func _carve_grid_roads() -> void:
+	_link_traversable_grid()
+
+
+## 空地与 hub 格之间四向连边（路在格边沿）；建筑格不参与，形成绕建筑通行的网格。
+func _link_traversable_grid() -> void:
 	for row in range(rows):
 		for column in range(columns):
 			var coord := Vector2i(column, row)
+			var index := index_from_coord(coord)
+			if is_district(index):
+				continue
 			if column + 1 < columns:
-				_link_coords(coord, Vector2i(column + 1, row))
+				var right_coord := Vector2i(column + 1, row)
+				var right_index := index_from_coord(right_coord)
+				if not is_district(right_index):
+					_link_coords(coord, right_coord)
 			if row + 1 < rows:
-				_link_coords(coord, Vector2i(column, row + 1))
+				var down_coord := Vector2i(column, row + 1)
+				var down_index := index_from_coord(down_coord)
+				if not is_district(down_index):
+					_link_coords(coord, down_coord)
 
 func _current_step_x_then_y(current: Vector2i, target: Vector2i) -> void:
 	while current.x != target.x:
@@ -851,18 +892,56 @@ func _finalize_cell_kinds() -> void:
 
 func _setup_district_roadside(rng: RandomNumberGenerator) -> void:
 	for district_index in district_indices:
-		var road_neighbors: Array[int] = []
-		for neighbor in get_connected_indices(district_index):
-			if not is_district(neighbor):
-				road_neighbors.append(neighbor)
-		if road_neighbors.is_empty():
-			continue
-		var approach_index: int = road_neighbors[rng.randi_range(0, road_neighbors.size() - 1)]
 		for neighbor in get_connected_indices(district_index).duplicate():
-			if neighbor != approach_index:
+			if is_district(neighbor):
 				_disconnect_cells(district_index, neighbor)
+		for direction in DIRECTIONS.keys():
+			var linked := int(cells[district_index]["connections"][direction])
+			if linked >= 0:
+				_disconnect_cells(district_index, linked)
+		var door_candidates: Array[int] = _district_door_candidates(district_index)
+		if door_candidates.is_empty():
+			continue
+		var approach_index: int = _pick_district_door(door_candidates, rng)
+		var door_dir := direction_between(district_index, approach_index)
+		if door_dir == "":
+			continue
+		cells[district_index]["connections"][door_dir] = approach_index
+		cells[approach_index]["connections"][opposite_direction(door_dir)] = district_index
 		cells[district_index]["approach_road_index"] = approach_index
 		cells[district_index]["entry_from_road"] = direction_between(approach_index, district_index)
+
+
+func _district_door_candidates(district_index: int) -> Array[int]:
+	var result: Array[int] = []
+	if not is_valid_index(district_index) or not is_district(district_index):
+		return result
+	var coord := coord_from_index(district_index)
+	for dir_key in DIRECTIONS.keys():
+		var delta: Vector2i = DIRECTIONS[dir_key]
+		var neighbor_coord := coord + delta
+		if neighbor_coord.x < 0 or neighbor_coord.y < 0 or neighbor_coord.x >= columns or neighbor_coord.y >= rows:
+			continue
+		var neighbor_index := index_from_coord(neighbor_coord)
+		if is_valid_index(neighbor_index) and is_drive_node(neighbor_index):
+			result.append(neighbor_index)
+	return result
+
+
+func _pick_district_door(candidates: Array[int], rng: RandomNumberGenerator) -> int:
+	var best: Array[int] = []
+	var best_count := -1
+	for index in candidates:
+		var road_count := 0
+		for neighbor in get_connected_indices(index):
+			if is_road_link(index, neighbor):
+				road_count += 1
+		if road_count > best_count:
+			best_count = road_count
+			best = [index]
+		elif road_count == best_count:
+			best.append(index)
+	return best[rng.randi_range(0, best.size() - 1)]
 
 
 func _disconnect_cells(from_index: int, to_index: int) -> void:
@@ -932,7 +1011,10 @@ func load_from_dictionary(data: Dictionary) -> void:
 	start_node_index = int(data.get("start_node_index", -1))
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(columns * 9176 + rows * 131)
+	_link_traversable_grid()
+	_finalize_cell_kinds()
 	_setup_district_roadside(rng)
+	_finalize_cell_kinds()
 	if not is_valid_index(start_node_index) or not is_drive_node(start_node_index):
 		_mark_start_node()
 
