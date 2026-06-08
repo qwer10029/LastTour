@@ -84,13 +84,13 @@ static func _load_elevator_console_sprite() -> Texture2D:
 static func get_texture(item_id: String, size: int = ICON_SIZE) -> Texture2D:
 	if item_id.begins_with("quest:") or item_id == "quest_battery":
 		return get_quest_battery_texture(size)
-	var key := "%s_%d" % [item_id, size]
+	var key := "loot_v2_%s_%d" % [item_id, size]
 	if _cache.has(key):
 		return _cache[key]
 	var normalized := ItemDefs.normalize_item_id(item_id)
 	var file_tex := _load_loot_sprite(normalized)
 	if file_tex != null:
-		var scaled := _scale_texture(file_tex, size)
+		var scaled := _scale_loot_texture(file_tex, size, normalized)
 		_cache[key] = scaled
 		return scaled
 	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
@@ -194,15 +194,66 @@ static func _load_loot_sprite(item_id: String) -> Texture2D:
 	return tex
 
 
-static func _scale_texture(tex: Texture2D, size: int) -> Texture2D:
+static func _loot_icon_fill_ratio(item_id: String) -> float:
+	match item_id:
+		"wood", "fuel":
+			return 0.96
+		_:
+			return 0.90
+
+
+static func _alpha_centroid(img: Image) -> Vector2:
+	var w := img.get_width()
+	var h := img.get_height()
+	var sum_x := 0.0
+	var sum_y := 0.0
+	var weight_sum := 0.0
+	for y in range(h):
+		for x in range(w):
+			var alpha := img.get_pixel(x, y).a
+			if alpha <= 0.04:
+				continue
+			var weight := float(alpha)
+			sum_x += float(x) * weight
+			sum_y += float(y) * weight
+			weight_sum += weight
+	if weight_sum <= 0.0:
+		return Vector2(float(w) * 0.5, float(h) * 0.5)
+	return Vector2(sum_x / weight_sum, sum_y / weight_sum)
+
+
+static func _scale_loot_texture(tex: Texture2D, size: int, item_id: String = "") -> Texture2D:
 	var img := tex.get_image()
 	if img == null or img.is_empty():
 		return tex
-	if img.get_width() == size and img.get_height() == size:
-		return tex
 	img = img.duplicate()
-	img.resize(size, size, Image.INTERPOLATE_NEAREST)
-	return ImageTexture.create_from_image(img)
+	var used := img.get_used_rect()
+	if used.size != Vector2i.ZERO:
+		img = img.get_region(used)
+	var src_w := img.get_width()
+	var src_h := img.get_height()
+	if src_w <= 0 or src_h <= 0:
+		return tex
+	var fill := _loot_icon_fill_ratio(item_id)
+	var target := maxi(1, int(round(float(size) * fill)))
+	var scale := float(target) / float(maxi(src_w, src_h))
+	var nw := maxi(1, int(round(float(src_w) * scale)))
+	var nh := maxi(1, int(round(float(src_h) * scale)))
+	if nw != src_w or nh != src_h:
+		img.resize(nw, nh, Image.INTERPOLATE_NEAREST)
+	var centroid := _alpha_centroid(img)
+	var canvas := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	canvas.fill(Color(0, 0, 0, 0))
+	var dest := Vector2i(
+		int(round(float(size) * 0.5 - centroid.x)),
+		int(round(float(size) * 0.5 - centroid.y)),
+	)
+	canvas.blit_rect(img, Rect2i(0, 0, nw, nh), dest)
+	return ImageTexture.create_from_image(canvas)
+
+
+static func _scale_texture(tex: Texture2D, size: int) -> Texture2D:
+	return _scale_loot_texture(tex, size)
 
 
 static func _draw_item_icon(img: Image, item_id: String, size: int) -> void:

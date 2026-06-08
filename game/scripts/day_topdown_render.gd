@@ -6,6 +6,7 @@ const VEHICLE_PIXEL := 3.0
 const VEHICLE_BODY_UNITS := 14.0
 const VEHICLE_DISPLAY_SCALE := 1.62  ## 俯视角贴图相对路面宽度的显示倍率
 const ROAD_TILE_DIR := "res://assets/tiles/road/"
+const GROUND_WILDERNESS_TILE := "res://assets/tiles/ground_wilderness.png"
 const INTERIOR_TILE_DIR := "res://assets/tiles/interior/"
 const PROPS_DIR := "res://assets/sprites/props/"
 const TILE_OVERLAP_WORLD := 1.5
@@ -101,6 +102,65 @@ static func _terrain_speck_color(seed: int, ix: int, iy: int, h: float) -> Color
 	if roll > 0.35:
 		return Color("#3a3428", 0.38)
 	return Color("#2a3228", 0.32)
+
+
+static var _wilderness_ground_ready := false
+static var _tex_wilderness_ground: Texture2D
+
+
+static func _ensure_wilderness_ground_texture() -> Texture2D:
+	if _wilderness_ground_ready:
+		return _tex_wilderness_ground
+	_wilderness_ground_ready = true
+	_tex_wilderness_ground = ArtAssetLoader.load_texture(GROUND_WILDERNESS_TILE)
+	return _tex_wilderness_ground
+
+
+static func reload_wilderness_ground() -> void:
+	_wilderness_ground_ready = false
+	_tex_wilderness_ground = null
+	_ensure_wilderness_ground_texture()
+
+
+static func has_wilderness_ground() -> bool:
+	return _ensure_wilderness_ground_texture() != null
+
+
+static func preload_wilderness_noise() -> void:
+	reload_wilderness_ground()
+
+
+static func wilderness_ground_modulate() -> Color:
+	return Color(0.98, 0.96, 0.9, 1.0)
+
+
+static func draw_tiled_wilderness_ground(
+	canvas: CanvasItem,
+	rect: Rect2,
+	modulate: Color = wilderness_ground_modulate(),
+) -> void:
+	var tex := _ensure_wilderness_ground_texture()
+	if tex == null:
+		return
+	var tw := float(tex.get_width())
+	var th := float(tex.get_height())
+	if tw <= 0.0 or th <= 0.0 or rect.size.x <= 0.0 or rect.size.y <= 0.0:
+		return
+	var tile_x: float = floor(rect.position.x / tw) * tw
+	var tile_y: float = floor(rect.position.y / th) * th
+	var y: float = tile_y
+	while y < rect.end.y:
+		var x: float = tile_x
+		while x < rect.end.x:
+			var dest_x0 := maxf(x, rect.position.x)
+			var dest_y0 := maxf(y, rect.position.y)
+			var dest_x1 := minf(x + tw, rect.end.x)
+			var dest_y1 := minf(y + th, rect.end.y)
+			var dest := Rect2(dest_x0, dest_y0, dest_x1 - dest_x0, dest_y1 - dest_y0)
+			var src := Rect2(dest_x0 - x, dest_y0 - y, dest.size.x, dest.size.y)
+			canvas.draw_texture_rect_region(tex, dest, src, modulate)
+			x += tw
+		y += th
 
 
 static func _base_color(kind: String, explored: bool) -> Color:
@@ -599,8 +659,11 @@ static func draw_road_network(
 	link_explored: Callable,
 ) -> void:
 	# 先直路、后路口：直路可伸入拐角直臂下方，拐角贴图盖在上面消除接缝
+	var cull_rect := view_rect.grow(road_width() * 2.0)
 	for index in range(map.cells.size()):
 		if not map.is_drive_node(index):
+			continue
+		if not cull_rect.intersects(map.cell_rect(index)):
 			continue
 		var center := map.cell_center(index)
 		var from_dirs := map.get_road_directions(index)
@@ -626,6 +689,8 @@ static func draw_road_network(
 	for index in range(map.cells.size()):
 		if not map.is_drive_node(index):
 			continue
+		if not cull_rect.intersects(map.cell_rect(index)):
+			continue
 		var center := map.cell_center(index)
 		var node_in_view := view_rect.grow(road_width()).has_point(center)
 		if not node_in_view:
@@ -637,8 +702,10 @@ static func draw_road_network(
 		draw_road_node_cap(canvas, center, map.cell_size, explored, road_dirs)
 
 
-# 路面格只铺草地/废墟底图，窄路由连接带绘制
+# 路面格草地由 draw_tiled_wilderness_ground 统一平铺；无地砖资源时回退程序化色块
 static func draw_road_terrain_cell(canvas: CanvasItem, rect: Rect2, explored: bool, seed: int) -> void:
+	if _tex_wilderness_ground != null:
+		return
 	draw_ruin_cell(canvas, rect, "trail", explored, seed)
 
 

@@ -24,6 +24,8 @@ const TERRAIN_PROP_TYPES := [
 	"rubble_pile",
 ]
 const ROAD_BLOCKAGE_TYPES := ["crater", "wreck_tank", "wreck_truck", "rubble_barricade"]
+## 预览干净焦土地表时关闭路边杂物与路障装饰
+const OVERWORLD_DECOR_ENABLED := false
 
 var columns: int = 0
 var rows: int = 0
@@ -60,7 +62,7 @@ func generate(new_columns: int, new_rows: int, new_cell_size: Vector2i, rng_seed
 		hub_indices.append(index)
 
 	var district_coords: Array[Vector2i] = _pick_district_coords(
-		rng, max(5, min(8, columns)), hub_coords
+		rng, max(8, min(16, (columns + rows) / 3)), hub_coords
 	)
 	for coord in district_coords:
 		var index := index_from_coord(coord)
@@ -231,6 +233,8 @@ func get_available_directions(index: int) -> Array[String]:
 
 
 func is_direction_blocked(index: int, direction: String) -> bool:
+	if not OVERWORLD_DECOR_ENABLED:
+		return false
 	if not is_valid_index(index):
 		return true
 	var blocks: Dictionary = cells[index].get("road_blockages", {})
@@ -263,6 +267,8 @@ func get_passable_indices(index: int) -> Array[int]:
 
 
 func should_draw_blockage_overlay(index: int) -> bool:
+	if not OVERWORLD_DECOR_ENABLED:
+		return false
 	if not is_valid_index(index):
 		return false
 	var blockages: Dictionary = get_road_blockages(index)
@@ -1059,6 +1065,8 @@ func find_nearest_enterable_drive_node(from_index: int) -> int:
 
 
 func get_terrain_props(index: int) -> Array:
+	if not OVERWORLD_DECOR_ENABLED:
+		return []
 	if not is_valid_index(index):
 		return []
 	var raw: Array = cells[index].get("terrain_props", [])
@@ -1066,6 +1074,8 @@ func get_terrain_props(index: int) -> Array:
 
 
 func get_road_blockages(index: int) -> Dictionary:
+	if not OVERWORLD_DECOR_ENABLED:
+		return {}
 	if not is_valid_index(index):
 		return {}
 	var raw: Variant = cells[index].get("road_blockages", {})
@@ -1073,6 +1083,10 @@ func get_road_blockages(index: int) -> Dictionary:
 
 
 func _place_terrain_scatter(rng: RandomNumberGenerator) -> void:
+	if not OVERWORLD_DECOR_ENABLED:
+		for index in range(cells.size()):
+			cells[index]["terrain_props"] = []
+		return
 	for index in range(cells.size()):
 		if is_district(index):
 			cells[index]["terrain_props"] = []
@@ -1163,6 +1177,10 @@ func _generate_cell_terrain_props(_rng: RandomNumberGenerator, index: int, kind:
 
 
 func _place_road_blockages(rng: RandomNumberGenerator) -> void:
+	if not OVERWORLD_DECOR_ENABLED:
+		for index in range(cells.size()):
+			cells[index]["road_blockages"] = {}
+		return
 	var target := rng.randi_range(2, mini(5, maxi(2, (columns + rows) / 3)))
 	var candidates := _collect_blockable_road_edges(rng)
 	var placed := 0

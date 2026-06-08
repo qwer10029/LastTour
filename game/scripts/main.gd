@@ -16,8 +16,8 @@ enum TravelMode { DRIVE, FOOT }
 @export var vehicle_scene: PackedScene
 @export var player_scene: PackedScene
 @export var resource_scene: PackedScene
-@export var map_columns: int = 8
-@export var map_rows: int = 6
+@export var map_columns: int = 24
+@export var map_rows: int = 18
 @export var cell_size: Vector2i = Vector2i(720, 720)
 @export var interior_tile_scale: float = 2.15
 @export var road_render_settings: RoadRenderSettings
@@ -62,6 +62,10 @@ var _exit_options: Dictionary = {}
 var _drive_offset: Vector2 = Vector2.ZERO
 var _vehicle_facing: Vector2 = Vector2.RIGHT
 var _last_overworld_draw_cam: Vector2 = Vector2(-99999.0, -99999.0)
+var _overworld_dirty: bool = true
+var _last_draw_evening_tint: float = -1.0
+var _last_foot_draw_pos: Vector2 = Vector2(-99999.0, -99999.0)
+var _world_map_overlay: WorldMapOverlay
 var _drive_exit_locked: bool = false  ## 到岔口后须先松开方向键，再按一次才选路
 var _current_layer: int = 1
 var _elevator_repair_progress: int = 0
@@ -138,6 +142,7 @@ func _ready() -> void:
 	DayTopdownRender.apply_settings(road_render_settings)
 	DayTopdownRender.reload_road_textures()
 	DayTopdownRender.reload_prop_textures()
+	DayTopdownRender.preload_wilderness_noise()
 	if enable_road_tuning_panel:
 		_setup_road_tuning_panel()
 	_ensure_input_actions()
@@ -149,6 +154,7 @@ func _ready() -> void:
 	_setup_stat_bars()
 	_setup_world_camera()
 	_setup_minimap_hud()
+	_setup_world_map_overlay()
 	_setup_hud_theme()
 	_setup_repair_choice_popup()
 	_spawn_vehicle()
@@ -227,6 +233,59 @@ func _setup_minimap_hud() -> void:
 		minimap_view.custom_minimum_size = Vector2(168, 168)
 	if is_instance_valid(map_info_label):
 		map_info_label.visible = false
+
+
+func _setup_world_map_overlay() -> void:
+	var hud: CanvasLayer = get_node_or_null("HUD") as CanvasLayer
+	if hud == null:
+		return
+	_world_map_overlay = WorldMapOverlay.new()
+	_world_map_overlay.name = "WorldMapOverlay"
+	hud.add_child(_world_map_overlay)
+	_world_map_overlay.hide()
+
+
+func _toggle_world_map() -> void:
+	if not is_instance_valid(_world_map_overlay):
+		return
+	if _world_map_overlay.is_open():
+		_close_world_map()
+	else:
+		_open_world_map()
+
+
+func _open_world_map() -> void:
+	if not is_instance_valid(_world_map_overlay) or not _is_exploration_allowed():
+		return
+	if _is_night_phase():
+		return
+	_sync_minimap_navigation()
+	var segment_axis := ""
+	if _segment_target_index >= 0 and _map.is_valid_index(_segment_from_index):
+		segment_axis = _map.get_segment_axis(_segment_from_index, _segment_target_index)
+	var node_index := _current_node_index
+	if _segment_target_index >= 0:
+		node_index = _segment_from_index
+	var hints: Array[String] = []
+	if _segment_target_index < 0:
+		hints = _exit_directions_array()
+	_world_map_overlay.open(
+		_map,
+		war_fog_enabled,
+		_current_focus_position(),
+		node_index,
+		hints,
+		segment_axis,
+	)
+
+
+func _close_world_map() -> void:
+	if is_instance_valid(_world_map_overlay):
+		_world_map_overlay.close_overlay()
+
+
+func _mark_overworld_dirty() -> void:
+	_overworld_dirty = true
 
 
 func _setup_repair_choice_popup() -> void:
@@ -463,7 +522,7 @@ func _start_new_run() -> void:
 		time_system.start_day(1)
 
 func _ensure_input_actions() -> void:
-	for action_name in ["move_up", "move_down", "move_left", "move_right", "interact", "repair", "pause", "enter_defense_mode", "toggle_backpack", "toggle_journal", "cycle_building"]:
+	for action_name in ["move_up", "move_down", "move_left", "move_right", "interact", "repair", "pause", "enter_defense_mode", "toggle_backpack", "toggle_journal", "toggle_world_map", "cycle_building"]:
 		if not InputMap.has_action(action_name):
 			InputMap.add_action(action_name)
 	# 步行与驾车/选路均支持 WASD 与方向键（↑北 ↓南 ←西 →东）
@@ -487,6 +546,7 @@ func _ensure_input_actions() -> void:
 	_register_key_action("enter_defense_mode", KEY_F)
 	_register_key_action("toggle_backpack", KEY_B)
 	_register_key_action("toggle_journal", KEY_J)
+	_register_key_action("toggle_world_map", KEY_M)
 	_register_key_action("cycle_building", KEY_Q)
 
 func _reset_action_keys(action_name: String) -> void:
@@ -581,6 +641,10 @@ func _physics_process(delta: float) -> void:
 		return
 	if _game_paused or _backpack_open:
 		return
+	if is_instance_valid(_world_map_overlay) and _world_map_overlay.is_open():
+		_refresh_focus()
+		_sync_world_map_overlay()
+		return
 	_update_evening_tint(delta)
 	if _is_night_phase():
 		_sync_view_cameras()
@@ -617,6 +681,7 @@ func _physics_process(delta: float) -> void:
 		var buildings := _get_enterable_buildings()
 		if buildings.size() > 1 and Input.is_action_just_pressed("cycle_building"):
 			_building_pick_index = (_building_pick_index + 1) % buildings.size()
+			_mark_overworld_dirty()
 		var gate_active := (
 			is_instance_valid(_story_controller)
 			and is_instance_valid(_story_controller.gate_dialogue)
@@ -640,18 +705,28 @@ func _physics_process(delta: float) -> void:
 
 func _request_overworld_redraw_if_needed() -> void:
 	if _mode == TravelMode.FOOT:
-		queue_redraw()
+		var foot_pos := _current_focus_position()
+		if _overworld_dirty or foot_pos.distance_squared_to(_last_foot_draw_pos) >= 64.0:
+			queue_redraw()
+			_overworld_dirty = false
+			_last_foot_draw_pos = foot_pos
 		return
 	if _evening_tint > 0.001:
-		queue_redraw()
+		if _overworld_dirty or absf(_evening_tint - _last_draw_evening_tint) >= 0.01:
+			queue_redraw()
+			_overworld_dirty = false
+			_last_draw_evening_tint = _evening_tint
 		return
 	if _segment_target_index >= 0:
 		var cam_pos := _active_world_camera_position()
-		if cam_pos.distance_squared_to(_last_overworld_draw_cam) >= 144.0:
+		if _overworld_dirty or cam_pos.distance_squared_to(_last_overworld_draw_cam) >= 144.0:
 			queue_redraw()
+			_overworld_dirty = false
 			_last_overworld_draw_cam = cam_pos
 		return
-	queue_redraw()
+	if _overworld_dirty:
+		queue_redraw()
+		_overworld_dirty = false
 
 
 func _active_world_camera_position() -> Vector2:
@@ -804,6 +879,10 @@ func _apply_foot_world_position() -> void:
 func _input(event: InputEvent) -> void:
 	if _run_ended:
 		return
+	if event.is_action_pressed("toggle_world_map"):
+		_toggle_world_map()
+		get_viewport().set_input_as_handled()
+		return
 	if event is InputEventKey and event.pressed and not event.is_echo():
 		if event.keycode == KEY_B or event.physical_keycode == KEY_B or event.is_action_pressed("toggle_backpack"):
 			_toggle_backpack()
@@ -825,6 +904,7 @@ func _input(event: InputEvent) -> void:
 				var key := Key.KEY_1 + i
 				if event.keycode == key or event.physical_keycode == key:
 					_building_pick_index = i
+					_mark_overworld_dirty()
 					var district_index := int(buildings[i].get("district_index", -1))
 					if not _can_enter_district(district_index):
 						_story_controller.try_enter_district(district_index)
@@ -836,6 +916,11 @@ func _input(event: InputEvent) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if _run_ended:
+		return
+	if is_instance_valid(_world_map_overlay) and _world_map_overlay.is_open():
+		if event.is_action_pressed("toggle_world_map") or event.is_action_pressed("pause"):
+			_close_world_map()
+			get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed("toggle_backpack"):
 		_toggle_backpack()
@@ -921,6 +1006,7 @@ func _halt_at_node(node_index: int) -> void:
 	if get_viewport() != null:
 		get_viewport().gui_release_focus()
 	_sync_minimap_navigation()
+	_mark_overworld_dirty()
 	queue_redraw()
 	_last_overworld_draw_cam = _active_world_camera_position()
 
@@ -1087,6 +1173,7 @@ func _begin_drive_segment(from_index: int, to_index: int) -> void:
 		if is_instance_valid(node):
 			node.visible = false
 	_sync_minimap_navigation()
+	_mark_overworld_dirty()
 	queue_redraw()
 	_last_overworld_draw_cam = _active_world_camera_position()
 
@@ -1366,6 +1453,7 @@ func _on_war_fog_toggled(enabled: bool) -> void:
 	war_fog_enabled = enabled
 	if is_instance_valid(minimap_view):
 		minimap_view.set_war_fog_enabled(enabled)
+	_mark_overworld_dirty()
 	queue_redraw()
 
 func _setup_pause_ui() -> void:
@@ -2810,8 +2898,6 @@ func _exit_directions_array() -> Array[String]:
 	return result
 
 func _sync_minimap_navigation() -> void:
-	if not is_instance_valid(minimap_view):
-		return
 	var segment_axis := ""
 	if _segment_target_index >= 0 and _map.is_valid_index(_segment_from_index):
 		segment_axis = _map.get_segment_axis(_segment_from_index, _segment_target_index)
@@ -2821,7 +2907,27 @@ func _sync_minimap_navigation() -> void:
 	var hints: Array[String] = []
 	if _segment_target_index < 0:
 		hints = _exit_directions_array()
-	minimap_view.set_navigation_hints(node_index, hints, segment_axis)
+	if is_instance_valid(minimap_view):
+		minimap_view.set_navigation_hints(node_index, hints, segment_axis)
+	_sync_world_map_overlay(node_index, hints, segment_axis)
+
+
+func _sync_world_map_overlay(
+	node_index: int = -1,
+	hints: Array[String] = [],
+	segment_axis: String = "",
+) -> void:
+	if not is_instance_valid(_world_map_overlay) or not _world_map_overlay.is_open():
+		return
+	if node_index < 0:
+		node_index = _current_node_index
+		if _segment_target_index >= 0:
+			node_index = _segment_from_index
+	if hints.is_empty() and _segment_target_index < 0:
+		hints = _exit_directions_array()
+	if segment_axis == "" and _segment_target_index >= 0 and _map.is_valid_index(_segment_from_index):
+		segment_axis = _map.get_segment_axis(_segment_from_index, _segment_target_index)
+	_world_map_overlay.refresh(_current_focus_position(), node_index, hints, segment_axis)
 
 func _road_center(index: int) -> Vector2:
 	if not _map.is_valid_index(index):
@@ -2998,40 +3104,38 @@ func _overworld_road_lit(explored: bool, in_viewport: bool) -> bool:
 
 
 func _draw_day_overworld() -> void:
-	var view_rect := _camera_world_view_rect().grow(360.0)
+	var view_rect := _camera_world_view_rect().grow(280.0)
 	var world_bounds := Rect2(Vector2.ZERO, _map.get_world_size())
 	draw_rect(world_bounds.grow(480.0), Color("#0e1216"), true)
+	var ground_rect := view_rect.intersection(world_bounds.grow(120.0))
+	if ground_rect.size.x > 0.0 and ground_rect.size.y > 0.0:
+		DayTopdownRender.draw_tiled_wilderness_ground(self, ground_rect)
 
 	for index in range(_map.cells.size()):
 		var cell := _map.get_cell(index)
 		var kind := str(cell["kind"])
-		if kind == "empty" or kind == "road" or kind == "junction" or kind == "hub" or kind == "district":
-			continue
 		var rect := _map.cell_rect(index)
 		if not view_rect.intersects(rect):
+			continue
+		if kind == "road" or kind == "junction" or kind == "hub":
+			var in_viewport := true
+			if war_fog_enabled and not bool(cell["explored"]) and not in_viewport:
+				draw_rect(rect, Color("#06080c"), true)
+				continue
+			var explored := _overworld_road_lit(bool(cell["explored"]), in_viewport)
+			var cell_seed := int(cell.get("seed", index + 1))
+			DayTopdownRender.draw_road_cell(self, rect, explored, cell_seed)
+			continue
+		if kind == "empty" or kind == "district":
 			continue
 		if war_fog_enabled and not bool(cell["explored"]):
 			draw_rect(rect, Color("#06080c"), true)
 			continue
-		var explored := bool(cell["explored"]) or not war_fog_enabled
-		var cell_seed := int(cell.get("seed", index + 1))
-		DayTopdownRender.draw_ruin_cell(self, rect, kind, explored, cell_seed)
-
-	for index in range(_map.cells.size()):
-		var cell := _map.get_cell(index)
-		var kind := str(cell["kind"])
-		if kind != "road" and kind != "junction" and kind != "hub":
+		if DayTopdownRender.has_wilderness_ground():
 			continue
-		var rect := _map.cell_rect(index)
-		if not view_rect.intersects(rect):
-			continue
-		var in_viewport := view_rect.intersects(rect)
-		if war_fog_enabled and not bool(cell["explored"]) and not in_viewport:
-			draw_rect(rect, Color("#06080c"), true)
-			continue
-		var explored := _overworld_road_lit(bool(cell["explored"]), in_viewport)
-		var cell_seed := int(cell.get("seed", index + 1))
-		DayTopdownRender.draw_road_cell(self, rect, explored, cell_seed)
+		var terrain_explored := bool(cell["explored"]) or not war_fog_enabled
+		var terrain_seed := int(cell.get("seed", index + 1))
+		DayTopdownRender.draw_ruin_cell(self, rect, kind, terrain_explored, terrain_seed)
 
 	# 先路口、后直路：每个 drive 格先贴路口，再沿方向 trim 后接邻格
 	DayTopdownRender.draw_road_network(
