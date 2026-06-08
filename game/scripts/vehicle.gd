@@ -29,8 +29,6 @@ func _load_texture() -> void:
 func set_active(active: bool) -> void:
 	set_physics_process(active)
 	set_process(active)
-	if is_instance_valid(sprite):
-		sprite.visible = false
 	if is_instance_valid(camera) and camera.enabled and camera.is_inside_tree():
 		if active:
 			camera.make_current()

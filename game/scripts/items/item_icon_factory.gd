@@ -3,6 +3,7 @@ extends RefCounted
 
 const ICON_SIZE := 32
 const LOOT_SPRITE_DIR := "res://assets/sprites/loot/"
+const QUEST_BATTERY_SPRITE_PATH := "res://assets/sprites/loot/quest_battery.png"
 const BACKPACK_SPRITE_PATH := "res://assets/sprites/ui/backpack.png"
 const ELEVATOR_CONSOLE_SPRITE_PATH := "res://assets/sprites/ui/elevator_console.png"
 
@@ -101,11 +102,30 @@ static func get_texture(item_id: String, size: int = ICON_SIZE) -> Texture2D:
 
 
 static func get_quest_battery_texture(size: int = ICON_SIZE) -> Texture2D:
-	var w := maxi(8, int(round(float(size) * 0.36)))
-	var h := maxi(18, int(round(float(size) * 1.05)))
-	var key := "quest_battery_slim_%d_%d" % [w, h]
+	var key := "quest_battery_%d" % size
 	if _cache.has(key):
 		return _cache[key]
+	var file_tex := _load_quest_battery_sprite()
+	if file_tex != null:
+		var scaled := _scale_texture_fit_max(file_tex, size)
+		_cache[key] = scaled
+		return scaled
+	var tex := _fallback_quest_battery_texture(size)
+	_cache[key] = tex
+	return tex
+
+
+static func _load_quest_battery_sprite() -> Texture2D:
+	if _file_cache.has("quest_battery"):
+		return _file_cache["quest_battery"]
+	var tex := ArtAssetLoader.load_texture_icon_alpha_key(QUEST_BATTERY_SPRITE_PATH)
+	_file_cache["quest_battery"] = tex
+	return tex
+
+
+static func _fallback_quest_battery_texture(size: int) -> Texture2D:
+	var w := maxi(8, int(round(float(size) * 0.72)))
+	var h := maxi(18, int(round(float(size) * 0.92)))
 	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
 	var shell := Color("#3a5870")
@@ -114,29 +134,39 @@ static func get_quest_battery_texture(size: int = ICON_SIZE) -> Texture2D:
 	var light := Color("#c8ecff")
 	var cap := Color("#d8f4ff")
 	var mid_x := w >> 1
-	# 顶部正极帽
 	_fill_rect(img, Rect2i(mid_x - 2, 0, 4, 2), cap)
 	_fill_rect(img, Rect2i(mid_x - 1, 2, 2, 1), shell)
-	# 细长外壳
 	var body_rect := Rect2i(1, 3, w - 2, h - 5)
 	_fill_round_rect(img, body_rect, body, shell)
 	_fill_rect(img, Rect2i(body_rect.position.x + 1, body_rect.position.y + 2, body_rect.size.x - 2, body_rect.size.y - 4), dark.lightened(0.08))
-	# 电量条
 	_fill_rect(img, Rect2i(body_rect.position.x + 2, body_rect.position.y + 3, 2, body_rect.size.y - 8), light)
-	if w >= 10:
-		_fill_rect(img, Rect2i(body_rect.position.x + 5, body_rect.position.y + 5, 2, body_rect.size.y - 12), light.darkened(0.12))
-	# 底部
 	_fill_rect(img, Rect2i(1, h - 2, w - 2, 2), shell.darkened(0.15))
-	var tex := ImageTexture.create_from_image(img)
-	_cache[key] = tex
-	return tex
+	return ImageTexture.create_from_image(img)
 
 
 static func quest_battery_draw_size(base_size: int) -> Vector2:
 	var tex := get_quest_battery_texture(base_size)
 	if tex == null:
-		return Vector2(float(base_size) * 0.36, float(base_size) * 1.05)
+		return Vector2(float(base_size) * 0.72, float(base_size) * 0.92)
 	return Vector2(float(tex.get_width()), float(tex.get_height()))
+
+
+static func _scale_texture_fit_max(tex: Texture2D, max_dim: int) -> Texture2D:
+	var img := tex.get_image()
+	if img == null or img.is_empty():
+		return tex
+	var w := img.get_width()
+	var h := img.get_height()
+	if w <= 0 or h <= 0:
+		return tex
+	var scale := float(max_dim) / float(maxi(w, h))
+	var nw := maxi(1, int(round(float(w) * scale)))
+	var nh := maxi(1, int(round(float(h) * scale)))
+	if nw == w and nh == h:
+		return tex
+	img = img.duplicate()
+	img.resize(nw, nh, Image.INTERPOLATE_NEAREST)
+	return ImageTexture.create_from_image(img)
 
 
 static func loot_draw_id(item_id: String) -> String:
@@ -159,7 +189,7 @@ static func _load_loot_sprite(item_id: String) -> Texture2D:
 	if _file_cache.has(item_id):
 		return _file_cache[item_id]
 	var path := LOOT_SPRITE_DIR + item_id + ".png"
-	var tex := ArtAssetLoader.load_texture_alpha_key(path)
+	var tex := ArtAssetLoader.load_texture(path)
 	_file_cache[item_id] = tex
 	return tex
 

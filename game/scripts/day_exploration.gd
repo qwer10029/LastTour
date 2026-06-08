@@ -24,6 +24,7 @@ func _ready() -> void:
 		road_render_settings = RoadRenderSettings.new()
 	DayTopdownRender.apply_settings(road_render_settings)
 	DayTopdownRender.reload_road_textures()
+	DayTopdownRender.reload_prop_textures()
 	if enable_road_tuning_panel:
 		_setup_road_tuning_panel()
 	_ensure_input_actions()

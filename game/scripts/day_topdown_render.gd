@@ -1,12 +1,13 @@
 class_name DayTopdownRender
 extends RefCounted
 
-const PIXEL := 16
+const PIXEL := 40
 const VEHICLE_PIXEL := 3.0
 const VEHICLE_BODY_UNITS := 14.0
 const VEHICLE_DISPLAY_SCALE := 1.62  ## 俯视角贴图相对路面宽度的显示倍率
 const ROAD_TILE_DIR := "res://assets/tiles/road/"
 const INTERIOR_TILE_DIR := "res://assets/tiles/interior/"
+const PROPS_DIR := "res://assets/sprites/props/"
 const TILE_OVERLAP_WORLD := 1.5
 
 static var _settings: RoadRenderSettings = RoadRenderSettings.new()
@@ -21,6 +22,10 @@ static var _tex_road_t: Texture2D
 static var _interior_textures_ready := false
 static var _tex_interior_floor: Texture2D
 static var _tex_interior_obstacle: Texture2D
+
+static var _prop_textures_ready := false
+static var _prop_textures: Dictionary = {}
+static var _tex_road_crater: Texture2D
 
 const PLAYER_FOOT_SPRITE := "res://assets/sprites/player_foot.png"
 const PLAYER_FOOT_WALK_SHEET := "res://assets/sprites/player_foot_walk_all.png"
@@ -44,7 +49,6 @@ static func hash_cell(seed: int, gx: int, gy: int) -> float:
 static func draw_ruin_cell(canvas: CanvasItem, rect: Rect2, kind: String, explored: bool, seed: int) -> void:
 	var px := maxi(1, int(floor(rect.size.x / float(PIXEL))))
 	var py := maxi(1, int(floor(rect.size.y / float(PIXEL))))
-	var base := _base_color(kind, explored)
 	for ix in range(px):
 		for iy in range(py):
 			var local := Rect2(
@@ -55,36 +59,66 @@ static func draw_ruin_cell(canvas: CanvasItem, rect: Rect2, kind: String, explor
 				),
 			)
 			var h := hash_cell(seed, ix, iy)
-			var c := base
-			if kind == "empty" or not explored:
-				c = base.darkened(0.12 + h * 0.22)
-			elif h > 0.72:
-				c = base.lightened(0.08)
-			elif h < 0.18:
-				c = base.darkened(0.1)
+			var c := _terrain_pixel_color(kind, explored, seed, ix, iy, h)
 			canvas.draw_rect(local, c, true)
 			if explored and kind == "district" and h > 0.86:
-				canvas.draw_rect(local.grow_individual(-5, -5, -5, -5), Color("#3d4a38"), true)
+				canvas.draw_rect(local.grow_individual(-5, -5, -5, -5), Color("#2e3428"), true)
 			if explored and kind == "junction" and h > 0.8:
-				canvas.draw_rect(local.grow_individual(-4, -4, -4, -4), Color("#6a5a40"), true)
+				canvas.draw_rect(local.grow_individual(-4, -4, -4, -4), Color("#4a4030"), true)
+
+
+static func _terrain_variant(seed: int, ix: int, iy: int) -> int:
+	return int(floor(hash_cell(seed * 3 + 17, ix, iy) * 5.0)) % 5
+
+
+static func _terrain_pixel_color(kind: String, explored: bool, seed: int, ix: int, iy: int, h: float) -> Color:
+	var base := _base_color(kind, explored)
+	if not explored:
+		return base.darkened(0.12 + h * 0.22)
+	var variant := _terrain_variant(seed, ix, iy)
+	match variant:
+		0:
+			base = base.lerp(Color("#3a4238"), 0.22)
+		1:
+			base = base.lerp(Color("#4a4436"), 0.28)
+		2:
+			base = base.lerp(Color("#2e2c28"), 0.35)
+		3:
+			base = base.lerp(Color("#3a3e34"), 0.18)
+		4:
+			base = base.lerp(Color("#454038"), 0.24)
+	if h > 0.72:
+		base = base.lightened(0.05)
+	elif h < 0.18:
+		base = base.darkened(0.12)
+	return base
+
+
+static func _terrain_speck_color(seed: int, ix: int, iy: int, h: float) -> Color:
+	var roll := hash_cell(seed + 91, ix + 3, iy + 7)
+	if roll > 0.55:
+		return Color("#1e1c18", 0.45)
+	if roll > 0.35:
+		return Color("#3a3428", 0.38)
+	return Color("#2a3228", 0.32)
 
 
 static func _base_color(kind: String, explored: bool) -> Color:
 	if not explored:
-		return Color("#0a0c10")
+		return Color("#080a0e")
 	match kind:
 		"district":
-			return Color("#3a4f36")
+			return Color("#2e3a2c")
 		"hub":
-			return Color("#3d4f5c")
+			return Color("#323c44")
 		"junction":
-			return Color("#454035")
+			return Color("#3a342c")
 		"road":
-			return Color("#2e3338")
+			return Color("#262a2e")
 		"trail":
-			return Color("#3a4a34")
+			return Color("#2e3828")
 		_:
-			return Color("#1a1f24")
+			return Color("#14181c")
 
 
 # 路面宽度约为车辆宽度的两倍；车辆居中行驶
@@ -101,15 +135,15 @@ static func _road_strip_half_width(_cell_size: Vector2) -> float:
 
 
 static func _road_surface_color(explored: bool) -> Color:
-	return Color("#a89472") if explored else Color("#5c5448")
+	return Color("#8a7a62") if explored else Color("#4a443c")
 
 
 static func _road_edge_color(explored: bool) -> Color:
-	return Color("#7a6a52") if explored else Color("#403830")
+	return Color("#5e5244") if explored else Color("#343028")
 
 
 static func _road_modulate(explored: bool) -> Color:
-	return Color.WHITE if explored else Color(0.58, 0.54, 0.5, 1.0)
+	return Color(0.92, 0.88, 0.82, 1.0) if explored else Color(0.5, 0.48, 0.44, 1.0)
 
 
 static func reload_road_textures() -> void:
@@ -119,7 +153,7 @@ static func reload_road_textures() -> void:
 	_tex_road_cross = null
 	_tex_road_corner = null
 	_tex_road_t = null
-	ArtAssetLoader.clear_road_alpha_cache()
+	ArtAssetLoader.clear_alpha_cache()
 
 
 static func apply_settings(settings: RoadRenderSettings) -> void:
@@ -143,19 +177,7 @@ static func _ensure_road_textures() -> void:
 
 
 static func _load_road_t_texture() -> Texture2D:
-	var path := ROAD_TILE_DIR + "road_t.png"
-	var tex := ArtAssetLoader.load_texture_from_disk(path)
-	if tex == null:
-		tex = ArtAssetLoader.load_texture(path)
-	if tex == null:
-		return null
-	var keyed := ArtAssetLoader.apply_road_background_key(tex)
-	if ArtAssetLoader.texture_has_visible_pixels(keyed):
-		return keyed
-	var black_keyed := ArtAssetLoader.apply_black_alpha_key(tex)
-	if ArtAssetLoader.texture_has_visible_pixels(black_keyed):
-		return black_keyed
-	return tex
+	return ArtAssetLoader.load_texture_road_alpha_key(ROAD_TILE_DIR + "road_t.png")
 
 
 static func _has_road_textures() -> bool:
@@ -168,7 +190,7 @@ static func _ensure_interior_textures() -> void:
 		return
 	_interior_textures_ready = true
 	_tex_interior_floor = ArtAssetLoader.load_texture(INTERIOR_TILE_DIR + "floor.png")
-	_tex_interior_obstacle = ArtAssetLoader.load_texture_alpha_key(INTERIOR_TILE_DIR + "obstacle.png")
+	_tex_interior_obstacle = ArtAssetLoader.load_texture(INTERIOR_TILE_DIR + "obstacle.png")
 
 
 static func reload_interior_textures() -> void:
@@ -635,10 +657,6 @@ static func _ensure_vehicle_sprite() -> void:
 		if ArtAssetLoader.texture_has_visible_pixels(keyed):
 			_tex_vehicle = keyed
 			return
-		keyed = ArtAssetLoader.apply_black_alpha_key(raw, 0.12)
-		if ArtAssetLoader.texture_has_visible_pixels(keyed):
-			_tex_vehicle = keyed
-			return
 	_tex_vehicle = raw
 
 
@@ -703,6 +721,230 @@ static func draw_pixel_vehicle(canvas: CanvasItem, center: Vector2, travel_axis:
 
 static func draw_road_cell(canvas: CanvasItem, rect: Rect2, explored: bool, seed: int = 0) -> void:
 	draw_road_terrain_cell(canvas, rect, explored, seed)
+
+
+static func reload_vehicle_sprite() -> void:
+	_vehicle_sprite_ready = false
+	_tex_vehicle = null
+
+
+static func reload_prop_textures() -> void:
+	_prop_textures_ready = false
+	_prop_textures.clear()
+	_tex_road_crater = null
+	ArtAssetLoader.clear_alpha_cache()
+
+
+static func _ensure_prop_textures() -> void:
+	if _prop_textures_ready:
+		return
+	_prop_textures_ready = true
+	var prop_files := {
+		"grass_clump": "grass_clump.png",
+		"rock_small": "rock_small.png",
+		"rock_large": "rock_large.png",
+		"dead_tree": "dead_tree.png",
+		"rubble_pile": "rubble_pile.png",
+		"wreck_tank": "wreck_tank.png",
+		"wreck_truck": "wreck_truck.png",
+		"rubble_barricade": "rubble_barricade.png",
+	}
+	for prop_id in prop_files.keys():
+		var tex := ArtAssetLoader.load_texture(PROPS_DIR + str(prop_files[prop_id]))
+		if tex != null and ArtAssetLoader.texture_has_visible_pixels(tex):
+			_prop_textures[prop_id] = tex
+	# 弹坑深色坑洞须保持不透明，不能用 road_alpha_key（会把黑色抠掉）
+	_tex_road_crater = ArtAssetLoader.load_texture(ROAD_TILE_DIR + "road_crater.png")
+
+
+static func _prop_texture(prop_type: String) -> Texture2D:
+	_ensure_prop_textures()
+	return _prop_textures.get(prop_type, null)
+
+
+static func _blockage_texture(blockage_type: String) -> Texture2D:
+	if blockage_type == "crater":
+		_ensure_prop_textures()
+		return _tex_road_crater
+	return _prop_texture(blockage_type)
+
+
+static func draw_terrain_props(
+	canvas: CanvasItem,
+	cell_rect: Rect2,
+	props: Array,
+	explored: bool,
+) -> void:
+	if props.is_empty():
+		return
+	var modulate := Color.WHITE if explored else Color(0.42, 0.4, 0.38, 0.85)
+	for raw in props:
+		if raw is not Dictionary:
+			continue
+		var prop_type := str(raw.get("type", "grass_clump"))
+		var nx := float(raw.get("nx", 0.5))
+		var ny := float(raw.get("ny", 0.5))
+		var rot := float(raw.get("rot", 0.0))
+		var scale := float(raw.get("scale", 1.0))
+		var pos := cell_rect.position + Vector2(nx * cell_rect.size.x, ny * cell_rect.size.y)
+		var display_px := _prop_display_px(prop_type, scale)
+		_draw_prop_at(canvas, pos, prop_type, rot, display_px, modulate)
+
+
+static func _prop_display_px(prop_type: String, scale: float) -> float:
+	match prop_type:
+		"grass_clump":
+			return 52.0 * scale
+		"rock_small":
+			return 64.0 * scale
+		"rock_large":
+			return 118.0 * scale
+		"rubble_pile":
+			return 108.0 * scale
+		"dead_tree":
+			return 210.0 * scale
+		_:
+			return 80.0 * scale
+
+
+static func _draw_prop_at(
+	canvas: CanvasItem,
+	pos: Vector2,
+	prop_type: String,
+	rotation: float,
+	display_px: float,
+	modulate: Color,
+) -> void:
+	var tex := _prop_texture(prop_type)
+	if tex != null:
+		var tex_size := tex.get_size()
+		var factor := display_px / maxf(float(tex_size.x), float(tex_size.y))
+		canvas.draw_set_transform(pos, rotation, Vector2(factor, factor))
+		canvas.draw_texture(tex, -tex_size * 0.5, modulate)
+		canvas.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		return
+	var fallback_scale := display_px / 56.0
+	_draw_prop_fallback(canvas, pos, prop_type, rotation, fallback_scale, modulate)
+
+
+static func _draw_prop_fallback(
+	canvas: CanvasItem,
+	pos: Vector2,
+	prop_type: String,
+	rotation: float,
+	scale: float,
+	modulate: Color,
+) -> void:
+	canvas.draw_set_transform(pos, rotation, Vector2(scale, scale))
+	match prop_type:
+		"grass_clump":
+			canvas.draw_circle(Vector2.ZERO, 10.0, modulate * Color("#4a5238"))
+			canvas.draw_circle(Vector2(-6, 4), 7.0, modulate * Color("#3a4230"))
+			canvas.draw_circle(Vector2(7, 3), 6.0, modulate * Color("#525a40"))
+		"rock_small":
+			canvas.draw_circle(Vector2.ZERO, 8.0, modulate * Color("#5a5650"))
+			canvas.draw_circle(Vector2(4, -3), 5.0, modulate * Color("#4a4844"))
+		"rock_large", "rubble_pile":
+			canvas.draw_colored_polygon(
+				PackedVector2Array([
+					Vector2(-14, 6), Vector2(-8, -8), Vector2(6, -10), Vector2(14, 2), Vector2(8, 10), Vector2(-10, 8),
+				]),
+				modulate * Color("#5a5448"),
+			)
+		"dead_tree":
+			canvas.draw_line(Vector2(0, 12), Vector2(0, -10), modulate * Color("#3a3428"), 3.0)
+			canvas.draw_line(Vector2(0, -4), Vector2(-10, -12), modulate * Color("#3a3428"), 2.0)
+			canvas.draw_line(Vector2(0, -6), Vector2(9, -14), modulate * Color("#3a3428"), 2.0)
+		_:
+			canvas.draw_circle(Vector2.ZERO, 7.0, modulate * Color("#4a4840"))
+	canvas.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+static func draw_road_blockages(
+	canvas: CanvasItem,
+	_cell_rect: Rect2,
+	center: Vector2,
+	blockages: Dictionary,
+	explored: bool,
+	road_arm_count: int = 2,
+) -> void:
+	if blockages.is_empty():
+		return
+	var unit := minf(_cell_rect.size.x, _cell_rect.size.y) if _cell_rect.size != Vector2.ZERO else road_width() * 4.0
+	var modulate := Color.WHITE if explored else Color(0.48, 0.46, 0.42, 0.9)
+	for direction in blockages.keys():
+		var blockage_type := str(blockages[direction])
+		var dir_vec := _direction_vector(str(direction))
+		if dir_vec == Vector2.ZERO:
+			continue
+		var along := road_width() * 0.52 if road_arm_count >= 3 else unit * 0.28
+		var pos := center + dir_vec * along
+		var overlay_scale := 1.22 if road_arm_count >= 3 else 1.0
+		if blockage_type in ["wreck_tank", "wreck_truck", "rubble_barricade"]:
+			var perp := Vector2(-dir_vec.y, dir_vec.x)
+			pos = center + dir_vec * (along * 0.18) + perp * (road_width() * 0.78)
+			overlay_scale *= 1.08
+		_draw_blockage_at(canvas, pos, blockage_type, 0.0, overlay_scale, modulate)
+
+
+static func _pick_blockage_visual_type(blockages: Dictionary) -> String:
+	for preferred in ["crater", "wreck_tank", "wreck_truck", "rubble_barricade"]:
+		for direction in blockages.keys():
+			if str(blockages[direction]) == preferred:
+				return preferred
+	return str(blockages[blockages.keys()[0]])
+
+
+static func _draw_blockage_at(
+	canvas: CanvasItem,
+	pos: Vector2,
+	blockage_type: String,
+	rotation: float,
+	scale: float,
+	modulate: Color,
+) -> void:
+	var tex := _blockage_texture(blockage_type)
+	if tex != null:
+		var tex_size := tex.get_size()
+		var base_display := road_width() * 1.75 if blockage_type == "crater" else road_width() * 1.35
+		var display := base_display * scale
+		var factor := display / maxf(float(tex_size.x), float(tex_size.y))
+		canvas.draw_set_transform(pos, rotation, Vector2(factor, factor))
+		canvas.draw_texture(tex, -tex_size * 0.5, modulate)
+		canvas.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		return
+	_draw_blockage_fallback(canvas, pos, blockage_type, rotation, scale, modulate)
+
+
+static func _draw_blockage_fallback(
+	canvas: CanvasItem,
+	pos: Vector2,
+	blockage_type: String,
+	rotation: float,
+	scale: float,
+	modulate: Color,
+) -> void:
+	canvas.draw_set_transform(pos, rotation, Vector2(scale, scale))
+	match blockage_type:
+		"crater":
+			canvas.draw_circle(Vector2.ZERO, 34.0, modulate * Color("#1a1814"))
+			canvas.draw_arc(Vector2.ZERO, 38.0, 0.0, TAU, 24, modulate * Color("#4a4438"), 4.0)
+		"wreck_tank":
+			canvas.draw_rect(Rect2(-28, -14, 56, 28), modulate * Color("#3a3830"), true)
+			canvas.draw_rect(Rect2(-10, -20, 20, 10), modulate * Color("#2e2c28"), true)
+		"wreck_truck":
+			canvas.draw_rect(Rect2(-24, -12, 48, 24), modulate * Color("#4a4034"), true)
+			canvas.draw_rect(Rect2(8, -16, 14, 12), modulate * Color("#3a3428"), true)
+		"rubble_barricade":
+			canvas.draw_colored_polygon(
+				PackedVector2Array([
+					Vector2(-30, 8), Vector2(-18, -12), Vector2(0, -16), Vector2(20, -8), Vector2(30, 10), Vector2(10, 14), Vector2(-12, 12),
+				]),
+				modulate * Color("#5a5044"),
+			)
+		_:
+			canvas.draw_circle(Vector2.ZERO, 24.0, modulate * Color("#3a3830"))
+	canvas.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
 static func _building_colors(building_type: String) -> Dictionary:
@@ -1004,6 +1246,7 @@ static func draw_elevator_console(
 static func reload_player_sprite() -> void:
 	_player_sprite_ready = false
 	_tex_player_foot = null
+	ArtAssetLoader.clear_alpha_cache()
 
 
 static func _ensure_player_foot_sprite() -> void:

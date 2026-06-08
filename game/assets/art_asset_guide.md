@@ -73,6 +73,73 @@
 - `assets/tiles/drive_road_32.png`：驾驶场景路面与车道线
 - `assets/tiles/fog_black_32.png`：地图未探索黑雾遮罩
 
+### 室外废墟装饰与路障（已实现程序化回退，有 PNG 后自动替换）
+
+放入目录 `assets/sprites/props/`，**文件名须与下列一致**：
+
+| 文件名 | 用途 |
+|--------|------|
+| `grass_clump.png` | 荒草堆（散落装饰） |
+| `rock_small.png` | 小石块 |
+| `rock_large.png` | 大岩石/碎石堆 |
+| `dead_tree.png` | 枯树 |
+| `rubble_pile.png` | 碎混凝土堆 |
+| `wreck_tank.png` | 报废履带战车（路障） |
+| `wreck_truck.png` | 报废军用卡车（路障） |
+| `rubble_barricade.png` | 钢筋碎石路障 |
+
+路障弹坑复用已有 `assets/tiles/road/road_crater.png`，无需重复绘制。
+
+**统一规范**：64×64 或 96×96 画布；透明背景；2D 正俯视；低饱和冷灰/黄褐/暗绿；主体居中；四边留 4px 安全边距；无文字、无水印。
+
+**grass_clump.png**
+
+```text
+64x64 top-down 2D game sprite, dry wasteland grass clump, muted olive and brown tones, post-apocalyptic ruined city ground, transparent background, flat pixel art, soft shadow at base, centered, readable at small size, no text, no watermark
+```
+
+**rock_small.png**
+
+```text
+64x64 top-down 2D game sprite, small scattered rocks on cracked dirt, grey and brown, transparent background, flat pixel art, centered cluster, post-apocalyptic wasteland, no text, no watermark
+```
+
+**rock_large.png**
+
+```text
+96x96 top-down 2D game sprite, large rubble rock pile, broken concrete and stones, muted grey brown, transparent background, flat pixel art, irregular silhouette, post-apocalyptic war ruins, no text, no watermark
+```
+
+**dead_tree.png**
+
+```text
+96x96 top-down 2D game sprite, leafless dead tree top-down view, bare branches, dark brown trunk, wasteland atmosphere, transparent background, flat pixel art, centered, post-apocalyptic, no text, no watermark
+```
+
+**rubble_pile.png**
+
+```text
+96x96 top-down 2D game sprite, pile of broken concrete rubble and rebar, war ruins debris, grey and rust accents, transparent background, flat pixel art, centered, post-apocalyptic, no text, no watermark
+```
+
+**wreck_tank.png**（路障，较大）
+
+```text
+128x96 top-down 2D game sprite, destroyed rusted tank hull without turret, burnt olive drab metal, tracks visible, war wreck on cracked road, transparent background, flat pixel art, strong silhouette, post-apocalyptic military ruins, no text, no watermark
+```
+
+**wreck_truck.png**（路障）
+
+```text
+128x96 top-down 2D game sprite, wrecked military supply truck top-down, rusted cab and cargo bed, windows broken, on ruined asphalt, transparent background, flat pixel art, post-apocalyptic, no text, no watermark
+```
+
+**rubble_barricade.png**（路障）
+
+```text
+128x96 top-down 2D game sprite, road barricade made of concrete slabs rebar and sandbags, blocks a lane, war ruins, grey brown muted colors, transparent background, flat pixel art, centered, post-apocalyptic, no text, no watermark
+```
+
 驾驶场景提示词模板：
 
 ```text
