@@ -51,8 +51,7 @@ static func texture_has_visible_pixels(tex: Texture2D, min_alpha: float = 0.02) 
 static func _pixel_should_key_road_background(c: Color) -> bool:
 	if c.a <= 0.0:
 		return false
-	if c.r <= 0.12 and c.g <= 0.12 and c.b <= 0.12:
-		return true
+	# 只去亮底/棋盘格，不抠深色（弹坑、阴影、沥青裂缝等会误伤）
 	if c.r >= 0.92 and c.g >= 0.92 and c.b >= 0.92:
 		return true
 	var max_c := maxf(c.r, maxf(c.g, c.b))
@@ -215,60 +214,57 @@ static func load_texture_icon_alpha_key(
 	return tex
 
 
-## 角色/道具精灵：先采样去灰底，再补抠近黑底。
+## 角色精灵：仅从边缘洪泛去除采样背景色，不抠深色像素。
 static func load_texture_sprite_alpha_key(
 	preferred_path: String,
-	threshold: float = 0.12,
+	_threshold: float = 0.12,
 	fallback_path: String = "",
 ) -> Texture2D:
-	var cache_key := "sprite|%s|%.3f|%s" % [preferred_path, threshold, fallback_path]
+	var cache_key := "sprite_v2|%s|%s" % [preferred_path, fallback_path]
 	if _alpha_key_cache.has(cache_key):
 		return _alpha_key_cache[cache_key]
 	var tex := load_texture(preferred_path, fallback_path)
 	if tex == null:
 		_alpha_key_cache[cache_key] = null
 		return null
-	var keyed := apply_sampled_background_key(tex)
+	var keyed := apply_flood_background_key(tex)
+	if not texture_has_visible_pixels(keyed):
+		keyed = apply_sampled_background_key(tex)
 	if not texture_has_visible_pixels(keyed):
 		keyed = tex
-	keyed = apply_black_alpha_key(keyed, threshold)
 	_alpha_key_cache[cache_key] = keyed
 	return keyed
 
 
 static func load_texture_alpha_key(
 	preferred_path: String,
-	threshold: float = 0.12,
+	_threshold: float = 0.12,
 	fallback_path: String = "",
 ) -> Texture2D:
-	var cache_key := "%s|%.3f|%s" % [preferred_path, threshold, fallback_path]
-	if _alpha_key_cache.has(cache_key):
-		return _alpha_key_cache[cache_key]
-	var tex := load_texture(preferred_path, fallback_path)
-	if tex == null:
-		_alpha_key_cache[cache_key] = null
-		return null
-	tex = apply_black_alpha_key(tex, threshold)
-	_alpha_key_cache[cache_key] = tex
-	return tex
+	# 素材 PNG 应已带透明通道；不再对深色像素做 alpha key
+	return load_texture(preferred_path, fallback_path)
 
 
 static func load_texture_road_alpha_key(preferred_path: String, fallback_path: String = "") -> Texture2D:
-	var cache_key := "road_v2|%s|%s" % [preferred_path, fallback_path]
+	var cache_key := "road_v3|%s|%s" % [preferred_path, fallback_path]
 	if _alpha_key_cache.has(cache_key):
 		return _alpha_key_cache[cache_key]
 	var tex := load_texture(preferred_path, fallback_path)
 	if tex == null:
 		_alpha_key_cache[cache_key] = null
 		return null
-	tex = apply_road_background_key(tex)
-	if not texture_has_visible_pixels(tex):
-		tex = apply_black_alpha_key(load_texture(preferred_path, fallback_path))
-	_alpha_key_cache[cache_key] = tex
-	return tex
+	var keyed := apply_road_background_key(tex)
+	if not texture_has_visible_pixels(keyed):
+		keyed = tex
+	_alpha_key_cache[cache_key] = keyed
+	return keyed
 
 
 static func clear_road_alpha_cache() -> void:
 	for key in _alpha_key_cache.keys():
 		if str(key).begins_with("road"):
 			_alpha_key_cache.erase(key)
+
+
+static func clear_alpha_cache() -> void:
+	_alpha_key_cache.clear()

@@ -16,6 +16,15 @@ const DIRECTIONS := {
 	"right": Vector2i(1, 0),
 }
 
+const TERRAIN_PROP_TYPES := [
+	"grass_clump",
+	"rock_small",
+	"rock_large",
+	"dead_tree",
+	"rubble_pile",
+]
+const ROAD_BLOCKAGE_TYPES := ["crater", "wreck_tank", "wreck_truck", "rubble_barricade"]
+
 var columns: int = 0
 var rows: int = 0
 var cell_size: Vector2i = Vector2i(240, 240)
@@ -88,6 +97,8 @@ func generate(new_columns: int, new_rows: int, new_cell_size: Vector2i, rng_seed
 	_setup_district_roadside(rng)
 	_finalize_cell_kinds()
 	_mark_start_node()
+	_place_terrain_scatter(rng)
+	_place_road_blockages(rng)
 
 func get_world_size() -> Vector2:
 	return Vector2(columns * cell_size.x, rows * cell_size.y)
@@ -217,6 +228,56 @@ func get_available_directions(index: int) -> Array[String]:
 		if int(connections[direction]) >= 0:
 			result.append(str(direction))
 	return result
+
+
+func is_direction_blocked(index: int, direction: String) -> bool:
+	if not is_valid_index(index):
+		return true
+	var blocks: Dictionary = cells[index].get("road_blockages", {})
+	return blocks.has(direction)
+
+
+func is_node_enterable(index: int) -> bool:
+	return is_drive_node(index)
+
+
+func is_direction_passable(from_index: int, direction: String) -> bool:
+	return not is_direction_blocked(from_index, direction)
+
+
+func get_passable_directions(index: int) -> Array[String]:
+	var result: Array[String] = []
+	for direction in get_available_directions(index):
+		if is_direction_passable(index, direction):
+			result.append(direction)
+	return result
+
+
+func get_passable_indices(index: int) -> Array[int]:
+	var result: Array[int] = []
+	for direction in get_passable_directions(index):
+		var other := get_neighbor_index(index, direction)
+		if other >= 0:
+			result.append(other)
+	return result
+
+
+func should_draw_blockage_overlay(index: int) -> bool:
+	if not is_valid_index(index):
+		return false
+	var blockages: Dictionary = get_road_blockages(index)
+	if blockages.is_empty():
+		return false
+	var road_dirs := get_road_directions(index)
+	if road_dirs.size() >= 3:
+		return true
+	for direction in blockages.keys():
+		var other := get_neighbor_index(index, str(direction))
+		if other >= 0 and is_junction(other):
+			return false
+		if other >= 0 and other > index:
+			return true
+	return false
 
 
 ## 仅统计通向其它路网格的方向（不含建筑 district），用于路口贴图与路段。
@@ -403,6 +464,8 @@ func _create_empty_cell(coord: Vector2i) -> Dictionary:
 		"approach_road_index": -1,
 		"entry_from_road": "",
 		"special_encounter": "",
+		"terrain_props": [],
+		"road_blockages": {},
 	}
 
 func _pick_cells(rng: RandomNumberGenerator, count: int) -> Array[Vector2i]:
@@ -966,14 +1029,246 @@ func _mark_start_node() -> void:
 		return
 	var first_district: int = district_indices[0]
 	var approach := int(cells[first_district].get("approach_road_index", -1))
-	if is_valid_index(approach) and is_drive_node(approach):
+	if is_valid_index(approach) and is_drive_node(approach) and is_node_enterable(approach):
 		start_node_index = approach
 		return
 	for index in range(cells.size()):
-		if is_drive_node(index) and connected_count(index) > 0:
+		if is_drive_node(index) and connected_count(index) > 0 and is_node_enterable(index):
 			start_node_index = index
 			return
 	start_node_index = first_district
+
+
+func find_nearest_enterable_drive_node(from_index: int) -> int:
+	if not is_valid_index(from_index):
+		return -1
+	if is_node_enterable(from_index):
+		return from_index
+	var visited: Dictionary = {from_index: true}
+	var queue: Array[int] = [from_index]
+	while not queue.is_empty():
+		var current: int = queue.pop_front()
+		for neighbor in get_connected_indices(current):
+			if visited.has(neighbor) or not is_drive_node(neighbor):
+				continue
+			visited[neighbor] = true
+			if is_node_enterable(neighbor):
+				return neighbor
+			queue.append(neighbor)
+	return from_index
+
+
+func get_terrain_props(index: int) -> Array:
+	if not is_valid_index(index):
+		return []
+	var raw: Array = cells[index].get("terrain_props", [])
+	return raw if raw is Array else []
+
+
+func get_road_blockages(index: int) -> Dictionary:
+	if not is_valid_index(index):
+		return {}
+	var raw: Variant = cells[index].get("road_blockages", {})
+	return raw if raw is Dictionary else {}
+
+
+func _place_terrain_scatter(rng: RandomNumberGenerator) -> void:
+	for index in range(cells.size()):
+		if is_district(index):
+			cells[index]["terrain_props"] = []
+			continue
+		var kind := get_kind(index)
+		if kind != "road" and kind != "junction" and kind != "hub" and kind != "empty":
+			continue
+		cells[index]["terrain_props"] = _generate_cell_terrain_props(rng, index, kind)
+
+
+func _terrain_prop_position(
+	local_rng: RandomNumberGenerator,
+	kind: String,
+	center_x: float = -1.0,
+	center_y: float = -1.0,
+	spread: float = 0.0,
+) -> Vector2:
+	var nx := center_x
+	var ny := center_y
+	if nx < 0.0:
+		nx = local_rng.randf_range(0.1, 0.9)
+	if ny < 0.0:
+		ny = local_rng.randf_range(0.1, 0.9)
+	if spread > 0.0:
+		nx = clampf(nx + local_rng.randf_range(-spread, spread), 0.06, 0.94)
+		ny = clampf(ny + local_rng.randf_range(-spread, spread), 0.06, 0.94)
+	if kind == "road" or kind == "junction" or kind == "hub":
+		var dist := Vector2(nx - 0.5, ny - 0.5).length()
+		var attempts := 0
+		while dist < 0.34 and attempts < 14:
+			nx = local_rng.randf_range(0.08, 0.92)
+			ny = local_rng.randf_range(0.08, 0.92)
+			dist = Vector2(nx - 0.5, ny - 0.5).length()
+			attempts += 1
+	return Vector2(nx, ny)
+
+
+func _append_terrain_prop(
+	result: Array,
+	prop_type: String,
+	pos: Vector2,
+	local_rng: RandomNumberGenerator,
+	scale_min: float,
+	scale_max: float,
+) -> void:
+	result.append({
+		"type": prop_type,
+		"nx": pos.x,
+		"ny": pos.y,
+		"rot": local_rng.randf_range(-PI, PI),
+		"scale": local_rng.randf_range(scale_min, scale_max),
+	})
+
+
+func _generate_cell_terrain_props(_rng: RandomNumberGenerator, index: int, kind: String) -> Array:
+	var result: Array = []
+	var base_seed := int(cells[index].get("seed", index + 1))
+	var local_rng := RandomNumberGenerator.new()
+	local_rng.seed = hash(base_seed * 7919 + index * 104729)
+
+	if local_rng.randf() < 0.22:
+		var big_roll := local_rng.randf()
+		var big_type := "dead_tree"
+		if big_roll > 0.58:
+			big_type = "rock_large"
+		elif big_roll > 0.36:
+			big_type = "rubble_pile"
+		var big_pos := _terrain_prop_position(local_rng, kind)
+		_append_terrain_prop(result, big_type, big_pos, local_rng, 0.92, 1.12)
+
+	var patch_count := local_rng.randi_range(2, 4) if kind != "junction" else local_rng.randi_range(1, 3)
+	for _patch in range(patch_count):
+		var patch_center := _terrain_prop_position(local_rng, kind)
+		var clump_count := local_rng.randi_range(4, 7)
+		var spread := local_rng.randf_range(0.04, 0.075)
+		for _clump in range(clump_count):
+			var clump_pos := _terrain_prop_position(
+				local_rng, kind, patch_center.x, patch_center.y, spread
+			)
+			_append_terrain_prop(result, "grass_clump", clump_pos, local_rng, 0.88, 1.15)
+
+	var small_rocks := local_rng.randi_range(0, 2)
+	for _rock in range(small_rocks):
+		var rock_pos := _terrain_prop_position(local_rng, kind)
+		_append_terrain_prop(result, "rock_small", rock_pos, local_rng, 0.85, 1.1)
+
+	return result
+
+
+func _place_road_blockages(rng: RandomNumberGenerator) -> void:
+	var target := rng.randi_range(2, mini(5, maxi(2, (columns + rows) / 3)))
+	var candidates := _collect_blockable_road_edges(rng)
+	var placed := 0
+	for edge in candidates:
+		if placed >= target:
+			break
+		var from_index: int = int(edge.get("from", -1))
+		var to_index: int = int(edge.get("to", -1))
+		if not is_valid_index(from_index) or not is_valid_index(to_index):
+			continue
+		if not _try_add_road_blockage(rng, from_index, to_index):
+			continue
+		placed += 1
+
+
+func _collect_blockable_road_edges(rng: RandomNumberGenerator) -> Array:
+	var edges: Array = []
+	for index in range(cells.size()):
+		if not is_drive_node(index):
+			continue
+		for direction in get_available_directions(index):
+			if is_direction_blocked(index, direction):
+				continue
+			var other := get_neighbor_index(index, direction)
+			if other < 0 or other <= index:
+				continue
+			if not is_road_link(index, other):
+				continue
+			if _is_district_approach_edge(index, other):
+				continue
+			var priority := 0
+			if is_junction(index) or is_junction(other):
+				priority += 2
+			if connected_count(index) >= 3 or connected_count(other) >= 3:
+				priority += 1
+			edges.append({
+				"from": index,
+				"to": other,
+				"priority": priority,
+			})
+	edges.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if int(a.get("priority", 0)) != int(b.get("priority", 0)):
+			return int(a.get("priority", 0)) > int(b.get("priority", 0))
+		return rng.randf() < 0.5
+	)
+	return edges
+
+
+func _is_district_approach_edge(a: int, b: int) -> bool:
+	for district_index in district_indices:
+		var approach := int(cells[district_index].get("approach_road_index", -1))
+		if approach == a or approach == b:
+			return true
+	return false
+
+
+func _try_add_road_blockage(rng: RandomNumberGenerator, from_index: int, to_index: int) -> bool:
+	var from_dir := direction_between(from_index, to_index)
+	var to_dir := direction_between(to_index, from_index)
+	if from_dir == "" or to_dir == "":
+		return false
+	if is_direction_blocked(from_index, from_dir):
+		return false
+	var blockage_type: String = str(ROAD_BLOCKAGE_TYPES[rng.randi_range(0, ROAD_BLOCKAGE_TYPES.size() - 1)])
+	_set_direction_blockage(from_index, from_dir, blockage_type)
+	_set_direction_blockage(to_index, to_dir, blockage_type)
+	if not _passable_graph_fully_connected():
+		_clear_direction_blockage(from_index, from_dir)
+		_clear_direction_blockage(to_index, to_dir)
+		return false
+	return true
+
+
+func _set_direction_blockage(index: int, direction: String, blockage_type: String) -> void:
+	var blocks: Dictionary = cells[index].get("road_blockages", {})
+	blocks[direction] = blockage_type
+	cells[index]["road_blockages"] = blocks
+
+
+func _clear_direction_blockage(index: int, direction: String) -> void:
+	var blocks: Dictionary = cells[index].get("road_blockages", {})
+	blocks.erase(direction)
+	cells[index]["road_blockages"] = blocks
+
+
+func _passable_graph_fully_connected() -> bool:
+	if not is_valid_index(start_node_index) or not is_drive_node(start_node_index):
+		return false
+	var visited: Dictionary = {}
+	var queue: Array[int] = [start_node_index]
+	visited[start_node_index] = true
+	var seen := 1
+	while not queue.is_empty():
+		var current: int = queue.pop_front()
+		for neighbor in get_passable_indices(current):
+			if not is_drive_node(neighbor) or visited.has(neighbor):
+				continue
+			visited[neighbor] = true
+			seen += 1
+			queue.append(neighbor)
+	var total := 0
+	for index in range(cells.size()):
+		if is_drive_node(index):
+			total += 1
+	return seen >= total
+
 
 func _ensure_elevator_district() -> void:
 	if district_indices.is_empty():
@@ -1029,6 +1324,33 @@ func load_from_dictionary(data: Dictionary) -> void:
 	_finalize_cell_kinds()
 	if not is_valid_index(start_node_index) or not is_drive_node(start_node_index):
 		_mark_start_node()
+	_sanitize_district_terrain_props()
+	if not _has_terrain_scatter():
+		_place_terrain_scatter(rng)
+	if _count_road_blockages() <= 0:
+		_place_road_blockages(rng)
+
+
+func _sanitize_district_terrain_props() -> void:
+	for index in district_indices:
+		if is_valid_index(index):
+			cells[index]["terrain_props"] = []
+
+
+func _has_terrain_scatter() -> bool:
+	for cell in cells:
+		var props: Array = cell.get("terrain_props", [])
+		if props is Array and not props.is_empty():
+			return true
+	return false
+
+
+func _count_road_blockages() -> int:
+	var total := 0
+	for cell in cells:
+		var blocks: Dictionary = cell.get("road_blockages", {})
+		total += blocks.size()
+	return total
 
 
 func _serialize_cell(cell: Dictionary) -> Dictionary:
@@ -1065,7 +1387,30 @@ func _serialize_cell(cell: Dictionary) -> Dictionary:
 		"special_encounter": str(cell.get("special_encounter", "")),
 		"story_id": str(cell.get("story_id", "")),
 		"district_tag": str(cell.get("district_tag", "")),
+		"terrain_props": _serialize_terrain_props(cell.get("terrain_props", [])),
+		"road_blockages": _serialize_road_blockages(cell.get("road_blockages", {})),
 	}
+
+
+func _serialize_terrain_props(raw_list: Array) -> Array:
+	var result: Array = []
+	for raw in raw_list:
+		if raw is Dictionary:
+			result.append({
+				"type": str(raw.get("type", "grass_clump")),
+				"nx": float(raw.get("nx", 0.5)),
+				"ny": float(raw.get("ny", 0.5)),
+				"rot": float(raw.get("rot", 0.0)),
+				"scale": float(raw.get("scale", 1.0)),
+			})
+	return result
+
+
+func _serialize_road_blockages(raw: Dictionary) -> Dictionary:
+	var result: Dictionary = {}
+	for direction in raw.keys():
+		result[str(direction)] = str(raw[direction])
+	return result
 
 
 func _deserialize_cell(data: Dictionary) -> Dictionary:
@@ -1106,7 +1451,31 @@ func _deserialize_cell(data: Dictionary) -> Dictionary:
 		"special_encounter": str(data.get("special_encounter", "")),
 		"story_id": str(data.get("story_id", "")),
 		"district_tag": str(data.get("district_tag", "")),
+		"terrain_props": _deserialize_terrain_props(data.get("terrain_props", [])),
+		"road_blockages": _deserialize_road_blockages(data.get("road_blockages", {})),
 	}
+
+
+func _deserialize_terrain_props(raw_list: Array) -> Array:
+	var result: Array = []
+	for raw in raw_list:
+		if raw is Dictionary:
+			result.append({
+				"type": str(raw.get("type", "grass_clump")),
+				"nx": float(raw.get("nx", 0.5)),
+				"ny": float(raw.get("ny", 0.5)),
+				"rot": float(raw.get("rot", 0.0)),
+				"scale": float(raw.get("scale", 1.0)),
+			})
+	return result
+
+
+func _deserialize_road_blockages(raw: Dictionary) -> Dictionary:
+	var result: Dictionary = {}
+	if raw is Dictionary:
+		for direction in raw.keys():
+			result[str(direction)] = str(raw[direction])
+	return result
 
 
 func _serialize_foot_blocked(blocked: Array) -> Array:

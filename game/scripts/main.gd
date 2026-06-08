@@ -61,6 +61,7 @@ var _current_district_index: int = -1
 var _exit_options: Dictionary = {}
 var _drive_offset: Vector2 = Vector2.ZERO
 var _vehicle_facing: Vector2 = Vector2.RIGHT
+var _last_overworld_draw_cam: Vector2 = Vector2(-99999.0, -99999.0)
 var _drive_exit_locked: bool = false  ## 到岔口后须先松开方向键，再按一次才选路
 var _current_layer: int = 1
 var _elevator_repair_progress: int = 0
@@ -136,6 +137,7 @@ func _ready() -> void:
 		road_render_settings = RoadRenderSettings.new()
 	DayTopdownRender.apply_settings(road_render_settings)
 	DayTopdownRender.reload_road_textures()
+	DayTopdownRender.reload_prop_textures()
 	if enable_road_tuning_panel:
 		_setup_road_tuning_panel()
 	_ensure_input_actions()
@@ -634,7 +636,30 @@ func _physics_process(delta: float) -> void:
 	_sync_view_cameras()
 	_refresh_focus()
 	_refresh_ui()
+	_request_overworld_redraw_if_needed()
+
+func _request_overworld_redraw_if_needed() -> void:
+	if _mode == TravelMode.FOOT:
+		queue_redraw()
+		return
+	if _evening_tint > 0.001:
+		queue_redraw()
+		return
+	if _segment_target_index >= 0:
+		var cam_pos := _active_world_camera_position()
+		if cam_pos.distance_squared_to(_last_overworld_draw_cam) >= 144.0:
+			queue_redraw()
+			_last_overworld_draw_cam = cam_pos
+		return
 	queue_redraw()
+
+
+func _active_world_camera_position() -> Vector2:
+	if is_instance_valid(_world_camera) and _world_camera.enabled:
+		return _world_camera.global_position
+	if is_instance_valid(_vehicle):
+		return _vehicle.global_position
+	return Vector2.ZERO
 
 func _setup_world_camera() -> void:
 	_world_camera = Camera2D.new()
@@ -868,7 +893,7 @@ func _pick_auto_next(node_index: int) -> int:
 
 func _build_exit_options(node_index: int) -> Dictionary:
 	var options: Dictionary = {}
-	for direction in _map.get_available_directions(node_index):
+	for direction in _map.get_passable_directions(node_index):
 		var neighbor := _map.get_neighbor_index(node_index, direction)
 		if neighbor >= 0 and _map.is_drive_node(neighbor):
 			options[direction] = neighbor
@@ -889,19 +914,21 @@ func _halt_at_node(node_index: int) -> void:
 	_building_pick_index = 0
 	for district_index in _map.get_roadside_districts(node_index):
 		_map.mark_explored(district_index)
-	_sync_day_entity_visibility()
 	if is_instance_valid(_vehicle):
 		_vehicle.set_active(true)
 		_vehicle.global_position = _road_center(node_index)
+	_sync_day_entity_visibility()
 	if get_viewport() != null:
 		get_viewport().gui_release_focus()
 	_sync_minimap_navigation()
+	queue_redraw()
+	_last_overworld_draw_cam = _active_world_camera_position()
 
 
 func _get_back_neighbor_index() -> int:
 	if not _map.is_valid_index(_current_node_index) or not _map.is_valid_index(_arrived_from_index):
 		return -1
-	for neighbor in _map.get_connected_indices(_current_node_index):
+	for neighbor in _map.get_passable_indices(_current_node_index):
 		if neighbor == _arrived_from_index:
 			return _arrived_from_index
 	return -1
@@ -1042,6 +1069,9 @@ func _begin_drive_segment(from_index: int, to_index: int) -> void:
 		return
 	if not _map.is_drive_node(to_index):
 		return
+	var travel_dir := _map.direction_between(from_index, to_index)
+	if travel_dir == "" or not _map.is_direction_passable(from_index, travel_dir):
+		return
 	_mode = TravelMode.DRIVE
 	_current_node_index = from_index
 	_segment_from_index = from_index
@@ -1057,6 +1087,8 @@ func _begin_drive_segment(from_index: int, to_index: int) -> void:
 		if is_instance_valid(node):
 			node.visible = false
 	_sync_minimap_navigation()
+	queue_redraw()
+	_last_overworld_draw_cam = _active_world_camera_position()
 
 func _get_enterable_buildings() -> Array:
 	var result: Array = []
@@ -1203,10 +1235,11 @@ func _sync_day_entity_visibility() -> void:
 	if is_instance_valid(_player):
 		_player.visible = false
 	if is_instance_valid(_vehicle):
-		_vehicle.visible = false
+		var driving := _segment_target_index >= 0
+		_vehicle.visible = driving
 		var vehicle_sprite := _vehicle.get_node_or_null("Sprite2D") as Sprite2D
 		if vehicle_sprite != null:
-			vehicle_sprite.visible = false
+			vehicle_sprite.visible = driving
 
 func _can_repair_elevator() -> bool:
 	return _mode == TravelMode.FOOT and _current_district_index >= 0 and _map.district_has_elevator(_current_district_index) and not _run_ended
@@ -2842,6 +2875,8 @@ func _update_vehicle_transform() -> void:
 	if not is_instance_valid(_vehicle):
 		return
 	_vehicle.global_position = _vehicle_world_position()
+	if _segment_target_index >= 0 and _vehicle_facing.length_squared() > 0.01:
+		_vehicle.rotation = _vehicle_facing.angle() - DayTopdownRender.VEHICLE_SPRITE_FORWARD.angle()
 	if is_instance_valid(_world_camera) and _world_camera.enabled:
 		_world_camera.global_position = _vehicle.global_position
 
@@ -2965,7 +3000,7 @@ func _overworld_road_lit(explored: bool, in_viewport: bool) -> bool:
 func _draw_day_overworld() -> void:
 	var view_rect := _camera_world_view_rect().grow(360.0)
 	var world_bounds := Rect2(Vector2.ZERO, _map.get_world_size())
-	draw_rect(world_bounds.grow(480.0), Color("#141a20"), true)
+	draw_rect(world_bounds.grow(480.0), Color("#0e1216"), true)
 
 	for index in range(_map.cells.size()):
 		var cell := _map.get_cell(index)
@@ -3032,6 +3067,44 @@ func _draw_day_overworld() -> void:
 		var d_seed := int(dcell.get("seed", district_index + 1))
 		DayTopdownRender.draw_ruin_cell(self, drect, "empty", d_explored, d_seed)
 
+	for index in range(_map.cells.size()):
+		if _map.is_district(index):
+			continue
+		var cell := _map.get_cell(index)
+		var rect := _map.cell_rect(index)
+		if not view_rect.intersects(rect):
+			continue
+		var in_viewport := view_rect.intersects(rect)
+		if war_fog_enabled and not bool(cell.get("explored", false)) and not in_viewport:
+			continue
+		var explored := bool(cell.get("explored", false)) or not war_fog_enabled or in_viewport
+		var props := _map.get_terrain_props(index)
+		if not props.is_empty():
+			DayTopdownRender.draw_terrain_props(self, rect, props, explored)
+
+	for index in range(_map.cells.size()):
+		if not _map.is_drive_node(index) or not _map.should_draw_blockage_overlay(index):
+			continue
+		var cell := _map.get_cell(index)
+		var blockages: Dictionary = _map.get_road_blockages(index)
+		if blockages.is_empty():
+			continue
+		var rect := _map.cell_rect(index)
+		if not view_rect.intersects(rect):
+			continue
+		var in_viewport := view_rect.intersects(rect)
+		if war_fog_enabled and not bool(cell.get("explored", false)) and not in_viewport:
+			continue
+		var explored := bool(cell.get("explored", false)) or not war_fog_enabled or in_viewport
+		DayTopdownRender.draw_road_blockages(
+			self,
+			rect,
+			_map.cell_center(index),
+			blockages,
+			explored,
+			_map.get_road_directions(index).size(),
+		)
+
 	var can_enter := not _get_enterable_buildings().is_empty()
 	var enterables := _get_enterable_buildings()
 	var hotkey_map := _enterable_hotkey_map() if can_enter else {}
@@ -3079,7 +3152,7 @@ func _draw_day_overworld() -> void:
 				draw_arc(entrance, 32.0, 0.0, TAU, 32, Color("#f0c168"), 4.0)
 
 	var vpos := _vehicle_world_position()
-	if view_rect.has_point(vpos):
+	if _segment_target_index < 0 and view_rect.has_point(vpos):
 		DayTopdownRender.draw_vehicle_marker(self, vpos, 1.0, _current_travel_axis(), _vehicle_facing)
 
 	if is_instance_valid(_story_controller):
