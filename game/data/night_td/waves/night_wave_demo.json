@@ -2,7 +2,9 @@
 	"name": "夜晚塔防 · 标准夜袭",
 	"spawn_points": {
 		"sp_east": ["F8", "E9", "D8"],
-		"sp_north": ["F2", "E2"]
+		"sp_north": ["F2", "E2"],
+		"sp_south": ["B8", "C8"],
+		"sp_west": ["A3", "A5"]
 	},
 	"routes": {
 		"route_f_line": {
@@ -113,7 +115,8 @@
 					"count": 8,
 					"spawn_interval": 0.9,
 					"pre_delay": 0,
-					"move_speed": 56,
+					"move_speed": 40,
+					"spawn_side": "east",
 					"route_id": "route_f_line",
 					"spawn_point": "F8",
 					"alternate_routes": ["route_f_line_b", "route_f_line_c"]
@@ -123,7 +126,8 @@
 					"count": 6,
 					"spawn_interval": 1.0,
 					"pre_delay": 4.0,
-					"move_speed": 54,
+					"move_speed": 38,
+					"spawn_side": "east",
 					"route_id": "route_e_line",
 					"spawn_point": "E9",
 					"alternate_routes": ["route_e_line_b", "route_e_line_c"]
@@ -138,7 +142,8 @@
 					"count": 12,
 					"spawn_interval": 0.55,
 					"pre_delay": 0,
-					"move_speed": 68,
+					"move_speed": 52,
+					"spawn_side": "north",
 					"route_id": "route_swarm",
 					"spawn_point": "F2",
 					"alternate_routes": ["route_swarm_b"]
@@ -148,7 +153,8 @@
 					"count": 4,
 					"spawn_interval": 2.2,
 					"pre_delay": 6.0,
-					"move_speed": 44,
+					"move_speed": 32,
+					"spawn_side": "south",
 					"route_id": "route_d_rush",
 					"spawn_point": "D8",
 					"alternate_routes": ["route_d_rush_b"]
@@ -163,7 +169,8 @@
 					"count": 3,
 					"spawn_interval": 4.0,
 					"pre_delay": 0,
-					"move_speed": 30,
+					"move_speed": 20,
+					"spawn_side": "south",
 					"route_id": "route_d_rush",
 					"spawn_point": "D8",
 					"alternate_routes": ["route_d_rush_b"]
@@ -173,7 +180,8 @@
 					"count": 8,
 					"spawn_interval": 0.8,
 					"pre_delay": 8.0,
-					"move_speed": 60,
+					"move_speed": 42,
+					"spawn_side": "west",
 					"route_id": "route_f_line",
 					"spawn_point": "F8",
 					"alternate_routes": ["route_f_line_b", "route_f_line_c"]
@@ -183,7 +191,8 @@
 					"count": 3,
 					"spawn_interval": 2.5,
 					"pre_delay": 12.0,
-					"move_speed": 46,
+					"move_speed": 34,
+					"spawn_side": "north",
 					"route_id": "route_e_line",
 					"spawn_point": "E9",
 					"alternate_routes": ["route_e_line_b", "route_e_line_c"]

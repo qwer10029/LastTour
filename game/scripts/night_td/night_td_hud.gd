@@ -51,8 +51,8 @@ var _energy_label: Label = null
 var _power_list: VBoxContainer = null
 var _power_empty_label: Label = null
 var _power_rows: Dictionary = {}
-var _selected_power_tower_id := -1
-var _power_pulse_tween: Tween = null
+var _selected_power_tower_ids: Array[int] = []   # 多选支持：框选多塔时同时高亮多行
+var _power_pulse_tweens: Array[Tween] = []        # 多选时每个高亮行各一个脉冲动画
 
 const COLORS := {
 	"bg": "#0b1018", "panel": "#141c28", "border": "#2a3a4f",
@@ -506,41 +506,47 @@ func update_power_list(towers: Array) -> void:
 
 
 func clear_power_highlight() -> void:
-	if _power_pulse_tween != null and _power_pulse_tween.is_valid():
-		_power_pulse_tween.kill()
-	if _selected_power_tower_id >= 0:
-		var prev: Dictionary = _power_rows.get(_selected_power_tower_id, {})
-		if not prev.is_empty() and is_instance_valid(prev["panel"]):
-			prev["panel"].remove_theme_stylebox_override("panel")
-			prev["panel"].modulate = Color.WHITE
-	_selected_power_tower_id = -1
+	_clear_all_power_highlights()
 
 
 func highlight_power_row(tower_id: int) -> void:
-	if _power_pulse_tween != null and _power_pulse_tween.is_valid():
-		_power_pulse_tween.kill()
-	if _selected_power_tower_id >= 0:
-		var prev: Dictionary = _power_rows.get(_selected_power_tower_id, {})
+	highlight_power_rows([tower_id])
+
+
+## 高亮多行（框选多塔时同时显示）。传入空数组则清除全部高亮。
+func highlight_power_rows(tower_ids: Array[int]) -> void:
+	_clear_all_power_highlights()
+	for tid in tower_ids:
+		var d: Dictionary = _power_rows.get(tid, {})
+		if d.is_empty(): continue
+		var panel: PanelContainer = d["panel"]
+		panel.modulate = Color.WHITE
+
+		var s := StyleBoxFlat.new()
+		s.bg_color = Color(COLORS["amber"], 0.35)
+		s.border_color = Color(COLORS["amber"])
+		s.set_border_width_all(4); s.set_corner_radius_all(4)
+		panel.add_theme_stylebox_override("panel", s)
+
+		var tw := create_tween()
+		tw.set_loops()
+		tw.tween_property(s, "bg_color:a", 0.18, 0.35)
+		tw.tween_property(s, "bg_color:a", 0.40, 0.35)
+		_power_pulse_tweens.append(tw)
+	_selected_power_tower_ids = tower_ids.duplicate()
+
+
+func _clear_all_power_highlights() -> void:
+	for tw in _power_pulse_tweens:
+		if tw != null and tw.is_valid():
+			tw.kill()
+	_power_pulse_tweens.clear()
+	for tid in _selected_power_tower_ids:
+		var prev: Dictionary = _power_rows.get(tid, {})
 		if not prev.is_empty() and is_instance_valid(prev["panel"]):
 			prev["panel"].remove_theme_stylebox_override("panel")
 			prev["panel"].modulate = Color.WHITE
-
-	var d: Dictionary = _power_rows.get(tower_id, {})
-	if d.is_empty(): return
-	var panel: PanelContainer = d["panel"]
-	_selected_power_tower_id = tower_id
-	panel.modulate = Color.WHITE
-
-	var s := StyleBoxFlat.new()
-	s.bg_color = Color(COLORS["amber"], 0.25)
-	s.border_color = Color(COLORS["amber"])
-	s.set_border_width_all(3); s.set_corner_radius_all(4)
-	panel.add_theme_stylebox_override("panel", s)
-
-	_power_pulse_tween = create_tween()
-	_power_pulse_tween.set_loops()
-	_power_pulse_tween.tween_property(s, "bg_color:a", 0.10, 0.35)
-	_power_pulse_tween.tween_property(s, "bg_color:a", 0.30, 0.35)
+	_selected_power_tower_ids.clear()
 
 
 func _add_power_row(tower_id: int) -> void:
