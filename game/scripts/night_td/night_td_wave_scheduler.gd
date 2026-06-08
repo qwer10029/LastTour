@@ -93,6 +93,7 @@ func _append_single_entry(
 	var move_speed := float(entry.get("move_speed", -1.0))
 	var route_id := str(entry.get("route_id", ""))
 	var spawn_point := str(entry.get("spawn_point", entry.get("spawn_cell", "")))
+	var spawn_side := str(entry.get("spawn_side", ""))   # 限制出生方向（空=四面随机）
 	var alt_routes: Array = entry.get("alternate_routes", [])
 	var day_bonus := maxi((day_index - 1) / 2, 0)
 	count += day_bonus
@@ -113,6 +114,7 @@ func _append_single_entry(
 			"move_speed": move_speed,
 			"route_id": route_id,
 			"spawn_point": spawn_point,
+				"spawn_side": spawn_side,
 			"alternate_routes": alt_routes,
 			"wave_id": int(entry.get("wave_id", 0)),
 		})

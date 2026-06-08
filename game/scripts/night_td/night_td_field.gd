@@ -51,8 +51,6 @@ func _process(delta: float) -> void:
 	if view_size != _last_view_size:
 		_reflow_layout()
 	_process_breach_flashes(delta)
-	# 节流：重绘由 controller 的帧计数器统一控制（~20fps），
-	# 此处不再每帧 queue_redraw，仅响应尺寸变化或突破闪效等独立事件。
 	if view_size != _last_view_size:
 		queue_redraw()
 
@@ -163,13 +161,10 @@ func _unhandled_input(event: InputEvent) -> void:
 					_drag_end_pos = _drag_start_pos
 					_is_dragging = true
 				else:
-					# Mouse released: check if it was a drag or click
 					var dist := _drag_end_pos.distance_to(_drag_start_pos)
 					if dist < 8.0:
-						# Click (no meaningful drag)
 						var cell := world_to_cell(get_global_mouse_position())
 						if is_inside_grid(cell):
-							# Check if clicking on a tower
 							var hit_tower := false
 							for tower in _controller._towers:
 								if tower.get("removed", false): continue
@@ -177,14 +172,13 @@ func _unhandled_input(event: InputEvent) -> void:
 									hit_tower = true
 									break
 							if not hit_tower:
-								# Clicked empty space — deselect
 								clear_tower_selection()
 							cell_combat_clicked.emit(cell)
 							get_viewport().set_input_as_handled()
 					else:
-						# Box-select: find all towers in rect
 						_select_towers_in_rect(_drag_start_pos, _drag_end_pos)
 						get_viewport().set_input_as_handled()
+						_controller.sync_selection_to_hud()
 					_is_dragging = false
 					queue_redraw()
 			elif event.button_index == MOUSE_BUTTON_RIGHT:
@@ -277,11 +271,9 @@ func _draw() -> void:
 	draw_string(_font, veh_center + Vector2(-22, -36), "防守核心", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#ffb1a8", 0.9))
 
 	if _controller != null:
-		# 覆盖层：热力图 + 指挥官策略（按钮控制，布防与战斗阶段通用）
 		if _controller.show_overlay:
 			_draw_influence_heatmap()
 			_draw_commander_overlay()
-		# 流场调试箭头：仅在布防阶段且 debug_draw_routes 开启时绘制
 		if (
 			_controller.show_route_overlay
 			and _controller.debug_draw_routes
@@ -308,8 +300,6 @@ func _draw_arrow_head(tip: Vector2, direction: Vector2, size: float, color: Colo
 
 
 ## 威胁热力图：用颜色覆盖层展示每格的威胁值（火力覆盖密度）。
-## 红色 = 高威胁（敌人在此会被猛烈打击），蓝色/透明 = 无覆盖（防线缺口）。
-## 颜色由归一化威胁值映射：深蓝 → 青 → 绿 → 黄 → 红。
 func _draw_influence_heatmap() -> void:
 	if _controller == null:
 		return
@@ -321,19 +311,15 @@ func _draw_influence_heatmap() -> void:
 	var cols: int = int(data.get("cols", 0))
 	var rows: int = int(data.get("rows", 0))
 	if threat.size() == 0 or cols == 0 or max_t <= 0.0:
-		# 无威胁数据：可能没有放置攻击塔，画一个均匀透明层提示
 		var field_rect := get_field_rect_local()
 		draw_rect(field_rect, Color(0.1, 0.12, 0.2, 0.12), true)
 		draw_string(_font, field_origin + Vector2(8, -28),
 			"威胁热力图  (无火力覆盖)", HORIZONTAL_ALIGNMENT_LEFT, -1, 12,
 			Color(0.4, 0.5, 0.7, 0.8))
 		return
-	var label := "威胁热力图  (%.0f DPS 峰值)" % max_t
 	draw_string(_font, field_origin + Vector2(8, -28),
-		label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12,
+		"威胁热力图  (%.0f DPS 峰值)" % max_t, HORIZONTAL_ALIGNMENT_LEFT, -1, 12,
 		Color(0.95, 0.4, 0.3, 0.85))
-	# 仅绘制非零威胁格，大幅减少实际绘制调用。
-	# 典型布防下只有 ~50-150 格有火力覆盖（而非全部 504 格）。
 	var tile := _layout_tile_size
 	for y in range(rows):
 		for x in range(cols):
@@ -350,25 +336,20 @@ func _draw_influence_heatmap() -> void:
 			), _heat_color(t), true)
 
 
-## 归一化威胁值 → 热力图颜色（弧形渐变：蓝→青→绿→黄→红）
+## 归一化威胁值 → 热力图颜色
 func _heat_color(t: float) -> Color:
-	# 低→高：深蓝(0) → 青(0.25) → 绿(0.5) → 黄(0.75) → 红(1.0)
-	var r: float
-	var g: float
-	var b: float
 	if t < 0.25:
 		var s := t / 0.25
-		r = 0.08; g = 0.18 + s * 0.5; b = 0.35 + s * 0.5
+		return Color(0.08, 0.18 + s * 0.5, 0.35 + s * 0.5, 0.32)
 	elif t < 0.5:
 		var s := (t - 0.25) / 0.25
-		r = 0.08 + s * 0.15; g = 0.68 + s * 0.3; b = 0.85 - s * 0.55
+		return Color(0.08 + s * 0.15, 0.68 + s * 0.3, 0.85 - s * 0.55, 0.32)
 	elif t < 0.75:
 		var s := (t - 0.5) / 0.25
-		r = 0.23 + s * 0.72; g = 0.98 - s * 0.1; b = 0.3 - s * 0.2
+		return Color(0.23 + s * 0.72, 0.98 - s * 0.1, 0.3 - s * 0.2, 0.32)
 	else:
 		var s := (t - 0.75) / 0.25
-		r = 0.95 - s * 0.05; g = 0.88 - s * 0.65; b = 0.1 - s * 0.05
-	return Color(r, g, b, 0.32)
+		return Color(0.95 - s * 0.05, 0.88 - s * 0.65, 0.1 - s * 0.05, 0.32)
 
 
 ## 指挥官覆盖层：画出集结区域、攻坚目标、佯攻方向。
@@ -402,7 +383,6 @@ func _draw_commander_overlay() -> void:
 		# 集结区域：黄色虚线圆
 		var staging_pos := _cell_to_local(staging_cell)
 		var r := _layout_tile_size * 1.2
-		var dash_len := _layout_tile_size * 0.25
 		var segments := 16
 		for i in range(segments):
 			var a0 := TAU * i / segments
@@ -413,12 +393,11 @@ func _draw_commander_overlay() -> void:
 				Color(1.0, 0.85, 0.2, 0.55), 2.0
 			)
 
-		# 集结标签
 		draw_string(_font, staging_pos + Vector2(-14, -r - 10),
 			"集结", HORIZONTAL_ALIGNMENT_CENTER, -1, 9,
 			Color(1.0, 0.85, 0.2, 0.8))
 
-		# 突击目标：红色闪烁十字
+		# 突击目标：红色十字
 		var target_pos := _cell_to_local(target_cell)
 		var cross := _layout_tile_size * 0.55
 		var line_color: Color
@@ -444,7 +423,6 @@ func _draw_commander_overlay() -> void:
 				Color(1.0, 0.6, 0.15, 0.4), 1.5
 			)
 
-		# Push 状态标签
 		if state == "push":
 			draw_string(_font, target_pos + Vector2(-16, -22),
 				"突击!", HORIZONTAL_ALIGNMENT_CENTER, -1, 10,
@@ -459,19 +437,11 @@ func _draw_commander_overlay() -> void:
 
 
 func _draw_flow_overlay() -> void:
-	# Draw a cyan gradient-arrow overlay showing the flow-field direction for each reachable cell.
 	var ff: NightTdFlowField = _controller._flow
 	if ff == null or ff.cols == 0:
 		return
-	draw_string(
-		_font,
-		field_origin + Vector2(8, -58),
-		"流场方向 →",
-		HORIZONTAL_ALIGNMENT_LEFT,
-		-1,
-		12,
-		Color(0.55, 0.85, 0.95, 0.75),
-	)
+	draw_string(_font, field_origin + Vector2(8, -58), "流场方向 →",
+		HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.55, 0.85, 0.95, 0.75))
 	var arrow_len := _layout_tile_size * 0.3
 	var int_max := maxf(
 		ff.integration_at(Vector2i(0, 0)),
@@ -484,7 +454,7 @@ func _draw_flow_overlay() -> void:
 		)
 	)
 	if int_max >= NightTdFlowField.INF:
-		int_max = float(ff.cols + ff.rows)  # fallback scale
+		int_max = float(ff.cols + ff.rows)
 	int_max = maxf(int_max, 1.0)
 	for y in range(ff.rows):
 		for x in range(ff.cols):
@@ -516,7 +486,6 @@ func _draw_combat_entities() -> void:
 		var label: String = str(edef.get("name", "敌")).left(2)
 		var is_ally := str(enemy.get("faction", "enemy")) == "ally"
 		var is_hacked := int(enemy.get("hacked_by", -1)) >= 0
-		# 阵营配色：友军青绿光环，敌军红光环；正在被黑入的敌人闪烁青色描边。
 		var halo := Color(0.35, 0.95, 0.7, 0.35) if is_ally else Color(1.0, 0.35, 0.35, 0.35)
 		var ring := Color("#5ce0a8") if is_ally else Color("#ff8b7a")
 		if is_hacked and not is_ally:
@@ -528,7 +497,7 @@ func _draw_combat_entities() -> void:
 		if is_ally:
 			label = "友" + label.left(1)
 		draw_string(_font, local_pos + Vector2(-14, -20), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#fff8f8"))
-		# 牧羊者：加一圈金色指挥光环
+		# 牧羊者：金色指挥光环
 		if bool(enemy.get("is_shepherd", false)) and not is_ally:
 			draw_arc(local_pos, radius + 10.0, 0.0, TAU, 40, Color(1.0, 0.82, 0.29, 0.7), 2.0)
 		# 战斗中显示指挥官分配的组标签
@@ -612,7 +581,6 @@ func get_selected_tower_ids() -> Array[int]:
 func clear_tower_selection() -> void:
 	_selected_tower_ids.clear()
 	queue_redraw()
-	# Also clear HUD power row highlight
 	if _controller != null and is_instance_valid(_controller.hud):
 		_controller.hud.clear_power_highlight()
 
@@ -710,7 +678,8 @@ func _draw_placed_towers() -> void:
 		var tid := int(tower.get("id", -1))
 		var tmax_hp := float(tdef.get("hp", 30))
 		var tcurrent_hp := float(tower.get("hp", tmax_hp))
-		var is_selected := tid in _selected_tower_ids
+		var is_powered := float(tdef.get("upkeep", 0.0)) > 0.0
+		var is_selected := tid in _selected_tower_ids and is_powered
 		var is_damaged := tcurrent_hp < tmax_hp
 		if is_damaged or is_selected:
 			var bar_w: float = 30.0
@@ -718,10 +687,16 @@ func _draw_placed_towers() -> void:
 			var bar_y := local_pos.y - radius - 10.0
 			var ratio := clampf(tcurrent_hp / tmax_hp, 0.0, 1.0)
 			draw_rect(Rect2(local_pos.x - bar_w * 0.5, bar_y, bar_w, bar_h), Color("#1a2533"), true)
-			draw_rect(Rect2(local_pos.x - bar_w * 0.5, bar_y, bar_w * ratio, bar_h), Color("#6ed08b"), true)
+			if is_selected:
+				draw_rect(Rect2(local_pos.x - bar_w * 0.5, bar_y, bar_w * ratio, bar_h), Color("#ffcc6f"), true)
+			else:
+				draw_rect(Rect2(local_pos.x - bar_w * 0.5, bar_y, bar_w * ratio, bar_h), Color("#6ed08b"), true)
 		if is_selected:
+			var pulse := (sin(Time.get_ticks_msec() * 0.006) + 1.0) * 0.5
+			draw_circle(local_pos, radius + 8.0, Color("#ffcc6f", 0.22 + pulse * 0.18))
+			draw_arc(local_pos, radius + 8.0, 0.0, TAU, 48, Color("#ffcc6f", 0.7 + pulse * 0.3), 3.0)
 			var bar_y := local_pos.y - radius - 10.0
-			draw_rect(Rect2(local_pos.x - 16.0, bar_y - 1.0, 32.0, 6.0), Color("#ffcc6f"), false, 1.5)
+			draw_rect(Rect2(local_pos.x - 17.0, bar_y - 2.0, 34.0, 8.0), Color("#ffcc6f", 0.8), false, 2.5)
 
 
 func get_buildable_hint_cell(world_pos: Vector2) -> Vector2i:

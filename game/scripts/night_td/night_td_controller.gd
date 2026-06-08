@@ -330,8 +330,9 @@ func _spawn_from_spec(spec: Dictionary) -> void:
 	move_speed *= randf_range(0.85, 1.15)
 	var route_id := str(spec.get("route_id", ""))
 	var spawn_point := str(spec.get("spawn_point", ""))
-	# 出生点：四面边缘随机一格；起始世界坐标在网格外一格，让敌人从画面外滑入。
-	var spawn_cell := _resolve_spawn_cell(route_id, spawn_point)
+	var spawn_side := str(spec.get("spawn_side", ""))
+	# 出生点：按 spawn_side 限制方向（集中威胁到 1-2 个正面），否则四面边缘随机
+	var spawn_cell := _resolve_spawn_cell(route_id, spawn_point, spawn_side)
 	var pos: Vector2 = _offgrid_spawn_pos(spawn_cell)
 	var eid := _next_enemy_id
 	_next_enemy_id += 1
@@ -361,12 +362,19 @@ func _spawn_from_spec(spec: Dictionary) -> void:
 		])
 
 
-func _resolve_spawn_cell(route_id: String, spawn_point: String) -> Vector2i:
-	# 四面边缘随机出生（基地居中）。忽略旧 wave_plan 的中场出生点标签 ——
-	# 它们针对的是旧的小地图，已不适用；现在敌人一律从地图边缘涌入。
+func _resolve_spawn_cell(_route_id: String, _spawn_point: String, spawn_side: String = "") -> Vector2i:
+	# 出生点：spawn_side 限制方向（使一段时间内敌人集中从 1-2 个正面来袭）
+	# "north"=上, "south"=下, "east"=右, "west"=左, ""=四面随机
 	var cols := field.grid_cols
 	var rows := field.grid_rows
-	match randi_range(0, 3):
+	var side := randi_range(0, 3)
+	if spawn_side != "":
+		match spawn_side:
+			"north": side = 0
+			"south": side = 1
+			"west":  side = 2
+			"east":  side = 3
+	match side:
 		0:  # 上边缘
 			return Vector2i(randi_range(0, cols - 1), 0)
 		1:  # 下边缘
@@ -419,8 +427,12 @@ func _update_enemies(delta: float) -> void:
 				continue
 			if tower["cell"] == cell and tower["type"] == "barrier":
 				var bdef: Dictionary = NightTdDefs.get_tower_def("barrier")
-				slow = minf(slow, float(bdef.get("slow_factor", 0.25)))
-				_damage_tower(tower, float(bdef.get("damage", 6)) * delta)
+				var sf := float(bdef.get("slow_factor", 0.0))
+				if sf <= 0.0:
+					slow = 0.0  # 路障完全阻挡：敌人停止移动，原地攻击路障
+				else:
+					slow = minf(slow, sf)
+				_damage_tower(tower, float(enemy["base_damage"]) * delta)  # 敌人用自身攻击力破坏路障
 		# 流场梯度 + 分离转向 + 每单位航向噪声，得到本帧前进方向。
 		# 指挥官（P3）为编入小组的敌人提供专属目标流场（集结点/攻坚塔/佯攻基地）；
 		# 无指挥或未编组时回退到主 base 流场。
@@ -831,6 +843,18 @@ func _on_cell_combat_clicked(cell: Vector2i) -> void:
 func _on_power_tower_selected(tower_id: int) -> void:
 	if is_instance_valid(field) and field.has_method("set_highlighted_tower"):
 		field.set_highlighted_tower(tower_id)
+	sync_selection_to_hud()
+
+
+## 框选多塔后同步 HUD 电力面板高亮（field 调用）
+func sync_selection_to_hud() -> void:
+	if is_instance_valid(field) and field.has_method("get_selected_tower_ids"):
+		var ids: Array[int] = field.get_selected_tower_ids()
+		if is_instance_valid(hud) and hud.has_method("highlight_power_rows"):
+			if ids.is_empty():
+				hud.clear_power_highlight()
+			else:
+				hud.highlight_power_rows(ids)
 
 
 ## 覆盖层切换（HUD 按钮 → controller → field）
