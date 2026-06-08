@@ -4,14 +4,14 @@ extends RefCounted
 ## 指挥官 / 牧羊人 AI（P3）：让敌群像受指挥的军队那样行动 ——
 ## 分组、集结、集中兵力逐个击破防御塔，而不是各自独立涌向基地。
 ##
+## 所有难度均启用（v2）：difficulty 只影响兵力阈值与激进程度，
+## 敌人策略行为一致 —— 集结、攻坚、佯攻在所有难度都有体现，
+## 让玩家在任何难度下都能看到"有组织的敌群"。
+##
 ## 设计要点：
 ## - 决策与寻路解耦：指挥官只决定"每个敌人的目标(goal_key)"并维护若干目标流场；
 ##   具体移动仍由 NightTdFlowField 完成（与 P1/P2 一致）。
-## - 难度分层：难度0 完全沉默（保持 P1/P2 纯流场行为）；难度1 集结+集火单塔；
-##   难度2 集结+佯攻(压制组直冲基地吸引火力)+集火双塔。
-## - 性能：目标流场数量有界(≤4)，每 TICK_INTERVAL 秒整体重算一次，14x10 网格开销极小。
-
-const TICK_INTERVAL := 0.5
+## - 性能：目标流场数量有界(≤4)，每 TICK_INTERVAL 秒整体重算一次。
 
 # goal_key 约定：
 #   "base"      → 走完整危险场的流场，奔向车辆（保守，绕开火力）
@@ -20,15 +20,22 @@ const TICK_INTERVAL := 0.5
 const KEY_BASE := "base"
 const KEY_PRESSURE := "pressure"
 
-var enabled := false
+var enabled := true          # 始终启用（v2）
 var difficulty := 1
-var suppressed := false   # 牧羊者被击杀/策反时由控制器置位，临时退化为各自冲锋
+var suppressed := false      # 牧羊者被击杀/策反时由控制器置位，临时退化为各自冲锋
 
 var _cols := 0
 var _rows := 0
 var _vehicle_cells: Array = []
-var _tick_accum := TICK_INTERVAL
+var _tick_interval := 0.5
+var _tick_accum := 0.0
 var _age := 0.0
+
+# 难度派生参数（在 configure 中计算）
+var _staging_threshold := 3     # 集结多少兵力后发动突击
+var _pressure_ratio := 0.0      # 佯攻组比例（0=无佯攻）
+var _max_target_towers := 1     # 最多同时攻坚几座塔
+var _staging_timeout := 6.0     # 集结超时（秒），到时强制突击
 
 # 任务表：goal_key -> { target_cell:Vector2i, staging_cell:Vector2i, state:"stage"/"push",
 #                       created_at:float, pushed:bool }
@@ -37,17 +44,47 @@ var _missions: Dictionary = {}
 var _fields: Dictionary = {}
 var _pending_logs: Array[String] = []
 
+# 指挥官状态快照（供可视化）
+var last_missions: Array = []       # [{target_cell, staging_cell, state, key}]
+var last_pressure_active := false
+var last_assault_keys: Array = []
+
 
 func configure(diff: int, cols: int, rows: int, vehicle_cells: Array) -> void:
 	difficulty = diff
-	enabled = diff >= 1
+	enabled = true  # v2：所有难度启用
 	_cols = cols
 	_rows = rows
 	_vehicle_cells = vehicle_cells.duplicate()
 	_missions.clear()
 	_fields.clear()
 	_pending_logs.clear()
-	_tick_accum = TICK_INTERVAL  # 首帧立即规划
+	last_missions.clear()
+	last_pressure_active = false
+	last_assault_keys.clear()
+
+	# 难度派生参数
+	match difficulty:
+		0:
+			_tick_interval = 0.75       # 慢半拍，给玩家更多反应时间
+			_staging_threshold = 4       # 需要更多兵力才发动突击
+			_pressure_ratio = 0.0        # 无佯攻组
+			_max_target_towers = 1       # 只攻坚 1 座塔
+			_staging_timeout = 8.0       # 更长的集结超时
+		1:
+			_tick_interval = 0.5
+			_staging_threshold = 3
+			_pressure_ratio = 0.0
+			_max_target_towers = 1
+			_staging_timeout = 6.0
+		_:
+			_tick_interval = 0.5
+			_staging_threshold = 3
+			_pressure_ratio = 0.33       # 1/3 兵力佯攻
+			_max_target_towers = 2        # 可同时攻坚 2 座塔
+			_staging_timeout = 5.0
+
+	_tick_accum = _tick_interval  # 首帧立即规划
 	_age = 0.0
 
 
@@ -62,16 +99,12 @@ func set_suppressed(value: bool) -> void:
 
 
 ## 每帧调用；内部按 TICK_INTERVAL 节流重新规划。
-## ctx: { enemies:Array(引用), towers:Array(引用),
-##        barrier_cost:PackedFloat32Array, danger_cost:PackedFloat32Array,
-##        world_to_cell:Callable, cell_to_world:Callable }
 func update(delta: float, ctx: Dictionary) -> void:
 	_age += delta
-	if not enabled or suppressed:
-		# 难度0 或 牧羊者失能：所有敌人走 base，由控制器主流场驱动（指挥官不介入）。
+	if suppressed:
 		return
 	_tick_accum += delta
-	if _tick_accum < TICK_INTERVAL:
+	if _tick_accum < _tick_interval:
 		return
 	_tick_accum = 0.0
 	_replan(ctx)
@@ -83,9 +116,12 @@ func _replan(ctx: Dictionary) -> void:
 	var towers: Array = ctx.get("towers", [])
 	var live_enemies := _live_enemies(enemies)
 	if live_enemies.is_empty():
+		last_missions.clear()
+		last_pressure_active = false
+		last_assault_keys.clear()
 		return
 
-	# 1) 选定攻坚目标塔（难度1：1座；难度2：最多2座）。按"威胁高且耐久低"打分。
+	# 1) 选定攻坚目标塔。按"威胁高且耐久低"打分。
 	var target_towers := _pick_target_towers(towers)
 
 	# 2) 维护任务表：为每个目标塔建立/更新攻坚任务。
@@ -117,6 +153,19 @@ func _replan(ctx: Dictionary) -> void:
 	# 5) 重建所需目标流场。
 	_rebuild_fields(ctx, assault_keys)
 
+	# 6) 保存快照供可视化
+	last_pressure_active = _pressure_ratio > 0.0
+	last_assault_keys = assault_keys.duplicate()
+	last_missions.clear()
+	for key: String in _missions.keys():
+		var m: Dictionary = _missions[key]
+		last_missions.append({
+			"key": key,
+			"target_cell": m["target_cell"],
+			"staging_cell": m["staging_cell"],
+			"state": str(m["state"]),
+		})
+
 
 func _pick_target_towers(towers: Array) -> Array:
 	var scored: Array = []
@@ -131,9 +180,8 @@ func _pick_target_towers(towers: Array) -> Array:
 		var score := threat * 2.0 - hp * 0.15
 		scored.append({"tower": tower, "score": score})
 	scored.sort_custom(func(a, b): return float(a["score"]) > float(b["score"]))
-	var want := 1 if difficulty <= 1 else 2
 	var out: Array = []
-	for i in range(mini(want, scored.size())):
+	for i in range(mini(_max_target_towers, scored.size())):
 		out.append(scored[i]["tower"])
 	return out
 
@@ -154,8 +202,8 @@ func _assign_enemies(live: Array, assault_keys: Array) -> void:
 			e["goal_key"] = KEY_BASE
 		return
 	var pressure_cut := 0
-	if difficulty >= 2:
-		pressure_cut = int(floor(live.size() / 3.0))
+	if _pressure_ratio > 0.0:
+		pressure_cut = int(floor(float(live.size()) * _pressure_ratio))
 	var ai := 0
 	for idx in range(live.size()):
 		var e: Dictionary = live[idx]
@@ -175,8 +223,7 @@ func _advance_missions(live: Array) -> void:
 		var m: Dictionary = _missions[key]
 		var assigned := int(counts.get(key, 0))
 		if m["state"] == "stage":
-			var threshold := 3 if difficulty <= 1 else 4
-			if assigned >= threshold or (_age - float(m["created_at"])) > 6.0:
+			if assigned >= _staging_threshold or (_age - float(m["created_at"])) > _staging_timeout:
 				m["state"] = "push"
 				m["pushed"] = true
 				_queue_log("指挥官：兵力就位，向 %s 发起突击" % _cell_label(m["target_cell"]))
@@ -186,8 +233,10 @@ func _rebuild_fields(ctx: Dictionary, assault_keys: Array) -> void:
 	var barrier_cost: PackedFloat32Array = ctx.get("barrier_cost", PackedFloat32Array())
 	var danger_cost: PackedFloat32Array = ctx.get("danger_cost", PackedFloat32Array())
 	var needed := {}
-	if difficulty >= 2:
+	# 佯攻组：无视危险场直冲基地（有则建，无则跳）
+	if _pressure_ratio > 0.0:
 		needed[KEY_PRESSURE] = _combine_cost(barrier_cost, PackedFloat32Array(), _cols, _rows)
+	# 攻坚组：走完整流场（含危险），到集结/突击点
 	for key: String in assault_keys:
 		var m: Dictionary = _missions.get(key, {})
 		if m.is_empty():
@@ -224,7 +273,7 @@ func _goals_for(key: String) -> Array:
 
 ## 查询某敌人本帧应当采用的流场方向。无对应场时返回 ZERO（控制器回退到主 base 流场）。
 func dir_for(enemy: Dictionary, cell: Vector2i) -> Vector2:
-	if not enabled or suppressed:
+	if suppressed:
 		return Vector2.ZERO
 	var key := str(enemy.get("goal_key", KEY_BASE))
 	if key == KEY_BASE:
@@ -237,7 +286,7 @@ func dir_for(enemy: Dictionary, cell: Vector2i) -> Vector2:
 
 ## 敌人是否正攻坚某塔且处于 push 状态——返回目标塔格（控制器据此触发近战伤害）。
 func attack_target_cell(enemy: Dictionary) -> Vector2i:
-	if not enabled:
+	if suppressed:
 		return Vector2i(-1, -1)
 	var key := str(enemy.get("goal_key", KEY_BASE))
 	if not key.begins_with("m:"):
