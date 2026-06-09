@@ -199,6 +199,16 @@
 					"alternate_routes": ["route_d_rush_b"]
 				},
 				{
+					"enemy": "repair_mender",
+					"count": 2,
+					"spawn_interval": 5.0,
+					"pre_delay": 20.0,
+					"move_speed": 28,
+					"route_id": "route_d_rush",
+					"spawn_point": "D8",
+					"alternate_routes": ["route_d_rush_b"]
+				},
+				{
 					"enemy": "saboteur",
 					"count": 3,
 					"spawn_interval": 1.0,

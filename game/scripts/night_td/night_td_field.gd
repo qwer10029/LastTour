@@ -500,6 +500,12 @@ func _draw_combat_entities() -> void:
 		# 牧羊者：金色指挥光环
 		if bool(enemy.get("is_shepherd", false)) and not is_ally:
 			draw_arc(local_pos, radius + 10.0, 0.0, TAU, 40, Color(1.0, 0.82, 0.29, 0.7), 2.0)
+		if float(enemy.get("heal_radius", 0.0)) > 0.0 and not is_ally:
+			draw_arc(local_pos, radius + 9.0, 0.0, TAU, 36, Color("#64dca0", 0.72), 2.0)
+			draw_string(_font, local_pos + Vector2(-10, 32), "修", HORIZONTAL_ALIGNMENT_CENTER, -1, 9, Color("#c8ffe0"))
+		if bool(enemy.get("hack_immune", false)) and not is_ally:
+			draw_arc(local_pos, radius + 13.0, 0.0, TAU, 44, Color("#ff3658", 0.78), 2.5)
+			draw_string(_font, local_pos + Vector2(-12, -42), "免疫", HORIZONTAL_ALIGNMENT_CENTER, -1, 9, Color("#ffd0d8"))
 		# 战斗中显示指挥官分配的组标签
 		if _controller.phase == NightTdController.Phase.COMBAT:
 			var goal_key: String = str(enemy.get("goal_key", ""))
@@ -640,6 +646,14 @@ func _draw_placed_towers() -> void:
 					local_pos + Vector2(-14, 12),
 				])
 				draw_colored_polygon(points, tdef.get("color", Color.WHITE))
+			"cryo_beacon":
+				var cryo_color: Color = tdef.get("color", Color("#83d8ff"))
+				draw_circle(local_pos, float(tdef.get("range", 130)), Color(0.52, 0.85, 1.0, 0.08))
+				draw_arc(local_pos, float(tdef.get("range", 130)), 0.0, TAU, 48, Color(0.52, 0.85, 1.0, 0.24), 2.0)
+				draw_circle(local_pos, radius, cryo_color)
+				draw_circle(local_pos, radius * 0.45, Color("#092638"))
+				draw_line(local_pos + Vector2(-radius, 0), local_pos + Vector2(radius, 0), Color("#e8fbff"), 2.0)
+				draw_line(local_pos + Vector2(0, -radius), local_pos + Vector2(0, radius), Color("#e8fbff"), 2.0)
 			"hacker":
 				var hk_color: Color = tdef.get("color", Color("#5ac8e0"))
 				draw_arc(local_pos, float(tdef.get("range", 150)), 0.0, TAU, 48, Color(0.35, 0.78, 0.88, 0.18), 2.0)

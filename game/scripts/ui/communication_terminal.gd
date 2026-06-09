@@ -289,7 +289,6 @@ func _apply_captcha_slider_theme() -> void:
 	_captcha_slider.add_theme_stylebox_override("slider", bg)
 	_captcha_slider.add_theme_stylebox_override("grabber_area", fill)
 	_captcha_slider.add_theme_stylebox_override("grabber_area_highlight", fill)
-	_captcha_slider.add_theme_icon_override("grabber", null)
 	_captcha_slider.add_theme_stylebox_override("grabber", grabber)
 	_captcha_slider.add_theme_stylebox_override("grabber_highlight", grabber)
 

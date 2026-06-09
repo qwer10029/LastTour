@@ -1,0 +1,143 @@
+{
+	"name": "顶层终端 · 最终防线",
+	"spawn_points": {
+		"sp_east": ["F8", "E9", "D8"],
+		"sp_north": ["F2", "E2"],
+		"sp_south": ["B8", "C8"],
+		"sp_west": ["A3", "A5"]
+	},
+	"routes": {
+		"route_f_line": {
+			"label": "F 行迂回",
+			"waypoints": [
+				{ "cell": "F8", "standby": 0 },
+				{ "cell": "F5", "standby": 4 },
+				{ "cell": "F3", "standby": 0 },
+				{ "cell": "E2", "standby": 0 },
+				{ "cell": "C2", "standby": 0 },
+				{ "cell": "B8", "standby": 0 }
+			]
+		},
+		"route_e_line": {
+			"label": "E 行压迫",
+			"waypoints": [
+				{ "cell": "E9", "standby": 0 },
+				{ "cell": "E5", "standby": 0 },
+				{ "cell": "C3", "standby": 4 },
+				{ "cell": "B8", "standby": 0 }
+			]
+		},
+		"route_d_rush": {
+			"label": "D 路突进",
+			"waypoints": [
+				{ "cell": "D8", "standby": 0 },
+				{ "cell": "D4", "standby": 0 },
+				{ "cell": "C2", "standby": 0 },
+				{ "cell": "B8", "standby": 0 }
+			]
+		},
+		"route_swarm": {
+			"label": "北侧蜂群",
+			"waypoints": [
+				{ "cell": "F2", "standby": 0 },
+				{ "cell": "E2", "standby": 0 },
+				{ "cell": "D2", "standby": 0 },
+				{ "cell": "B8", "standby": 0 }
+			]
+		}
+	},
+	"waves": [
+		{
+			"id": 1,
+			"entries": [
+				{
+					"enemy": "drone",
+					"count": 12,
+					"spawn_interval": 0.75,
+					"pre_delay": 0,
+					"move_speed": 58,
+					"spawn_side": "east",
+					"route_id": "route_f_line",
+					"spawn_point": "F8",
+					"scale_with_day": false
+				},
+				{
+					"enemy": "repair_mender",
+					"count": 2,
+					"spawn_interval": 4.5,
+					"pre_delay": 8.0,
+					"move_speed": 28,
+					"spawn_side": "south",
+					"route_id": "route_d_rush",
+					"spawn_point": "D8",
+					"scale_with_day": false
+				}
+			]
+		},
+		{
+			"id": 2,
+			"entries": [
+				{
+					"enemy": "swarm",
+					"count": 18,
+					"spawn_interval": 0.42,
+					"pre_delay": 0,
+					"move_speed": 68,
+					"spawn_side": "north",
+					"route_id": "route_swarm",
+					"spawn_point": "F2",
+					"scale_with_day": false
+				},
+				{
+					"enemy": "armored",
+					"count": 3,
+					"spawn_interval": 3.0,
+					"pre_delay": 8.0,
+					"move_speed": 30,
+					"spawn_side": "west",
+					"route_id": "route_e_line",
+					"spawn_point": "E9",
+					"scale_with_day": false
+				}
+			]
+		},
+		{
+			"id": 3,
+			"entries": [
+				{
+					"enemy": "terminal_overseer",
+					"count": 1,
+					"spawn_interval": 1.0,
+					"pre_delay": 0,
+					"move_speed": 16,
+					"spawn_side": "east",
+					"route_id": "route_f_line",
+					"spawn_point": "F8",
+					"scale_with_day": false
+				},
+				{
+					"enemy": "saboteur",
+					"count": 4,
+					"spawn_interval": 1.2,
+					"pre_delay": 9.0,
+					"move_speed": 62,
+					"spawn_side": "south",
+					"route_id": "route_d_rush",
+					"spawn_point": "D8",
+					"scale_with_day": false
+				},
+				{
+					"enemy": "repair_mender",
+					"count": 1,
+					"spawn_interval": 3.0,
+					"pre_delay": 13.0,
+					"move_speed": 28,
+					"spawn_side": "north",
+					"route_id": "route_swarm",
+					"spawn_point": "F2",
+					"scale_with_day": false
+				}
+			]
+		}
+	]
+}

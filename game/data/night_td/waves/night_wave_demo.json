@@ -158,6 +158,17 @@
 					"route_id": "route_d_rush",
 					"spawn_point": "D8",
 					"alternate_routes": ["route_d_rush_b"]
+				},
+				{
+					"enemy": "repair_mender",
+					"count": 1,
+					"spawn_interval": 4.0,
+					"pre_delay": 10.0,
+					"move_speed": 24,
+					"spawn_side": "south",
+					"route_id": "route_d_rush",
+					"spawn_point": "D8",
+					"alternate_routes": ["route_d_rush_b"]
 				}
 			]
 		},

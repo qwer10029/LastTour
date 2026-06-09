@@ -25,6 +25,7 @@ var _tower_card_data := {
 	"jammer":  {"icon": "⚡", "name": "干扰信标", "color": "#6ed08b"},
 	"barrier": {"icon": "▣", "name": "物理路障", "color": "#9e8564"},
 	"trap":    {"icon": "▲", "name": "电磁陷阱", "color": "#e87840"},
+	"cryo_beacon": {"icon": "❄", "name": "低温信标", "color": "#83d8ff"},
 	"hacker":  {"icon": "⌁", "name": "入侵天线", "color": "#5ac8e0"},
 	"sniper":  {"icon": "◎", "name": "狙击信标", "color": "#7aa6ff"},
 	"splash":  {"icon": "❖", "name": "电弧塔",   "color": "#e0a23a"},
@@ -159,7 +160,7 @@ func _show_tooltip(type_id: String) -> void:
 		parts.append("减速%.0f%%" % (float(tdef.get("slow_factor", 0)) * 100))
 	if tdef.get("one_shot", false):
 		parts.append("一次性")
-	var desc: String = str(tdef.get("description", ""))
+	var desc: String = str(tdef.get("desc", tdef.get("description", "")))
 	if desc != "":
 		parts.insert(0, desc)
 	_tooltip_label.text = " · ".join(parts)
@@ -187,7 +188,7 @@ func _build_cards_in_sidebar() -> void:
 	vbox.add_child(_cards_vbox)
 	vbox.move_child(_cards_vbox, 0)
 
-	for type_id in ["jammer","barrier","trap","hacker","sniper","splash"]:
+	for type_id in ["jammer","barrier","trap","cryo_beacon","hacker","sniper","splash"]:
 		var data: Dictionary = _tower_card_data.get(type_id, {})
 		var card := _make_card_row(type_id, data)
 		_cards_vbox.add_child(card)

@@ -49,6 +49,19 @@ static func _load_data() -> void:
 			"radius": 12.0,
 			"desc": "单次高额伤害，触发后消失，宜放在要道。",
 		},
+		"cryo_beacon": {
+			"name": "低温信标",
+			"cost": 2,
+			"range": 130.0,
+			"damage": 0.0,
+			"fire_interval": 0.0,
+			"hp": 38.0,
+			"slow_factor": 0.55,
+			"applies_slow": true,
+			"color": Color("#83d8ff"),
+			"radius": 14.0,
+			"desc": "持续减缓射程内敌人，无法影响特殊免疫目标。",
+		},
 	}
 	_enemies = {
 		"drone": {
@@ -127,6 +140,32 @@ static func _load_data() -> void:
 			"radius": 22.0,
 			"hack_resist": 1.8,
 		},
+		"repair_mender": {
+			"name": "修复中继机",
+			"hp": 95.0,
+			"speed": 24.0,
+			"base_damage": 4.0,
+			"color": Color("#64dca0"),
+			"radius": 15.0,
+			"hack_resist": 1.2,
+			"heal_radius": 82.0,
+			"heal_per_sec": 8.0,
+		},
+		"terminal_overseer": {
+			"name": "终端监管者",
+			"hp": 900.0,
+			"speed": 16.0,
+			"base_damage": 30.0,
+			"color": Color("#ff3658"),
+			"radius": 28.0,
+			"hack_resist": 999.0,
+			"hack_immune": true,
+			"effect_immune": true,
+			"breach_damage_factor": 0.66,
+			"summon_enemy": "swarm",
+			"summon_interval_sec": 8.0,
+			"max_summoned_alive": 8,
+		},
 	}
 
 	var tower_file := FileAccess.open(TOWER_DATA_PATH, FileAccess.READ)
@@ -200,6 +239,11 @@ static func get_tower_button_text(type_id: String, selected: bool) -> String:
 			])
 		"trap":
 			lines.append("触发伤害 %.0f · 一次性" % float(def.get("damage", 0)))
+		"cryo_beacon":
+			lines.append("范围 %.0f · 减速至 %.0f%%" % [
+				float(def.get("range", 0)),
+				float(def.get("slow_factor", 1.0)) * 100.0,
+			])
 	return "\n".join(lines)
 
 
