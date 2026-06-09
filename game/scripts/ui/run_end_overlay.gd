@@ -148,6 +148,7 @@ func _build_ui() -> void:
 func show_ceremony() -> void:
 	_phase = "ceremony"
 	visible = true
+	_play_music_cue("truth_reveal", 1.0)
 	_summary_section.visible = false
 	_body_label.visible = true
 	_ceremony_header_label.visible = true
@@ -165,6 +166,8 @@ func show_ceremony() -> void:
 func show_summary(data: Dictionary) -> void:
 	_phase = "summary"
 	visible = true
+	if bool(data.get("is_failure", false)):
+		_play_music_stinger("run_reset", -12.0)
 	_summary_section.visible = true
 	_body_label.visible = false
 	_ceremony_header_label.visible = false
@@ -182,6 +185,22 @@ func hide_overlay() -> void:
 	_phase = "hidden"
 	visible = false
 	_clear_choice_buttons()
+
+
+func _music_manager() -> Node:
+	return get_tree().root.get_node_or_null("MusicManager") if get_tree() != null else null
+
+
+func _play_music_cue(cue_id: String, fade_sec: float = -1.0) -> void:
+	var music := _music_manager()
+	if music != null and music.has_method("play_cue"):
+		music.play_cue(cue_id, fade_sec)
+
+
+func _play_music_stinger(cue_id: String, volume_db: float = INF) -> void:
+	var music := _music_manager()
+	if music != null and music.has_method("play_stinger"):
+		music.play_stinger(cue_id, volume_db)
 
 
 func _apply_title(title: String, is_failure: bool) -> void:

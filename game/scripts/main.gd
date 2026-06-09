@@ -603,6 +603,7 @@ func _start_new_run() -> void:
 		_enter_node(_map.start_node_index, true)
 	if is_instance_valid(time_system):
 		time_system.start_day(1)
+	_play_music_cue("day_exploration", 1.0)
 
 func _ensure_input_actions() -> void:
 	for action_name in ["move_up", "move_down", "move_left", "move_right", "interact", "repair", "pause", "enter_defense_mode", "toggle_backpack", "toggle_journal", "toggle_world_map", "cycle_building"]:
@@ -2051,6 +2052,7 @@ func _begin_final_ceremony() -> void:
 	_run_ended = true
 	_run_end_reason = "reached_top"
 	_freeze_run_for_end()
+	_play_music_cue("truth_reveal", 1.0)
 	if is_instance_valid(_run_end_overlay):
 		_run_end_overlay.show_ceremony()
 
@@ -2111,6 +2113,7 @@ func _open_communication_terminal() -> void:
 		_begin_final_ceremony()
 		return
 	var day_n := time_system.day_index if is_instance_valid(time_system) else 1
+	_play_music_cue("terminal", 0.9)
 	_communication_terminal.start_flow(_run_journal.get_entries(), _current_layer, day_n)
 
 
@@ -2154,6 +2157,7 @@ func _freeze_run_for_end() -> void:
 
 func _on_final_ceremony_choice(choice_id: String) -> void:
 	_final_choice_id = choice_id
+	_play_music_cue("final_choice", 0.9)
 	MetaManager.record_ending(choice_id)
 	MetaManager.save_meta()
 	if is_instance_valid(_ending_outcome_overlay):
@@ -2305,6 +2309,7 @@ func _load_travel_inventory(travel: Dictionary) -> void:
 func init_from_run_state(rs) -> void:
 	if rs == null:
 		return
+	var should_open_terminal := bool(rs.pending_open_terminal)
 	var save_data: Dictionary = rs.to_full_dict()
 	_apply_save_data(save_data)
 	# 恢复 RunState 特有字段（不在 save_data 中的）
@@ -2327,10 +2332,10 @@ func init_from_run_state(rs) -> void:
 	# 恢复时间（如果 RunState 指定了 phase，则跳到对应阶段）
 	if is_instance_valid(time_system) and not rs.time_dict.is_empty():
 		time_system.load_from_dictionary(rs.time_dict)
-		_restore_time_phase_after_load()
+		_restore_time_phase_after_load(should_open_terminal)
 	_sync_minimap_navigation()
 	_refresh_ui()
-	if rs.pending_open_terminal:
+	if should_open_terminal:
 		rs.pending_open_terminal = false
 		call_deferred("_open_communication_terminal")
 	queue_redraw()
@@ -2517,7 +2522,7 @@ func _restore_drive_state_after_load() -> void:
 		_exit_options.clear()
 
 
-func _restore_time_phase_after_load() -> void:
+func _restore_time_phase_after_load(keep_terminal_music: bool = false) -> void:
 	if not is_instance_valid(time_system):
 		return
 	match time_system.phase:
@@ -2531,6 +2536,7 @@ func _restore_time_phase_after_load() -> void:
 					_backpack.total_count(), GameManager.difficulty, time_system.day_index, true,
 					_vehicle_hp, _vehicle_hp_max, snapshot
 				)
+			_play_music_cue("night_setup", 0.9)
 			time_system.pause()
 		TimeSystem.Phase.NIGHT_RESOLVE:
 			time_system.finish_night_and_advance_day()
@@ -2538,10 +2544,14 @@ func _restore_time_phase_after_load() -> void:
 			time_system.resume()
 			if is_instance_valid(evening_notice) and evening_notice.has_method("show_evening_warning"):
 				evening_notice.show_evening_warning(time_system.get_day_remaining_sec())
+			if not keep_terminal_music:
+				_play_music_cue("day_exploration", 1.0)
 		_:
 			time_system.resume()
 			if is_instance_valid(evening_notice):
 				evening_notice.hide_notice()
+			if not keep_terminal_music:
+				_play_music_cue("day_exploration", 1.0)
 
 
 func _refresh_resource_pickups() -> void:
@@ -2616,6 +2626,22 @@ func _setup_day_night() -> void:
 		evening_notice.hide_notice()
 
 
+func _music_manager() -> Node:
+	return get_tree().root.get_node_or_null("MusicManager") if get_tree() != null else null
+
+
+func _play_music_cue(cue_id: String, fade_sec: float = -1.0, restart: bool = false) -> void:
+	var music := _music_manager()
+	if music != null and music.has_method("play_cue"):
+		music.play_cue(cue_id, fade_sec, restart)
+
+
+func _play_music_stinger(cue_id: String, volume_db: float = INF) -> void:
+	var music := _music_manager()
+	if music != null and music.has_method("play_stinger"):
+		music.play_stinger(cue_id, volume_db)
+
+
 func is_user_paused() -> bool:
 	return _game_paused
 
@@ -2646,6 +2672,7 @@ func _update_evening_tint(delta: float) -> void:
 func _on_evening_warning(remaining_sec: float) -> void:
 	if is_instance_valid(evening_notice) and evening_notice.has_method("show_evening_warning"):
 		evening_notice.show_evening_warning(remaining_sec)
+	_play_music_stinger("evening_warning", -11.0)
 
 
 func _on_night_setup_started(day_index: int, manual_setup: bool) -> void:
@@ -2664,6 +2691,7 @@ func _on_night_setup_started(day_index: int, manual_setup: bool) -> void:
 			_backpack.total_count(), GameManager.difficulty, day_index, manual_setup,
 			_vehicle_hp, _vehicle_hp_max, snapshot
 		)
+	_play_music_cue("night_setup", 1.0)
 	_refresh_ui()
 
 
@@ -2847,6 +2875,7 @@ func _on_day_started(_day_index: int) -> void:
 		evening_notice.hide_notice()
 	if is_instance_valid(time_system):
 		time_system.resume()
+	_play_music_cue("day_exploration", 1.0)
 	if is_instance_valid(night_defense):
 		night_defense.hide_td_session()
 	_refresh_ui()
@@ -2855,6 +2884,8 @@ func _on_day_started(_day_index: int) -> void:
 func _on_time_phase_changed(_old_phase: int, new_phase: int) -> void:
 	if new_phase == TimeSystem.Phase.DAY and is_instance_valid(evening_notice):
 		evening_notice.hide_notice()
+	if new_phase == TimeSystem.Phase.DAY:
+		_play_music_cue("day_exploration", 1.0)
 	_refresh_ui()
 
 

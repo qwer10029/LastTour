@@ -115,6 +115,17 @@ func _ready() -> void:
 func set_session_paused(paused: bool) -> void:
 	_session_paused = paused
 
+
+func _music_manager() -> Node:
+	return get_tree().root.get_node_or_null("MusicManager") if get_tree() != null else null
+
+
+func _play_music_cue(cue_id: String, fade_sec: float = -1.0, restart: bool = false) -> void:
+	var music := _music_manager()
+	if music != null and music.has_method("play_cue"):
+		music.play_cue(cue_id, fade_sec, restart)
+
+
 func _process(delta: float) -> void:
 	if _session_paused:
 		return
@@ -243,6 +254,7 @@ func start_session(
 		hud.clear_log()
 		_notify_debug_skip_available()
 	_update_hud_tools()
+	_play_music_cue("night_setup" if phase == Phase.PLACE else "night_combat", 0.8)
 
 
 func _debug_skip_available() -> bool:
@@ -1452,6 +1464,7 @@ func _begin_combat() -> void:
 	phase = Phase.COMBAT
 	show_route_overlay = false
 	_spawn_timer = 0.0
+	_play_music_cue("night_combat", 0.8)
 	if is_instance_valid(field):
 		field.queue_redraw()
 	if is_instance_valid(hud):

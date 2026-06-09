@@ -17,6 +17,7 @@ var _msg_status_label: Label
 
 
 func _ready() -> void:
+	_play_music_cue("menu_main", 1.0)
 	_ensure_background_texture()
 	if is_instance_valid(title_label):
 		title_label.visible = false
@@ -33,6 +34,12 @@ func _ready() -> void:
 	settings_button.disabled = false
 
 	_build_message_wall_popup()
+
+
+func _play_music_cue(cue_id: String, fade_sec: float = -1.0) -> void:
+	var music := get_tree().root.get_node_or_null("MusicManager") if get_tree() != null else null
+	if music != null and music.has_method("play_cue"):
+		music.play_cue(cue_id, fade_sec)
 
 
 func _ensure_background_texture() -> void:
