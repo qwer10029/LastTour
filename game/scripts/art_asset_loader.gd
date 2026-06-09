@@ -62,6 +62,12 @@ static func _pixel_should_key_road_background(c: Color) -> bool:
 	# 去掉棋盘格/灰底（含深灰格），保留带色相的沥青路面
 	if neutral and saturation <= 0.06 and luminance >= 0.32:
 		return true
+	# 棋盘格深灰格
+	if neutral and saturation <= 0.06 and luminance <= 0.19:
+		return true
+	# 浅蓝灰棋盘格（雪路派生图常见）
+	if c.b >= 0.78 and c.r >= 0.68 and c.g >= 0.68 and (c.b - c.r) >= 0.03 and (c.b - c.g) >= 0.03:
+		return true
 	return false
 
 
@@ -246,7 +252,7 @@ static func load_texture_alpha_key(
 
 
 static func load_texture_road_alpha_key(preferred_path: String, fallback_path: String = "") -> Texture2D:
-	var cache_key := "road_v3|%s|%s" % [preferred_path, fallback_path]
+	var cache_key := "road_v4|%s|%s" % [preferred_path, fallback_path]
 	if _alpha_key_cache.has(cache_key):
 		return _alpha_key_cache[cache_key]
 	var tex := load_texture(preferred_path, fallback_path)

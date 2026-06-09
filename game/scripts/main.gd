@@ -65,6 +65,7 @@ var _last_overworld_draw_cam: Vector2 = Vector2(-99999.0, -99999.0)
 var _overworld_dirty: bool = true
 var _last_draw_evening_tint: float = -1.0
 var _last_foot_draw_pos: Vector2 = Vector2(-99999.0, -99999.0)
+var _last_foot_walk_phase_draw: float = -999.0
 var _world_map_overlay: WorldMapOverlay
 var _drive_exit_locked: bool = false  ## 到岔口后须先松开方向键，再按一次才选路
 var _current_layer: int = 1
@@ -706,10 +707,20 @@ func _physics_process(delta: float) -> void:
 func _request_overworld_redraw_if_needed() -> void:
 	if _mode == TravelMode.FOOT:
 		var foot_pos := _current_focus_position()
-		if _overworld_dirty or foot_pos.distance_squared_to(_last_foot_draw_pos) >= 64.0:
+		var walk_anim_dirty := (
+			_foot_is_walking
+			and absf(_foot_walk_phase - _last_foot_walk_phase_draw) >= 0.42
+		)
+		if (
+			_overworld_dirty
+			or foot_pos.distance_squared_to(_last_foot_draw_pos) >= 64.0
+			or walk_anim_dirty
+		):
 			queue_redraw()
 			_overworld_dirty = false
 			_last_foot_draw_pos = foot_pos
+			if walk_anim_dirty:
+				_last_foot_walk_phase_draw = _foot_walk_phase
 		return
 	if _evening_tint > 0.001:
 		if _overworld_dirty or absf(_evening_tint - _last_draw_evening_tint) >= 0.01:
@@ -2214,6 +2225,7 @@ func _apply_save_data(data: Dictionary) -> void:
 
 	_sync_day_entity_visibility()
 	_restore_time_phase_after_load()
+	_apply_overworld_biome_for_layer()
 	_sync_minimap_navigation()
 	_refresh_ui()
 	queue_redraw()
@@ -3106,7 +3118,8 @@ func _overworld_road_lit(explored: bool, in_viewport: bool) -> bool:
 func _draw_day_overworld() -> void:
 	var view_rect := _camera_world_view_rect().grow(280.0)
 	var world_bounds := Rect2(Vector2.ZERO, _map.get_world_size())
-	draw_rect(world_bounds.grow(480.0), Color("#0e1216"), true)
+	var backdrop := Color("#182028") if DayTopdownRender.is_snow_biome() else Color("#0e1216")
+	draw_rect(world_bounds.grow(480.0), backdrop, true)
 	var ground_rect := view_rect.intersection(world_bounds.grow(120.0))
 	if ground_rect.size.x > 0.0 and ground_rect.size.y > 0.0:
 		DayTopdownRender.draw_tiled_wilderness_ground(self, ground_rect)
@@ -3594,6 +3607,12 @@ func _migrate_sentinel_save_to_stories(sentinel: Dictionary) -> Dictionary:
 	}
 
 
+func _apply_overworld_biome_for_layer() -> void:
+	var biome := DayTopdownRender.OverworldBiome.SNOW if _current_layer >= total_layers else DayTopdownRender.OverworldBiome.WILDERNESS
+	DayTopdownRender.set_overworld_biome(biome)
+	_mark_overworld_dirty()
+
+
 func _generate_layer_map() -> void:
 	if is_instance_valid(_story_controller):
 		_story_controller.reset_for_new_run()
@@ -3603,6 +3622,7 @@ func _generate_layer_map() -> void:
 		StoryData.set_debug_start_near_story(_map)
 	_elevator_repair_progress = 0
 	_current_district_index = -1
+	_apply_overworld_biome_for_layer()
 
 func _advance_layer() -> void:
 	if _run_ended:

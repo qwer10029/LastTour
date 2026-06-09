@@ -5,8 +5,12 @@ const PIXEL := 40
 const VEHICLE_PIXEL := 3.0
 const VEHICLE_BODY_UNITS := 14.0
 const VEHICLE_DISPLAY_SCALE := 1.62  ## 俯视角贴图相对路面宽度的显示倍率
+enum OverworldBiome { WILDERNESS, SNOW }
+
 const ROAD_TILE_DIR := "res://assets/tiles/road/"
+const ROAD_SNOW_TILE_DIR := "res://assets/tiles/road_snow/"
 const GROUND_WILDERNESS_TILE := "res://assets/tiles/ground_wilderness.png"
+const GROUND_SNOW_TILE := "res://assets/tiles/ground_snow.png"
 const INTERIOR_TILE_DIR := "res://assets/tiles/interior/"
 const PROPS_DIR := "res://assets/sprites/props/"
 const TILE_OVERLAP_WORLD := 1.5
@@ -104,34 +108,76 @@ static func _terrain_speck_color(seed: int, ix: int, iy: int, h: float) -> Color
 	return Color("#2a3228", 0.32)
 
 
-static var _wilderness_ground_ready := false
-static var _tex_wilderness_ground: Texture2D
+static var _overworld_biome: OverworldBiome = OverworldBiome.WILDERNESS
+static var _ground_ready := false
+static var _tex_overworld_ground: Texture2D
 
 
-static func _ensure_wilderness_ground_texture() -> Texture2D:
-	if _wilderness_ground_ready:
-		return _tex_wilderness_ground
-	_wilderness_ground_ready = true
-	_tex_wilderness_ground = ArtAssetLoader.load_texture(GROUND_WILDERNESS_TILE)
-	return _tex_wilderness_ground
+static func overworld_biome() -> OverworldBiome:
+	return _overworld_biome
+
+
+static func is_snow_biome() -> bool:
+	return _overworld_biome == OverworldBiome.SNOW
+
+
+static func set_overworld_biome(biome: OverworldBiome) -> void:
+	if _overworld_biome == biome:
+		return
+	_overworld_biome = biome
+	reload_overworld_ground()
+	reload_road_textures()
+	reload_prop_textures()
+
+
+static func _ground_tile_path() -> String:
+	return GROUND_SNOW_TILE if is_snow_biome() else GROUND_WILDERNESS_TILE
+
+
+static func _road_tile_dir() -> String:
+	if is_snow_biome() and ResourceLoader.exists(ROAD_SNOW_TILE_DIR + "road_ns_segment.png"):
+		return ROAD_SNOW_TILE_DIR
+	return ROAD_TILE_DIR
+
+
+static func _ensure_overworld_ground_texture() -> Texture2D:
+	if _ground_ready:
+		return _tex_overworld_ground
+	_ground_ready = true
+	_tex_overworld_ground = ArtAssetLoader.load_texture(_ground_tile_path())
+	return _tex_overworld_ground
+
+
+static func reload_overworld_ground() -> void:
+	_ground_ready = false
+	_tex_overworld_ground = null
+	_ensure_overworld_ground_texture()
 
 
 static func reload_wilderness_ground() -> void:
-	_wilderness_ground_ready = false
-	_tex_wilderness_ground = null
-	_ensure_wilderness_ground_texture()
+	reload_overworld_ground()
 
 
 static func has_wilderness_ground() -> bool:
-	return _ensure_wilderness_ground_texture() != null
+	return _ensure_overworld_ground_texture() != null
+
+
+static func has_overworld_ground() -> bool:
+	return has_wilderness_ground()
 
 
 static func preload_wilderness_noise() -> void:
-	reload_wilderness_ground()
+	reload_overworld_ground()
+
+
+static func overworld_ground_modulate() -> Color:
+	if is_snow_biome():
+		return Color(0.99, 0.99, 1.0, 1.0)
+	return Color(0.98, 0.96, 0.9, 1.0)
 
 
 static func wilderness_ground_modulate() -> Color:
-	return Color(0.98, 0.96, 0.9, 1.0)
+	return overworld_ground_modulate()
 
 
 static func draw_tiled_wilderness_ground(
@@ -139,7 +185,7 @@ static func draw_tiled_wilderness_ground(
 	rect: Rect2,
 	modulate: Color = wilderness_ground_modulate(),
 ) -> void:
-	var tex := _ensure_wilderness_ground_texture()
+	var tex := _ensure_overworld_ground_texture()
 	if tex == null:
 		return
 	var tw := float(tex.get_width())
@@ -195,14 +241,20 @@ static func _road_strip_half_width(_cell_size: Vector2) -> float:
 
 
 static func _road_surface_color(explored: bool) -> Color:
+	if is_snow_biome():
+		return Color("#9aa8b8") if explored else Color("#5a626c")
 	return Color("#8a7a62") if explored else Color("#4a443c")
 
 
 static func _road_edge_color(explored: bool) -> Color:
+	if is_snow_biome():
+		return Color("#dce8f4") if explored else Color("#7a8490")
 	return Color("#5e5244") if explored else Color("#343028")
 
 
 static func _road_modulate(explored: bool) -> Color:
+	if is_snow_biome():
+		return Color(0.94, 0.96, 1.0, 1.0) if explored else Color(0.68, 0.72, 0.78, 1.0)
 	return Color(0.92, 0.88, 0.82, 1.0) if explored else Color(0.5, 0.48, 0.44, 1.0)
 
 
@@ -213,7 +265,7 @@ static func reload_road_textures() -> void:
 	_tex_road_cross = null
 	_tex_road_corner = null
 	_tex_road_t = null
-	ArtAssetLoader.clear_alpha_cache()
+	ArtAssetLoader.clear_road_alpha_cache()
 
 
 static func apply_settings(settings: RoadRenderSettings) -> void:
@@ -229,15 +281,16 @@ static func _ensure_road_textures() -> void:
 	if _road_textures_ready:
 		return
 	_road_textures_ready = true
-	_tex_road_ns = ArtAssetLoader.load_texture_road_alpha_key(ROAD_TILE_DIR + "road_ns_segment.png")
-	_tex_road_ew = ArtAssetLoader.load_texture_road_alpha_key(ROAD_TILE_DIR + "road_ew_segment.png")
-	_tex_road_cross = ArtAssetLoader.load_texture_road_alpha_key(ROAD_TILE_DIR + "road_cross.png")
-	_tex_road_corner = ArtAssetLoader.load_texture_road_alpha_key(ROAD_TILE_DIR + "road_corner.png")
+	var road_dir := _road_tile_dir()
+	_tex_road_ns = ArtAssetLoader.load_texture_road_alpha_key(road_dir + "road_ns_segment.png")
+	_tex_road_ew = ArtAssetLoader.load_texture_road_alpha_key(road_dir + "road_ew_segment.png")
+	_tex_road_cross = ArtAssetLoader.load_texture_road_alpha_key(road_dir + "road_cross.png")
+	_tex_road_corner = ArtAssetLoader.load_texture_road_alpha_key(road_dir + "road_corner.png")
 	_tex_road_t = _load_road_t_texture()
 
 
 static func _load_road_t_texture() -> Texture2D:
-	return ArtAssetLoader.load_texture_road_alpha_key(ROAD_TILE_DIR + "road_t.png")
+	return ArtAssetLoader.load_texture_road_alpha_key(_road_tile_dir() + "road_t.png")
 
 
 static func _has_road_textures() -> bool:
@@ -275,6 +328,9 @@ static func draw_interior_floor_grid(
 	rows: int,
 ) -> void:
 	_ensure_interior_textures()
+	if _tex_interior_floor != null:
+		canvas.draw_texture_rect(_tex_interior_floor, panel_rect, false)
+		return
 	var tile_w := panel_rect.size.x / float(maxi(cols, 1))
 	var tile_h := panel_rect.size.y / float(maxi(rows, 1))
 	for gy in range(rows):
@@ -283,10 +339,7 @@ static func draw_interior_floor_grid(
 				panel_rect.position + Vector2(float(gx) * tile_w, float(gy) * tile_h),
 				Vector2(tile_w, tile_h),
 			)
-			if _tex_interior_floor != null:
-				canvas.draw_texture_rect(_tex_interior_floor, tile_rect, false)
-			else:
-				canvas.draw_rect(tile_rect, Color("#052a42"), true)
+			canvas.draw_rect(tile_rect, Color("#052a42"), true)
 
 
 static func _segment_scale(texture: Texture2D, is_ns: bool) -> float:
@@ -702,9 +755,9 @@ static func draw_road_network(
 		draw_road_node_cap(canvas, center, map.cell_size, explored, road_dirs)
 
 
-# 路面格草地由 draw_tiled_wilderness_ground 统一平铺；无地砖资源时回退程序化色块
+# 路面格地表由 draw_tiled_wilderness_ground 统一平铺；无地砖资源时回退程序化色块
 static func draw_road_terrain_cell(canvas: CanvasItem, rect: Rect2, explored: bool, seed: int) -> void:
-	if _tex_wilderness_ground != null:
+	if _tex_overworld_ground != null:
 		return
 	draw_ruin_cell(canvas, rect, "trail", explored, seed)
 
@@ -821,7 +874,7 @@ static func _ensure_prop_textures() -> void:
 		if tex != null and ArtAssetLoader.texture_has_visible_pixels(tex):
 			_prop_textures[prop_id] = tex
 	# 弹坑深色坑洞须保持不透明，不能用 road_alpha_key（会把黑色抠掉）
-	_tex_road_crater = ArtAssetLoader.load_texture(ROAD_TILE_DIR + "road_crater.png")
+	_tex_road_crater = ArtAssetLoader.load_texture(_road_tile_dir() + "road_crater.png")
 
 
 static func _prop_texture(prop_type: String) -> Texture2D:

@@ -73,6 +73,53 @@
 - `assets/tiles/drive_road_32.png`：驾驶场景路面与车道线
 - `assets/tiles/fog_black_32.png`：地图未探索黑雾遮罩
 
+### 第三层（终局）雪地主题
+
+第 3 层自动切换 `OverworldBiome.SNOW`：地表换雪砖，公路换雪版贴图（形状与 1–2 层相同）。
+
+| 路径 | 说明 |
+|------|------|
+| `assets/tiles/ground_snow.png` | 256×256 可平铺雪原（程序生成或 AI 替换） |
+| `assets/tiles/road_snow/*.png` | 与 `road/` 同名 6 张：直路、路口、弹坑等 |
+
+**重新生成（无需 AI）**：
+
+```bash
+py -3 game/tools/generate_snow_assets.py
+```
+
+**公路要不要整套重画？** 不必。引擎已支持：
+
+1. **推荐**：保留现有路口/直路**拓扑贴图**，用 `road_snow/` 雪色调版本（脚本从 `road/` 派生）。
+2. **备选**：仅改 `modulate` 冷色调（快但路面偏灰，雪缘不明显）。
+3. **不推荐**：纯程序化多边形路面——仅在没有贴图时回退，有贴图时效果差。
+
+**ground_snow.png AI 提示词（推荐，替换程序生成图）**：
+
+主图（平铺雪原）：
+
+```text
+256x256 seamless tileable texture, top-down snow-covered wasteland ground only, soft wind ripple patterns, subtle cold blue shadows in drifts, muted off-white and pale blue-gray palette, post-apocalyptic winter ruin atmosphere, flat 2D pixel art or hand-painted game tile, NO road, NO vehicle, NO trees, NO buildings, NO checkerboard, NO text, NO watermark, evenly lit, perfectly tileable on all four edges
+```
+
+备选（更细腻手绘）：
+
+```text
+256x256 seamless game terrain tile, aerial view snow field after apocalypse, gentle sastrugi lines, scattered faint footprints erased by wind, color #e8eef5 to #f7fbff, low saturation, soft painterly pixel art, tileable seamless pattern, empty ground only, transparent or solid background acceptable, no objects
+```
+
+避免（容易翻车）：
+
+```text
+Do NOT include: checkerboard background, bokeh circles, lens blur, 3D render, characters, road, high contrast black shadows
+```
+
+**road_snow 单张（若要手绘替换某一类）**：
+
+```text
+top-down 2D game road segment in deep snow, cleared asphalt strip with snow banks on both sides, cold grey-blue pavement, tire tracks faint, transparent background outside road, flat pixel art, same layout as ruined city road tile, winter atmosphere, no text
+```
+
 ### 室外废墟装饰与路障（已实现程序化回退，有 PNG 后自动替换）
 
 放入目录 `assets/sprites/props/`，**文件名须与下列一致**：
