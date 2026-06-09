@@ -66,6 +66,8 @@ var _overworld_dirty: bool = true
 var _last_draw_evening_tint: float = -1.0
 var _last_foot_draw_pos: Vector2 = Vector2(-99999.0, -99999.0)
 var _last_foot_walk_phase_draw: float = -999.0
+var _foot_ui_accum: float = 0.0
+var _foot_layout_cache: Dictionary = {}
 var _world_map_overlay: WorldMapOverlay
 var _drive_exit_locked: bool = false  ## 到岔口后须先松开方向键，再按一次才选路
 var _current_layer: int = 1
@@ -144,6 +146,7 @@ func _ready() -> void:
 	DayTopdownRender.reload_road_textures()
 	DayTopdownRender.reload_prop_textures()
 	DayTopdownRender.preload_wilderness_noise()
+	DayTopdownRender.preload_interior_textures()
 	if enable_road_tuning_panel:
 		_setup_road_tuning_panel()
 	_ensure_input_actions()
@@ -701,7 +704,14 @@ func _physics_process(delta: float) -> void:
 
 	_sync_view_cameras()
 	_refresh_focus()
-	_refresh_ui()
+	if _mode == TravelMode.FOOT:
+		_foot_ui_accum += delta
+		if _foot_ui_accum >= 0.18:
+			_foot_ui_accum = 0.0
+			_refresh_ui()
+	else:
+		_foot_ui_accum = 0.0
+		_refresh_ui()
 	_request_overworld_redraw_if_needed()
 
 func _request_overworld_redraw_if_needed() -> void:
@@ -1240,12 +1250,23 @@ func _begin_foot_mode(district_index: int = -1) -> void:
 		_foot_is_walking = false
 		_apply_foot_world_position()
 	_sync_day_entity_visibility()
-	_fix_district_pickup_positions(_current_district_index)
 	for node in _resource_nodes:
 		if is_instance_valid(node):
 			node.visible = false
 	_story_controller.on_entered_district_foot(_current_district_index)
-	_story_controller.fix_foot_loot_positions(_current_district_index)
+	_cache_foot_layout_data(_current_district_index)
+	_mark_overworld_dirty()
+	_last_foot_draw_pos = Vector2(-99999.0, -99999.0)
+	_refresh_ui()
+	call_deferred("_deferred_foot_enter_setup", _current_district_index)
+
+func _deferred_foot_enter_setup(district_index: int) -> void:
+	if _mode != TravelMode.FOOT or _current_district_index != district_index:
+		return
+	_fix_district_pickup_positions(district_index)
+	_story_controller.fix_foot_loot_positions(district_index)
+	_refresh_ui()
+	_mark_overworld_dirty()
 
 func _return_to_vehicle() -> void:
 	if _story_controller.on_exited_district_to_drive(_current_district_index):
@@ -1429,6 +1450,8 @@ func _on_resource_collected(district_index: int, item_id: String, pickup: Area2D
 	if added > 0:
 		_refresh_ui()
 		_refresh_backpack_if_open()
+		if _mode == TravelMode.FOOT:
+			_mark_overworld_dirty()
 
 
 func _refresh_backpack_if_open() -> void:
@@ -2747,13 +2770,10 @@ func _update_foot_prompts() -> void:
 		return
 	if _can_repair_elevator() and _is_near_elevator_console():
 		return
-	var hint := "E 返回车辆"
-	if is_instance_valid(_story_controller):
-		hint = _story_controller.foot_door_hint(_current_district_index)
-	$HUD/ActionPanel.visible = true
-	prompt_label.text = hint
-	prompt_label.visible = true
-	_sync_action_panel_visibility()
+	# 返回提示画在门口世界坐标，底部 ActionPanel 不再重复显示
+	prompt_label.text = ""
+	prompt_label.visible = false
+	$HUD/ActionPanel.visible = false
 
 
 func _update_story_gate_prompts() -> void:
@@ -3303,14 +3323,16 @@ func _draw_world_speech_bubble(anchor: Vector2, text: String, fill: Color, borde
 	HudTheme.draw_string(self, bubble_pos + Vector2(8.0, 14.0), text, 11, fill)
 
 
-func _draw_door_exit_hint(_door_rect: Rect2) -> void:
+func _draw_door_exit_hint(door_rect: Rect2) -> void:
 	if _current_district_index < 0 or _mode != TravelMode.FOOT:
 		return
+	if door_rect.size.x <= 0.0 or door_rect.size.y <= 0.0:
+		return
 	var text := _story_controller.foot_door_hint(_current_district_index) if is_instance_valid(_story_controller) else "E 返回车辆"
-	var player_panel := _foot_local_to_panel(_foot_local_pos, _current_district_index)
 	var bubble_w := clampf(float(text.length()) * 10.0 + 24.0, 72.0, 140.0)
 	var bubble_h := 16.0
-	var bubble_pos := Vector2(player_panel.x - bubble_w * 0.5, player_panel.y - 28.0)
+	var door_center_x := door_rect.position.x + door_rect.size.x * 0.5
+	var bubble_pos := Vector2(door_center_x - bubble_w * 0.5, door_rect.position.y - bubble_h - 10.0)
 	draw_rect(Rect2(bubble_pos, Vector2(bubble_w, bubble_h)), Color(0.05, 0.09, 0.13, 0.74), true)
 	draw_rect(Rect2(bubble_pos, Vector2(bubble_w, bubble_h)), Color("#c8a060", 0.42), false, 1.0)
 	HudTheme.draw_string(self, bubble_pos + Vector2(10.0, 12.0), text, 10, Color("#f0d8a0"))
@@ -3429,21 +3451,12 @@ func _foot_local_to_panel(local_pos: Vector2, district_index: int) -> Vector2:
 	return panel.position + local_pos * scale
 
 
-func _draw_foot_interior() -> void:
-	if _current_district_index < 0:
+func _cache_foot_layout_data(district_index: int) -> void:
+	if district_index < 0:
 		return
-	_map.ensure_foot_layout(_current_district_index)
-	var view_size := get_viewport_rect().size
-	if view_size == Vector2.ZERO:
-		view_size = Vector2(1280.0, 720.0)
-	draw_rect(Rect2(Vector2.ZERO, view_size), Color(0.02, 0.04, 0.08, 0.92), true)
-
-	var panel := _interior_panel_rect(_current_district_index)
-	var cell := _map.get_cell(_current_district_index)
+	var cell := _map.get_cell(district_index)
 	var cols: int = maxi(int(cell.get("foot_grid_cols", 1)), 1)
 	var rows: int = maxi(int(cell.get("foot_grid_rows", 1)), 1)
-	var tile_px := panel.size.x / float(cols)
-	var tile_py := panel.size.y / float(rows)
 	var blocked_set: Dictionary = {}
 	for raw in cell.get("foot_blocked", []):
 		var tile := Vector2i.ZERO
@@ -3452,9 +3465,35 @@ func _draw_foot_interior() -> void:
 		elif raw is Dictionary:
 			tile = Vector2i(int(raw.get("x", 0)), int(raw.get("y", 0)))
 		blocked_set[tile] = true
-	DayTopdownRender.draw_interior_floor_grid(self, panel, cols, rows)
-	var is_elevator := _map.district_has_elevator(_current_district_index)
-	var console_tile := _map.get_foot_console_tile(_current_district_index)
+	_foot_layout_cache[district_index] = {
+		"cols": cols,
+		"rows": rows,
+		"blocked": blocked_set,
+		"seed": int(cell.get("seed", district_index + 1)),
+	}
+
+
+func _foot_layout_data(district_index: int) -> Dictionary:
+	if _foot_layout_cache.has(district_index):
+		return _foot_layout_cache[district_index]
+	_cache_foot_layout_data(district_index)
+	return _foot_layout_cache.get(district_index, {})
+
+
+func _draw_foot_interior_static_layer(canvas: CanvasItem, district_index: int, panel: Rect2) -> void:
+	var layout := _foot_layout_data(district_index)
+	if layout.is_empty():
+		return
+	var cols: int = int(layout.get("cols", 1))
+	var rows: int = int(layout.get("rows", 1))
+	var blocked_set: Dictionary = layout.get("blocked", {})
+	var floor_seed: int = int(layout.get("seed", district_index + 1))
+	var tile_px := panel.size.x / float(cols)
+	var tile_py := panel.size.y / float(rows)
+	var building_type := str(_map.get_cell(district_index).get("building_type", ""))
+	DayTopdownRender.draw_interior_floor_grid(canvas, panel, cols, rows, floor_seed, building_type)
+	var is_elevator := building_type == "elevator" or _map.district_has_elevator(district_index)
+	var console_tile := _map.get_foot_console_tile(district_index)
 	for gx in range(cols):
 		for gy in range(rows):
 			if not blocked_set.has(Vector2i(gx, gy)):
@@ -3466,10 +3505,38 @@ func _draw_foot_interior() -> void:
 				panel.position + Vector2(float(gx) * tile_px, float(gy) * tile_py),
 				Vector2(tile_px, tile_py),
 			)
-			DayTopdownRender.draw_interior_tile(self, tile_rect, true)
+			DayTopdownRender.draw_interior_tile(canvas, tile_rect, true)
+	var door_rect := _foot_door_panel_rect_for_panel(district_index, panel)
+	DayTopdownRender.draw_interior_door(canvas, door_rect, true)
+	canvas.draw_rect(panel, Color("#4a6070"), false, 2.0)
+	_draw_interior_building_label(panel, _map.building_label(district_index))
+
+
+func _foot_door_panel_rect_for_panel(district_index: int, panel: Rect2) -> Rect2:
+	var door_rect := _foot_door_panel_rect(district_index)
+	return Rect2(
+		panel.position + (door_rect.position - _interior_panel_rect(district_index).position),
+		door_rect.size,
+	)
+
+
+func _draw_foot_interior() -> void:
+	if _current_district_index < 0:
+		return
+	var view_size := get_viewport_rect().size
+	if view_size == Vector2.ZERO:
+		view_size = Vector2(1280.0, 720.0)
+	draw_rect(Rect2(Vector2.ZERO, view_size), Color(0.02, 0.04, 0.08, 0.92), true)
+
+	var panel := _interior_panel_rect(_current_district_index)
+	var layout := _foot_layout_data(_current_district_index)
+	var cols: int = maxi(int(layout.get("cols", 1)), 1)
+	var rows: int = maxi(int(layout.get("rows", 1)), 1)
+	var tile_px := panel.size.x / float(cols)
+	var tile_py := panel.size.y / float(rows)
+	_draw_foot_interior_static_layer(self, _current_district_index, panel)
 	var door_rect := _foot_door_panel_rect(_current_district_index)
-	DayTopdownRender.draw_interior_door(self, door_rect, true)
-	if is_elevator:
+	if _map.district_has_elevator(_current_district_index):
 		var console_rect := _elevator_console_panel_rect(_current_district_index)
 		DayTopdownRender.draw_elevator_console(
 			self,
@@ -3478,8 +3545,6 @@ func _draw_foot_interior() -> void:
 			_elevator_repair_progress_ratio(),
 		)
 		_draw_elevator_console_hint(console_rect)
-	draw_rect(panel, Color("#4a6070"), false, 2.0)
-	_draw_interior_building_label(panel, _map.building_label(_current_district_index))
 	_draw_door_exit_hint(door_rect)
 	var player_panel := _foot_local_to_panel(_foot_local_pos, _current_district_index)
 	DayTopdownRender.draw_player_marker(

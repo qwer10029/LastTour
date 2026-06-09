@@ -26,6 +26,7 @@ static var _tex_road_t: Texture2D
 
 static var _interior_textures_ready := false
 static var _tex_interior_floor: Texture2D
+static var _tex_interior_floor_elevator: Texture2D
 static var _tex_interior_obstacle: Texture2D
 
 static var _prop_textures_ready := false
@@ -303,14 +304,53 @@ static func _ensure_interior_textures() -> void:
 		return
 	_interior_textures_ready = true
 	_tex_interior_floor = ArtAssetLoader.load_texture(INTERIOR_TILE_DIR + "floor.png")
+	_tex_interior_floor_elevator = ArtAssetLoader.load_texture(INTERIOR_TILE_DIR + "floor_elevator.png")
 	_tex_interior_obstacle = ArtAssetLoader.load_texture(INTERIOR_TILE_DIR + "obstacle.png")
 
 
 static func reload_interior_textures() -> void:
 	_interior_textures_ready = false
 	_tex_interior_floor = null
+	_tex_interior_floor_elevator = null
 	_tex_interior_obstacle = null
 	_ensure_interior_textures()
+
+
+static func _interior_floor_texture(building_type: String) -> Texture2D:
+	_ensure_interior_textures()
+	if building_type == "elevator" and _tex_interior_floor_elevator != null:
+		return _tex_interior_floor_elevator
+	return _tex_interior_floor
+
+
+static func preload_interior_textures() -> void:
+	_ensure_interior_textures()
+
+
+static func draw_tiled_interior_floor(canvas: CanvasItem, panel_rect: Rect2, building_type: String = "") -> void:
+	var tex := _interior_floor_texture(building_type)
+	if tex == null:
+		canvas.draw_rect(panel_rect, Color("#052a42"), true)
+		return
+	var tw := float(tex.get_width())
+	var th := float(tex.get_height())
+	if tw <= 0.0 or th <= 0.0 or panel_rect.size.x <= 0.0 or panel_rect.size.y <= 0.0:
+		return
+	var tile_x: float = floor(panel_rect.position.x / tw) * tw
+	var tile_y: float = floor(panel_rect.position.y / th) * th
+	var y: float = tile_y
+	while y < panel_rect.end.y:
+		var x: float = tile_x
+		while x < panel_rect.end.x:
+			var dest_x0 := maxf(x, panel_rect.position.x)
+			var dest_y0 := maxf(y, panel_rect.position.y)
+			var dest_x1 := minf(x + tw, panel_rect.end.x)
+			var dest_y1 := minf(y + th, panel_rect.end.y)
+			var dest := Rect2(dest_x0, dest_y0, dest_x1 - dest_x0, dest_y1 - dest_y0)
+			var src := Rect2(dest_x0 - x, dest_y0 - y, dest.size.x, dest.size.y)
+			canvas.draw_texture_rect_region(tex, dest, src)
+			x += tw
+		y += th
 
 
 static func draw_interior_floor(canvas: CanvasItem, panel_rect: Rect2) -> void:
@@ -321,25 +361,47 @@ static func draw_interior_floor(canvas: CanvasItem, panel_rect: Rect2) -> void:
 	canvas.draw_rect(panel_rect, Color("#052a42"), true)
 
 
+static func _interior_floor_stain_color(seed: int, gx: int, gy: int) -> Color:
+	var h := hash_cell(seed, gx, gy)
+	if h < 0.38:
+		return Color(0.0, 0.0, 0.0, 0.0)
+	var variant := int(floor(hash_cell(seed + 17, gx + 3, gy + 5) * 4.0)) % 4
+	var base := Color("#3a3834", 0.07 + h * 0.1)
+	match variant:
+		0:
+			base = base.lerp(Color("#4a4438"), 0.35)
+		1:
+			base = base.lerp(Color("#2e2c28"), 0.4)
+		2:
+			base = base.lerp(Color("#3a3428"), 0.28)
+		3:
+			base = base.lerp(Color("#34383a"), 0.22)
+	return base
+
+
 static func draw_interior_floor_grid(
 	canvas: CanvasItem,
 	panel_rect: Rect2,
 	cols: int,
 	rows: int,
+	floor_seed: int = 1,
+	building_type: String = "",
 ) -> void:
-	_ensure_interior_textures()
-	if _tex_interior_floor != null:
-		canvas.draw_texture_rect(_tex_interior_floor, panel_rect, false)
+	draw_tiled_interior_floor(canvas, panel_rect, building_type)
+	if building_type == "elevator":
 		return
 	var tile_w := panel_rect.size.x / float(maxi(cols, 1))
 	var tile_h := panel_rect.size.y / float(maxi(rows, 1))
 	for gy in range(rows):
 		for gx in range(cols):
+			var stain := _interior_floor_stain_color(floor_seed, gx, gy)
+			if stain.a <= 0.001:
+				continue
 			var tile_rect := Rect2(
 				panel_rect.position + Vector2(float(gx) * tile_w, float(gy) * tile_h),
 				Vector2(tile_w, tile_h),
 			)
-			canvas.draw_rect(tile_rect, Color("#052a42"), true)
+			canvas.draw_rect(tile_rect, stain, true)
 
 
 static func _segment_scale(texture: Texture2D, is_ns: bool) -> float:
