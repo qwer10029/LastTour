@@ -23,6 +23,7 @@ var _tab_bar: TabBar
 var _items_view: Control
 var _journal_view: Control
 var _journal_list: ItemList
+var _journal_detail_scroll: ScrollContainer
 var _journal_detail: Label
 
 
@@ -163,13 +164,18 @@ func _build_ui() -> void:
 	journal_side.add_theme_constant_override("separation", 10)
 	_journal_view.add_child(journal_side)
 
+	_journal_detail_scroll = ScrollContainer.new()
+	_journal_detail_scroll.custom_minimum_size = Vector2(228, 240)
+	_journal_detail_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_journal_detail_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_journal_detail_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	journal_side.add_child(_journal_detail_scroll)
 	_journal_detail = Label.new()
 	_journal_detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_journal_detail.custom_minimum_size = Vector2(228, 180)
-	_journal_detail.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_journal_detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_journal_detail.text = "← 选择左侧日记"
 	_journal_detail.add_theme_color_override("font_color", Color("#d8e4f0"))
-	journal_side.add_child(_journal_detail)
+	_journal_detail_scroll.add_child(_journal_detail)
 
 	var journal_close_btn := Button.new()
 	journal_close_btn.text = "关闭 (B / Esc)"
@@ -281,7 +287,7 @@ func _refresh_journal_list() -> void:
 	if _run_journal == null or _run_journal.get_entries().is_empty():
 		var idx := _journal_list.add_item("（本局尚无日记）")
 		_journal_list.set_item_disabled(idx, true)
-		_journal_detail.text = "路途中与智能 NPC 完成剧情后，记录会出现在这里。"
+		_set_journal_detail_text("路途中与智能 NPC 完成剧情后，记录会出现在这里。")
 		return
 	for entry in _run_journal.get_entries():
 		var layer := int(entry.get("layer", 1))
@@ -297,17 +303,32 @@ func _refresh_journal_list() -> void:
 
 func _on_journal_selected(index: int) -> void:
 	if index < 0:
-		_journal_detail.text = ""
+		_set_journal_detail_text("")
 		return
 	var meta: Variant = _journal_list.get_item_metadata(index)
 	if typeof(meta) != TYPE_DICTIONARY:
-		_journal_detail.text = ""
+		_set_journal_detail_text("")
 		return
 	var entry: Dictionary = meta
-	_journal_detail.text = "%s\n\n%s" % [
+	_set_journal_detail_text("%s\n\n%s" % [
 		str(entry.get("title", "")),
 		str(entry.get("body", "")),
-	]
+	])
+
+
+func _set_journal_detail_text(text: String) -> void:
+	_journal_detail.text = text
+	call_deferred("_sync_journal_detail_size")
+
+
+func _sync_journal_detail_size() -> void:
+	if not is_instance_valid(_journal_detail_scroll) or not is_instance_valid(_journal_detail):
+		return
+	var scroll_width := maxf(_journal_detail_scroll.size.x - 8.0, 200.0)
+	_journal_detail.custom_minimum_size = Vector2(
+		scroll_width,
+		_journal_detail.get_minimum_size().y,
+	)
 
 
 func _on_tab_changed(tab: int) -> void:

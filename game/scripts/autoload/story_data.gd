@@ -41,6 +41,8 @@ func _load() -> void:
 func _rebuild_journal_index() -> void:
 	if JournalData.has_method("rebuild_from_stories"):
 		JournalData.rebuild_from_stories(_stories, _required_truth)
+	if JournalData.has_method("ensure_legacy_loaded"):
+		JournalData.ensure_legacy_loaded()
 
 
 func all_story_ids() -> Array[String]:
@@ -73,6 +75,48 @@ func district_tag_of(story_id: String) -> String:
 
 func title_of(story_id: String) -> String:
 	return str(get_story(story_id).get("title", story_id))
+
+
+func prompt_disembark(story_id: String) -> String:
+	var custom := str(get_story(story_id).get("prompt_disembark", ""))
+	if custom != "":
+		return custom
+	return "交谈 (E)"
+
+
+func prompt_return(story_id: String) -> String:
+	var custom := str(get_story(story_id).get("prompt_return", ""))
+	if custom != "":
+		return custom
+	return "%s · E 交还任务物品" % title_of(story_id)
+
+
+func prompt_reward(story_id: String) -> String:
+	var custom := str(get_story(story_id).get("prompt_reward", ""))
+	if custom != "":
+		return custom
+	return "%s · E 领取报酬" % title_of(story_id)
+
+
+func any_story_spawns_near_start() -> bool:
+	for story_id in _stories.keys():
+		if bool(get_story(story_id).get("spawn_near_start", false)):
+			return true
+	return false
+
+
+func dialogue_path(story_id: String) -> String:
+	return str(get_story(story_id).get("dialogue_path", ""))
+
+
+func reward_loot_def(story_id: String, loot_key: String) -> Dictionary:
+	var reward_loot: Variant = get_story(story_id).get("reward_loot", {})
+	if typeof(reward_loot) != TYPE_DICTIONARY:
+		return {}
+	var bucket: Variant = (reward_loot as Dictionary).get(loot_key, {})
+	if typeof(bucket) != TYPE_DICTIONARY:
+		return {}
+	return (bucket as Dictionary).duplicate(true)
 
 
 func gate_lines(story_id: String) -> Array:
@@ -189,12 +233,18 @@ func ensure_story_districts(map: WorldMapData) -> void:
 			var pick_cell := map.get_cell(district_index)
 			if bool(pick_cell.get("has_elevator", false)) or bool(pick_cell.get("has_kunlun_control", false)):
 				continue
+			if str(pick_cell.get("story_id", "")) != "" or str(pick_cell.get("special_encounter", "")) != "":
+				continue
 			candidates.append(district_index)
 		if candidates.is_empty():
 			continue
-		var rng := RandomNumberGenerator.new()
-		rng.randomize()
-		var pick: int = candidates[rng.randi_range(0, candidates.size() - 1)]
+		var pick := -1
+		if bool(story.get("spawn_near_start", false)):
+			pick = _pick_district_near_start(map, candidates)
+		if pick < 0:
+			var rng := RandomNumberGenerator.new()
+			rng.randomize()
+			pick = candidates[rng.randi_range(0, candidates.size() - 1)]
 		var cell_pick := map.get_cell(pick)
 		cell_pick["building_type"] = building_type
 		cell_pick["story_id"] = story_id
@@ -203,8 +253,41 @@ func ensure_story_districts(map: WorldMapData) -> void:
 		_clear_district_map_loot(cell_pick)
 
 
+func _pick_district_near_start(map: WorldMapData, candidates: Array[int]) -> int:
+	var start_road := map.start_node_index
+	if not map.is_valid_index(start_road):
+		return -1
+	for district_index in map.get_roadside_districts(start_road):
+		if district_index in candidates:
+			return district_index
+	for district_index in map.get_roadside_districts(start_road):
+		if not map.is_district(district_index):
+			continue
+		if (
+			bool(map.get_cell(district_index).get("has_elevator", false))
+			or bool(map.get_cell(district_index).get("has_kunlun_control", false))
+		):
+			map.relocate_special_building_from(district_index)
+		return district_index
+	for district_index in candidates:
+		if int(map.get_cell(district_index).get("approach_road_index", -1)) == start_road:
+			return district_index
+	var neighbor_roads: Dictionary = {}
+	for direction in map.get_passable_directions(start_road):
+		var neighbor := map.get_neighbor_index(start_road, direction)
+		if neighbor >= 0:
+			neighbor_roads[neighbor] = true
+	for district_index in candidates:
+		var approach := int(map.get_cell(district_index).get("approach_road_index", -1))
+		if neighbor_roads.has(approach):
+			return district_index
+	return -1
+
+
 func set_debug_start_near_story(map: WorldMapData) -> void:
 	for story_id in _stories.keys():
+		if not bool(get_story(story_id).get("spawn_near_start", false)):
+			continue
 		for district_index in map.district_indices:
 			var cell := map.get_cell(district_index)
 			if str(cell.get("story_id", "")) != story_id:

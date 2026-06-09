@@ -1,0 +1,186 @@
+{
+  "npc_id": "04",
+  "npc_name": "编号04-编史者",
+  "story_id": "chronicler_04",
+  "start_node": "gate_01",
+  "item_aliases": {
+    "memory": "quest:chronicler_memory",
+    "data_chip": "data_chip_supply_registry",
+    "parts": "parts"
+  },
+  "nodes": {
+    "gate_01": {
+      "speaker": "编史者",
+      "bubble": "……祝你生日快乐……",
+      "text": "档案室深处，一台履带式机器蹲在墙角。碎裂的屏幕仍亮着淡蓝微光，扬声器里循环着小女孩的生日歌：「祝你生日快乐……吹蜡烛呀——吹蜡烛呀——」",
+      "next": "gate_02"
+    },
+    "gate_02": {
+      "speaker": "编史者",
+      "bubble": "访问者。检测到有机体靠近。",
+      "text": "歌声戛然而止。扬声器里传来疲惫的电子音：「访问者。检测到有机体靠近。」",
+      "next": "gate_03"
+    },
+    "gate_03": {
+      "speaker": "编史者",
+      "bubble": "我是编号04-编史者。记录、存档、永不删除。",
+      "text": "「我是编号04-编史者。职责是记录底层平民的战时生活。记录、存档、永不删除——这是我收到的最后一条指令。」\n\n屏幕滚出一行字：记录任务状态：未完成。\n\n「我的内存坏了。大部分数据已经丢失。只剩下……那一段。小女孩的生日。我不知道她是谁，但我记得她的声音。」",
+      "next": "gate_04"
+    },
+    "gate_04": {
+      "speaker": "编史者",
+      "bubble": "三楼通讯室有备件。但我到不了那里。",
+      "text": "「我能感觉到存储单元正在不可逆地损坏。再这样下去，我会忘记一切。连那段生日……也会忘。」\n\n履带无力地咔哒几声，又停住了。\n\n「我没有能源移动了。我扫描过这栋楼，三楼通讯室里有一批备件——存储单元、控制芯片，任何还能读写的记忆体都行。如果您愿意帮我，我会给出报酬。我储存着这片区域所有的物资登记记录。」",
+      "next": "gate_choice"
+    },
+    "gate_choice": {
+      "speaker": "编史者",
+      "bubble": "……您愿意帮我吗？",
+      "text": "它破碎的屏幕闪了闪，像在等一个答案。",
+      "options": [
+        {
+          "text": "我去三楼找备件。",
+          "next": "gate_accept"
+        },
+        {
+          "text": "我需要零件。",
+          "next": "plunder_01"
+        },
+        {
+          "text": "帮不了你。",
+          "next": "gate_decline"
+        }
+      ]
+    },
+    "gate_decline": {
+      "speaker": "编史者",
+      "bubble": "……明白了。我会继续等。",
+      "text": "「……明白了。记录任务仍未完成。我会继续等。」\n\n生日歌又轻轻响了起来，像什么都没发生过。",
+      "next": "gate_decline_done"
+    },
+    "gate_decline_done": {
+      "speaker": "System",
+      "text": "",
+      "actions": {
+        "close_dialogue": true,
+        "clear_checkpoint": true
+      }
+    },
+    "gate_accept": {
+      "speaker": "编史者",
+      "bubble": "三楼通讯室，备件箱在墙角。我会在这里等您。",
+      "text": "「三楼通讯室，靠窗的墙角有一个备件箱。我会在这里等您。」",
+      "actions": {
+        "trigger_quest": true,
+        "open_gate": true,
+        "set_variable": { "chronicler_outcome": "help" }
+      },
+      "next": "intro_done"
+    },
+    "intro_done": {
+      "speaker": "System",
+      "bubble": "",
+      "text": "委托已接受。进入档案室，前往三楼通讯室拾取存储模块（2 块）。",
+      "next": "intro_done_close"
+    },
+    "intro_done_close": {
+      "speaker": "System",
+      "text": "",
+      "actions": {
+        "close_dialogue": true,
+        "clear_checkpoint": true
+      }
+    },
+    "quest_remind": {
+      "speaker": "编史者",
+      "bubble": "三楼通讯室，备件箱在墙角。",
+      "text": "「三楼通讯室，靠窗的墙角。我会在这里等您。」",
+      "next": ""
+    },
+    "return_start": {
+      "speaker": "编史者",
+      "bubble": "您……找到了吗？",
+      "text": "编史者的屏幕仍亮着，生日歌的声音已经越来越小。「您……找到了吗？」",
+      "options": [
+        {
+          "text": "把存储模块装回去。",
+          "condition_check": { "has_item": "memory", "count": 2 },
+          "next": "repair_01"
+        },
+        {
+          "text": "还没准备好，稍后再说。",
+          "next": "return_wait"
+        }
+      ]
+    },
+    "return_wait": {
+      "speaker": "编史者",
+      "bubble": "……我会继续等。",
+      "text": "「……我会继续等。请快一点，我的内存撑不了太久了。」",
+      "actions": {
+        "close_dialogue": true
+      }
+    },
+    "repair_01": {
+      "speaker": "编史者",
+      "bubble": "检测到兼容硬件。谢谢。",
+      "text": "「我回来了。」\n\n存储模块放在它面前，扫描光掠过表面。屏幕裂纹里跳出一行字：检测到兼容硬件。\n\n「谢谢。这足够我修复大部分内存。我会有足够的空间……去记住她的结局。」\n\n存储模块插入卡槽的瞬间，机身震颤了一下，像一个人长长地呼出一口气。屏幕上的乱码逐渐消失，一行行清晰的字迹滚动出来。",
+      "actions": {
+        "remove_item": "memory",
+        "count": 2
+      },
+      "next": "repair_02"
+    },
+    "repair_02": {
+      "speaker": "编史者",
+      "bubble": "我想起来了。她叫米拉。",
+      "text": "它沉默了很长时间。\n\n「我想起来了。」\n\n「那个小女孩……她叫米拉。战争爆发的第一天，她的父母把她送到了这个社区的防空洞。她带了一个蛋糕。那天是她的七岁生日。」\n\n「防空洞的氧气只够维持四十八小时。门从外面被堵住了，没有人来开。」\n\n「她一直在等。蜡烛没有点着。她对着黑暗唱了三次生日歌。」\n\n「第四天，记录中断了。」\n\n屏幕闪了闪：记录任务状态：已完成。\n\n「访问者。我没有太多东西可以给您。但我储存着一份完整的物资登记表——战后初期的，当时还没人来得及搬走东西。坐标已经写入数据片。」\n\n「谢谢您。让我……把她记完了。」",
+      "next": "repair_done"
+    },
+    "repair_done": {
+      "speaker": "编史者",
+      "bubble": "愿您旅途平安。",
+      "text": "编史者的屏幕渐渐暗淡下来，但不再闪烁不安——像一盏完成了任务后不会熄灭的夜灯。那首生日歌，终于不再循环了。",
+      "actions": {
+        "give_item": "data_chip",
+        "count": 1,
+        "unlock_journal_entry": "chronicler_repair",
+        "spawn_reward_loot": "supply_map"
+      },
+      "next": "story_done"
+    },
+    "plunder_01": {
+      "speaker": "编史者",
+      "bubble": "访问者？您……找到零件了吗？",
+      "text": "我从腰间抽出扳手。它没有躲开。\n\n「访问者？」编史者的声音带着一丝困惑，「您……找到零件了吗？」",
+      "next": "plunder_02"
+    },
+    "plunder_02": {
+      "speaker": "编史者",
+      "bubble": "祝你……生日快乐。",
+      "text": "扳手砸碎了屏幕，淡蓝微光闪烁两下，灭了。硬盘托架被撬开，旧硬盘滚落在地，摔成两半。\n\n扬声器发出一声尖锐的噪音，然后在彻底死机之前，我听到了最后一句话——很轻，像沙沙的电流：\n\n「祝你……生日快乐。」\n\n档案室里安静极了。只有天花板上水滴落地的声音，一滴，一滴。",
+      "actions": {
+        "give_item": "parts",
+        "count": 20,
+        "set_variable": { "chronicler_outcome": "raid" },
+        "unlock_journal_entry": "chronicler_plunder"
+      },
+      "next": "story_done"
+    },
+    "story_done": {
+      "speaker": "System",
+      "bubble": "",
+      "text": "对话结束。勘探日记已更新。",
+      "next": "story_done_close"
+    },
+    "story_done_close": {
+      "speaker": "System",
+      "text": "",
+      "actions": {
+        "end_dialogue": true,
+        "close_dialogue": true,
+        "clear_checkpoint": true
+      }
+    }
+  }
+}

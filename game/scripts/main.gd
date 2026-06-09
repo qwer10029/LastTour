@@ -5,6 +5,7 @@ const CommunicationTerminalScript = preload("res://scripts/ui/communication_term
 const EndingOutcomeOverlayScript = preload("res://scripts/ui/ending_outcome_overlay.gd")
 const DayTopdownRender = preload("res://scripts/day_topdown_render.gd")
 const RunStateClass = preload("res://scripts/run_state.gd")
+const NpcDialogueRunnerScript = preload("res://scripts/story/npc_dialogue_runner.gd")
 const FINAL_TERMINAL_WAVE_PATH := "res://data/night_td/waves/night_wave_final_terminal.json"
 var _building_pick_index: int = 0
 var _foot_local_pos: Vector2 = Vector2.ZERO
@@ -29,7 +30,7 @@ enum TravelMode { DRIVE, FOOT }
 var _world_camera: Camera2D
 @export var fuel_max: float = 999.0
 @export var fuel_per_pixel: float = 0.01
-@export var drive_speed: float = 640.0 ## 加快到4倍
+@export var drive_speed: float = 1920.0
 @export var total_layers: int = 3
 @export var base_elevator_repair_cost: int = 3
 @export var war_fog_enabled: bool = true
@@ -137,6 +138,18 @@ var _night_result_applied := false
 @onready var left_button: Button = $HUD/ActionPanel/MarginContainer/VBoxContainer/JunctionButtons/LeftButton
 @onready var right_button: Button = $HUD/ActionPanel/MarginContainer/VBoxContainer/JunctionButtons/RightButton
 @onready var back_track_button: Button = $HUD/ActionPanel/MarginContainer/VBoxContainer/ActionButtons/BackTrackButton
+@onready var _action_panel_vbox: VBoxContainer = $HUD/ActionPanel/MarginContainer/VBoxContainer
+@onready var action_buttons_row: HBoxContainer = $HUD/ActionPanel/MarginContainer/VBoxContainer/ActionButtons
+
+var _last_dialogue_options_key: String = ""
+var _story_choice_overlay: CanvasLayer
+var _story_choice_panel: PanelContainer
+var _story_choice_title: Label
+var _story_choice_title_scroll: ScrollContainer
+var _story_choice_hint: Label
+var _story_choice_box_scroll: ScrollContainer
+var _story_choice_box: VBoxContainer
+var _story_choice_overlay_key: String = ""
 
 func _ready() -> void:
 	night_td = get_node_or_null("NightTd") as NightTdController  # 主场景有，子场景可能无
@@ -195,6 +208,68 @@ func _setup_hud_theme() -> void:
 	if is_instance_valid(_vitals_top_bar):
 		HudTheme.apply_vitals_bar(_vitals_top_bar)
 	_setup_pda_hud()
+
+
+func _setup_story_choice_overlay() -> void:
+	if is_instance_valid(_story_choice_overlay) and is_instance_valid(_story_choice_box_scroll):
+		return
+	if is_instance_valid(_story_choice_overlay):
+		_story_choice_overlay.queue_free()
+		_story_choice_overlay = null
+		_story_choice_panel = null
+		_story_choice_box = null
+	_story_choice_overlay = CanvasLayer.new()
+	_story_choice_overlay.name = "StoryChoiceOverlay"
+	_story_choice_overlay.layer = 80
+	add_child(_story_choice_overlay)
+	_story_choice_panel = PanelContainer.new()
+	_story_choice_panel.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	_story_choice_panel.offset_left = 72.0
+	_story_choice_panel.offset_top = -420.0
+	_story_choice_panel.offset_right = -72.0
+	_story_choice_panel.offset_bottom = -HudTheme.SAFE_MARGIN
+	HudTheme.apply_panel_container(_story_choice_panel)
+	_story_choice_overlay.add_child(_story_choice_panel)
+	var margin := MarginContainer.new()
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", 16)
+	margin.add_theme_constant_override("margin_top", 14)
+	margin.add_theme_constant_override("margin_right", 16)
+	margin.add_theme_constant_override("margin_bottom", 14)
+	_story_choice_panel.add_child(margin)
+	var root := VBoxContainer.new()
+	root.add_theme_constant_override("separation", 10)
+	margin.add_child(root)
+	_story_choice_title_scroll = ScrollContainer.new()
+	_story_choice_title_scroll.custom_minimum_size = Vector2(0, 88)
+	_story_choice_title_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_story_choice_title_scroll.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	_story_choice_title_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_story_choice_title_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	root.add_child(_story_choice_title_scroll)
+	_story_choice_title = Label.new()
+	_story_choice_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_story_choice_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	HudTheme.apply_label(_story_choice_title)
+	_story_choice_title_scroll.add_child(_story_choice_title)
+	_story_choice_hint = Label.new()
+	_story_choice_hint.text = "点下方按钮选择"
+	_story_choice_hint.add_theme_color_override("font_color", Color("#9eb4c8"))
+	HudTheme.apply_compact_label(_story_choice_hint)
+	_story_choice_hint.set_meta("hud_compact", true)
+	root.add_child(_story_choice_hint)
+	_story_choice_box_scroll = ScrollContainer.new()
+	_story_choice_box_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_story_choice_box_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_story_choice_box_scroll.custom_minimum_size = Vector2(0, 140)
+	_story_choice_box_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_story_choice_box_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	root.add_child(_story_choice_box_scroll)
+	_story_choice_box = VBoxContainer.new()
+	_story_choice_box.add_theme_constant_override("separation", 8)
+	_story_choice_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_story_choice_box_scroll.add_child(_story_choice_box)
+	_story_choice_overlay.visible = false
 
 
 func _setup_pda_hud() -> void:
@@ -579,6 +654,12 @@ func _connect_buttons() -> void:
 	if is_instance_valid(story_decline_button):
 		HudTheme.apply_choice_button(story_decline_button, Color("#c8a080"))
 		story_decline_button.pressed.connect(_on_story_decline_pressed)
+	if is_instance_valid(prompt_label):
+		prompt_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if is_instance_valid(story_choice_buttons):
+		story_choice_buttons.mouse_filter = Control.MOUSE_FILTER_PASS
+	if is_instance_valid(story_reward_buttons):
+		story_reward_buttons.mouse_filter = Control.MOUSE_FILTER_PASS
 	repair_button.pressed.connect(_on_repair_pressed)
 	if is_instance_valid(backpack_button):
 		backpack_button.pressed.connect(_toggle_backpack)
@@ -680,7 +761,7 @@ func _physics_process(delta: float) -> void:
 			_handle_foot_interact()
 		elif _mode == TravelMode.DRIVE and _segment_target_index < 0:
 			if _story_controller.handle_drive_interact(_current_node_index):
-				pass
+				_refresh_ui()
 			elif not _get_enterable_buildings().is_empty():
 				var district_index := _selected_enterable_district()
 				if not _can_enter_district(district_index):
@@ -697,8 +778,7 @@ func _physics_process(delta: float) -> void:
 			_mark_overworld_dirty()
 		var gate_active := (
 			is_instance_valid(_story_controller)
-			and is_instance_valid(_story_controller.gate_dialogue)
-			and _story_controller.gate_dialogue.is_active()
+			and _story_controller._any_dialogue_active()
 		)
 		if not gate_active:
 			_try_begin_drive_from_input()
@@ -930,16 +1010,26 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 		if not _game_paused and not _backpack_open and _mode == TravelMode.DRIVE and _segment_target_index < 0:
-			var gate := _story_controller.gate_dialogue if is_instance_valid(_story_controller) else null
 			var story_id := _story_controller.story_id_at_node(_current_node_index) if is_instance_valid(_story_controller) else ""
-			if gate != null and story_id != "" and gate.phase == StoryGateDialogue.Phase.REWARD_CHOICE:
-				var choice_count := StoryData.reward_choice_count(story_id)
-				for i in range(mini(9, choice_count)):
-					var reward_key := Key.KEY_1 + i
-					if event.keycode == reward_key or event.physical_keycode == reward_key:
-						_story_controller.choose_reward_index(i)
-						get_viewport().set_input_as_handled()
-						return
+			if story_id != "" and is_instance_valid(_story_controller):
+				var npc := _story_controller.npc_dialogue
+				if npc != null and npc.is_active() and npc.phase == NpcDialogueRunnerScript.Phase.OPTIONS:
+					var option_count := npc.get_option_labels().size()
+					for i in range(mini(9, option_count)):
+						var reward_key := Key.KEY_1 + i
+						if event.keycode == reward_key or event.physical_keycode == reward_key:
+							_story_controller.choose_dialogue_option(i)
+							get_viewport().set_input_as_handled()
+							return
+				var gate := _story_controller.gate_dialogue
+				if gate != null and story_id != "" and gate.phase == StoryGateDialogue.Phase.REWARD_CHOICE:
+					var choice_count := StoryData.reward_choice_count(story_id)
+					for i in range(mini(9, choice_count)):
+						var reward_key := Key.KEY_1 + i
+						if event.keycode == reward_key or event.physical_keycode == reward_key:
+							_story_controller.choose_reward_index(i)
+							get_viewport().set_input_as_handled()
+							return
 			var buildings := _get_enterable_buildings()
 			for i in range(mini(9, buildings.size())):
 				var key := Key.KEY_1 + i
@@ -1325,6 +1415,15 @@ func _return_to_vehicle() -> void:
 		_halt_at_node(_current_node_index)
 
 func _on_disembark_pressed() -> void:
+	if is_instance_valid(_story_controller):
+		var npc := _story_controller.npc_dialogue
+		if npc != null and npc.is_active():
+			if npc.phase == NpcDialogueRunnerScript.Phase.OPTIONS:
+				return
+			if npc.phase == NpcDialogueRunnerScript.Phase.LINE:
+				npc.advance_line()
+				_refresh_ui()
+				return
 	if is_instance_valid(_story_controller) and is_instance_valid(_story_controller.gate_dialogue):
 		var gate := _story_controller.gate_dialogue
 		if gate.phase == StoryGateDialogue.Phase.INTRO_CHOICE:
@@ -1332,6 +1431,17 @@ func _on_disembark_pressed() -> void:
 			return
 		if gate.phase == StoryGateDialogue.Phase.REWARD_CHOICE:
 			return
+	if is_instance_valid(_story_controller) and _mode == TravelMode.DRIVE and _segment_target_index < 0:
+		var story_id := _story_controller.story_id_at_node(_current_node_index)
+		if story_id != "" and StoryData.dialogue_path(story_id) != "":
+			var run_state := _story_controller.run_state
+			if not run_state.is_completed(story_id):
+				var need := int(StoryData.quest_def(story_id).get("collect_count", 0))
+				var collected := run_state.get_collect_count(story_id)
+				if not run_state.is_quest_active(story_id) or collected >= need:
+					_story_controller.start_story_talk(story_id)
+					_refresh_ui()
+					return
 	if _mode == TravelMode.DRIVE and not _get_enterable_buildings().is_empty():
 		var district_index := _selected_enterable_district()
 		if not _can_enter_district(district_index):
@@ -1478,6 +1588,8 @@ func _on_resource_collected(district_index: int, item_id: String, pickup: Area2D
 		loot_id = "scrap"
 	if loot_id.begins_with("quest:"):
 		if _story_controller.on_quest_item_collected(loot_id, district_index):
+			_backpack.add(loot_id, 1)
+			_refresh_backpack_if_open()
 			_refresh_ui()
 		if is_instance_valid(pickup):
 			pickup.queue_free()
@@ -2873,9 +2985,11 @@ func _update_prompts() -> void:
 	if is_instance_valid(back_track_button):
 		back_track_button.visible = false
 	_sync_junction_buttons()
-	_sync_action_panel_visibility()
-	_update_story_gate_prompts()
+	var overlay_active := _update_story_gate_prompts()
+	if not overlay_active:
+		_hide_story_choice_overlay()
 	_update_foot_prompts()
+	_sync_action_panel_visibility()
 
 
 func _update_foot_prompts() -> void:
@@ -2891,34 +3005,46 @@ func _update_foot_prompts() -> void:
 	$HUD/ActionPanel.visible = false
 
 
-func _update_story_gate_prompts() -> void:
+func _update_story_gate_prompts() -> bool:
 	if _mode != TravelMode.DRIVE or _segment_target_index >= 0 or _is_night_phase():
-		return
+		return false
 	if not is_instance_valid(_story_controller):
-		return
+		return false
 	var story_id := _story_controller.story_id_at_node(_current_node_index)
 	if story_id == "":
-		return
+		return false
 	var prompt: Dictionary = _story_controller.build_prompt(story_id)
 	if (
 		str(prompt.get("text", "")).is_empty()
 		and not bool(prompt.get("show_story_choice", false))
 		and not bool(prompt.get("show_reward_choice", false))
+		and not bool(prompt.get("show_dialogue_options", false))
 	):
-		return
-	$HUD/ActionPanel.visible = true
+		return false
+	if bool(prompt.get("show_story_choice", false)):
+		var choice_labels: Array[String] = [
+			str(prompt.get("disembark", "帮忙")),
+			str(prompt.get("decline", "算了")),
+		]
+		return _show_story_choice_overlay(str(prompt.get("text", "")), choice_labels, "gate")
+	if bool(prompt.get("show_dialogue_options", false)):
+		var option_labels: Array[String] = []
+		for opt_var in prompt.get("dialogue_options", []):
+			option_labels.append(str(opt_var))
+		return _show_story_choice_overlay(str(prompt.get("text", "")), option_labels, "dialogue")
 	if bool(prompt.get("show_reward_choice", false)):
+		$HUD/ActionPanel.visible = true
 		prompt_label.text = str(prompt.get("text", ""))
 		prompt_label.visible = not prompt_label.text.strip_edges().is_empty()
 		_show_story_reward_choices(story_id)
-		return
-	if bool(prompt.get("show_story_choice", false)):
-		prompt_label.text = str(prompt.get("text", ""))
-		prompt_label.visible = not prompt_label.text.strip_edges().is_empty()
-		story_accept_button.text = str(prompt.get("disembark", "帮忙"))
-		story_decline_button.text = str(prompt.get("decline", "算了"))
-		_set_story_choice_buttons_visible(true)
-		return
+		return false
+	if str(prompt.get("continue_hint", "")) != "":
+		$HUD/ActionPanel.visible = true
+		var body := str(prompt.get("text", "")).strip_edges()
+		prompt_label.text = "%s\n\n[%s]" % [body, str(prompt.get("continue_hint", ""))]
+		prompt_label.visible = true
+		return false
+	$HUD/ActionPanel.visible = true
 	prompt_label.text = str(prompt.get("text", ""))
 	prompt_label.visible = true
 	if bool(prompt.get("show_disembark", false)):
@@ -2927,6 +3053,7 @@ func _update_story_gate_prompts() -> void:
 	if bool(prompt.get("show_decline", false)):
 		return_button.text = str(prompt.get("decline", "取消"))
 		return_button.visible = true
+	return false
 
 
 func _set_story_choice_buttons_visible(visible: bool) -> void:
@@ -2934,13 +3061,184 @@ func _set_story_choice_buttons_visible(visible: bool) -> void:
 		story_choice_buttons.visible = visible
 
 
+func _hide_action_button_row() -> void:
+	if is_instance_valid(action_buttons_row):
+		action_buttons_row.visible = false
+
+
+func _show_story_choice_overlay(title: String, options: Array, mode: String = "dialogue") -> bool:
+	if not is_instance_valid(_story_choice_overlay):
+		_setup_story_choice_overlay()
+	if not is_instance_valid(_story_choice_box):
+		return false
+	var labels: Array[String] = []
+	for opt_var in options:
+		var label := str(opt_var).strip_edges()
+		if label != "":
+			labels.append(label)
+	if labels.is_empty():
+		return false
+	var overlay_key := "%s|%s|%s" % [mode, title, "|".join(labels)]
+	if overlay_key == _story_choice_overlay_key and _story_choice_overlay.visible:
+		return true
+	_story_choice_overlay_key = overlay_key
+	for child in _story_choice_box.get_children():
+		child.queue_free()
+	_story_choice_title.text = title.strip_edges()
+	call_deferred("_sync_story_choice_title_size")
+	if is_instance_valid(_story_choice_hint):
+		if labels.size() <= 1:
+			_story_choice_hint.text = "按 1 选择，或点下方按钮"
+		elif labels.size() == 2:
+			_story_choice_hint.text = "按 1 / 2 选择，或点下方按钮"
+		else:
+			_story_choice_hint.text = "按 1～%d 选择，或点下方按钮" % labels.size()
+	if is_instance_valid(_story_choice_title_scroll):
+		_story_choice_title_scroll.custom_minimum_size.y = 72.0 if labels.size() >= 3 else 96.0
+	var accents: Array[Color] = [
+		Color("#7ec8a0"),
+		Color("#c8a080"),
+		Color("#8ec8e8"),
+		Color("#bb8fce"),
+	]
+	for i in range(labels.size()):
+		var btn := Button.new()
+		btn.custom_minimum_size = Vector2(0, 56)
+		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		btn.text = "%d · %s" % [i + 1, labels[i]]
+		btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		btn.disabled = false
+		btn.mouse_filter = Control.MOUSE_FILTER_STOP
+		HudTheme.apply_choice_button(btn, accents[i % accents.size()])
+		if mode == "gate":
+			btn.pressed.connect(_on_story_overlay_gate_pressed.bind(i))
+		else:
+			btn.pressed.connect(_on_story_overlay_dialogue_pressed.bind(i))
+		_story_choice_box.add_child(btn)
+	call_deferred("_sync_story_choice_box_size")
+	if has_node("HUD/ActionPanel"):
+		$HUD/ActionPanel.visible = false
+	_story_choice_overlay.visible = true
+	return true
+
+
+func _sync_story_choice_title_size() -> void:
+	if not is_instance_valid(_story_choice_title) or not is_instance_valid(_story_choice_title_scroll):
+		return
+	var scroll_width := maxf(_story_choice_title_scroll.size.x - 8.0, 320.0)
+	_story_choice_title.custom_minimum_size = Vector2(
+		scroll_width,
+		maxf(_story_choice_title.get_minimum_size().y, 1.0),
+	)
+
+
+func _sync_story_choice_box_size() -> void:
+	if not is_instance_valid(_story_choice_box) or not is_instance_valid(_story_choice_box_scroll):
+		return
+	var scroll_width := maxf(_story_choice_box_scroll.size.x - 8.0, 320.0)
+	_story_choice_box.custom_minimum_size = Vector2(
+		scroll_width,
+		_story_choice_box.get_minimum_size().y,
+	)
+
+
+func _hide_story_choice_overlay() -> void:
+	_story_choice_overlay_key = ""
+	if is_instance_valid(_story_choice_box):
+		for child in _story_choice_box.get_children():
+			child.queue_free()
+	if is_instance_valid(_story_choice_overlay):
+		_story_choice_overlay.visible = false
+
+
+func _on_story_overlay_dialogue_pressed(index: int) -> void:
+	if not is_instance_valid(_story_controller):
+		return
+	_story_controller.choose_dialogue_option(index)
+	_hide_story_choice_overlay()
+	_refresh_ui()
+
+
+func _on_story_overlay_gate_pressed(index: int) -> void:
+	if not is_instance_valid(_story_controller):
+		return
+	if index == 0:
+		_on_story_accept_pressed()
+	else:
+		_on_story_decline_pressed()
+	_hide_story_choice_overlay()
+	_refresh_ui()
+
+
+func _on_journal_entry_added(encounter_id: String) -> void:
+	_refresh_backpack_if_open()
+	var title := JournalData.title_of(encounter_id)
+	if is_instance_valid(evening_notice) and evening_notice.has_method("show_message"):
+		evening_notice.show_message(
+			"勘探日记已更新",
+			"「%s」已写入本局日记。\n按 B 打开背包，切到「勘探日记」查看。" % title,
+			6.0,
+		)
+
+
 func _clear_story_reward_buttons() -> void:
+	_last_dialogue_options_key = ""
 	_story_reward_rows.clear()
 	if not is_instance_valid(story_reward_buttons):
 		return
 	for child in story_reward_buttons.get_children():
 		child.queue_free()
 	story_reward_buttons.visible = false
+
+
+func _show_story_dialogue_options(_story_id: String, options: Variant) -> void:
+	_set_story_choice_buttons_visible(false)
+	_hide_action_button_row()
+	if not is_instance_valid(story_reward_buttons):
+		return
+	if typeof(options) != TYPE_ARRAY:
+		return
+	var labels: Array[String] = []
+	for opt_var in options as Array:
+		labels.append(str(opt_var))
+	var options_key := "|".join(labels)
+	if options_key == _last_dialogue_options_key and story_reward_buttons.visible:
+		return
+	_last_dialogue_options_key = options_key
+	_story_reward_rows.clear()
+	for child in story_reward_buttons.get_children():
+		child.queue_free()
+	story_reward_buttons.visible = false
+	var accents: Array[Color] = [
+		Color("#7ec8a0"),
+		Color("#8ec8e8"),
+		Color("#c8a080"),
+		Color("#bb8fce"),
+	]
+	for i in range((options as Array).size()):
+		var label_text := str((options as Array)[i])
+		var btn := Button.new()
+		btn.custom_minimum_size = Vector2(0, 56)
+		btn.text = "%d · %s" % [i + 1, label_text]
+		btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		var accent: Color = accents[i % accents.size()]
+		btn.add_theme_color_override("font_color", accent)
+		btn.disabled = false
+		btn.mouse_filter = Control.MOUSE_FILTER_STOP
+		btn.pressed.connect(_on_story_dialogue_option_pressed.bind(i))
+		story_reward_buttons.add_child(btn)
+		_story_reward_rows.append(btn)
+	story_reward_buttons.visible = true
+	if is_instance_valid(_action_panel_vbox):
+		_action_panel_vbox.move_child(story_reward_buttons, _action_panel_vbox.get_child_count() - 1)
+
+
+func _on_story_dialogue_option_pressed(index: int) -> void:
+	if not is_instance_valid(_story_controller):
+		return
+	_story_controller.choose_dialogue_option(index)
+	_clear_story_reward_buttons()
+	_refresh_ui()
 
 
 func _show_story_reward_choices(story_id: String) -> void:
@@ -2988,13 +3286,24 @@ func _on_story_reward_pressed(index: int) -> void:
 func _on_story_accept_pressed() -> void:
 	if not is_instance_valid(_story_controller):
 		return
+	var npc := _story_controller.npc_dialogue
+	if npc != null and npc.is_active() and npc.phase == NpcDialogueRunnerScript.Phase.OPTIONS:
+		_story_controller.choose_dialogue_option(0)
+		_refresh_ui()
+		return
 	var gate := _story_controller.gate_dialogue
 	if is_instance_valid(gate) and gate.phase == StoryGateDialogue.Phase.INTRO_CHOICE:
 		_story_controller.accept_gate_choice()
+		_refresh_ui()
 
 
 func _on_story_decline_pressed() -> void:
 	if not is_instance_valid(_story_controller):
+		return
+	var npc := _story_controller.npc_dialogue
+	if npc != null and npc.is_active() and npc.phase == NpcDialogueRunnerScript.Phase.OPTIONS:
+		_story_controller.choose_dialogue_option(1)
+		_refresh_ui()
 		return
 	var gate := _story_controller.gate_dialogue
 	if is_instance_valid(gate) and gate.phase == StoryGateDialogue.Phase.INTRO_CHOICE:
@@ -3028,7 +3337,9 @@ func _sync_action_panel_visibility() -> void:
 		has_content = true
 	if is_instance_valid(story_reward_buttons) and story_reward_buttons.visible:
 		has_content = true
-	panel.visible = has_content
+	if is_instance_valid(_story_choice_overlay) and _story_choice_overlay.visible:
+		has_content = true
+	panel.visible = has_content and not (is_instance_valid(_story_choice_overlay) and _story_choice_overlay.visible)
 
 
 func _enterable_hotkey_map() -> Dictionary:
@@ -3840,7 +4151,9 @@ func _generate_layer_map() -> void:
 		debug_start_near_special,
 	)
 	StoryData.ensure_story_districts(_map)
-	if debug_start_near_special:
+	if StoryData.any_story_spawns_near_start():
+		StoryData.set_debug_start_near_story(_map)
+	elif debug_start_near_special:
 		_map.set_start_near_special_building(_current_layer >= total_layers)
 	elif debug_start_at_story:
 		StoryData.set_debug_start_near_story(_map)

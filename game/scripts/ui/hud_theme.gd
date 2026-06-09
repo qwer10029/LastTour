@@ -362,12 +362,19 @@ static func layout_hud(hud: CanvasLayer) -> void:
 	var action := hud.get_node_or_null("ActionPanel") as Panel
 	if action != null:
 		action.add_theme_stylebox_override("panel", panel_style(0.42))
+		action.mouse_filter = Control.MOUSE_FILTER_STOP
 		action.offset_left = -300.0
-		action.offset_top = -280.0
+		action.offset_top = -340.0
 		action.offset_right = 300.0
 		action.offset_bottom = -SAFE_MARGIN
 		var action_margin := action.get_node_or_null("MarginContainer") as MarginContainer
-		apply_margin(action_margin)
+		if action_margin != null:
+			action_margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+			apply_margin(action_margin)
+			var action_vbox := action_margin.get_node_or_null("VBoxContainer") as VBoxContainer
+			if action_vbox != null:
+				action_vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+				action_vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 	var evening := hud.get_node_or_null("EveningNotice") as PanelContainer
 	if evening != null:
@@ -377,6 +384,8 @@ static func layout_hud(hud: CanvasLayer) -> void:
 		apply_margin(evening_margin)
 
 	apply_tree(hud)
+	if hud.get_parent() != null and hud.get_parent().has_method("_setup_story_choice_overlay"):
+		hud.get_parent().call("_setup_story_choice_overlay")
 
 
 static func apply_vitals_bar(bar: PanelContainer) -> void:

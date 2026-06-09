@@ -180,6 +180,8 @@ static func loot_display_name(item_id: String, fallback: String = "") -> String:
 		return fallback
 	if item_id.begins_with("quest:sentinel_battery") or item_id == "sentinel_battery":
 		return "能量电池"
+	if item_id.begins_with("quest:chronicler_memory"):
+		return "存储模块"
 	if item_id.begins_with("quest:"):
 		return "任务物品"
 	return ItemDefs.get_item_name(item_id)

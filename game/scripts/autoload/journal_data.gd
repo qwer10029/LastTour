@@ -11,10 +11,10 @@ func _ready() -> void:
 
 
 func rebuild_from_stories(stories: Dictionary, required: Array[String]) -> void:
-	_entries.clear()
-	_required_ids.clear()
 	for raw_id in required:
-		_required_ids.append(str(raw_id))
+		var id := str(raw_id)
+		if id != "" and not _required_ids.has(id):
+			_required_ids.append(id)
 	for story_id in stories.keys():
 		var story: Dictionary = stories[story_id]
 		var base_title := str(story.get("title", story_id))
@@ -37,9 +37,11 @@ func rebuild_from_stories(stories: Dictionary, required: Array[String]) -> void:
 			}
 
 
+func ensure_legacy_loaded() -> void:
+	_load_legacy_file()
+
+
 func _load_legacy_file() -> void:
-	if _entries.size() > 0:
-		return
 	if not FileAccess.file_exists(LEGACY_PATH):
 		return
 	var file := FileAccess.open(LEGACY_PATH, FileAccess.READ)

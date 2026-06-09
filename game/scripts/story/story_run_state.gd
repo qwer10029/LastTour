@@ -62,6 +62,42 @@ func mark_done(story_id: String) -> void:
 	set_phase(story_id, PHASE_DONE)
 
 
+func get_variable(story_id: String, key: String, default: Variant = null) -> Variant:
+	var vars: Variant = _entry(story_id).get("variables", {})
+	if typeof(vars) != TYPE_DICTIONARY:
+		return default
+	if not (vars as Dictionary).has(key):
+		return default
+	return (vars as Dictionary)[key]
+
+
+func set_variable(story_id: String, key: String, value: Variant) -> void:
+	var entry := _entry(story_id)
+	var vars: Dictionary = {}
+	var raw: Variant = entry.get("variables", {})
+	if typeof(raw) == TYPE_DICTIONARY:
+		vars = (raw as Dictionary).duplicate(true)
+	vars[key] = value
+	entry["variables"] = vars
+	_entries[story_id] = entry
+
+
+func get_dialogue_node(story_id: String) -> String:
+	return str(_entry(story_id).get("dialogue_node", ""))
+
+
+func set_dialogue_node(story_id: String, node_id: String) -> void:
+	var entry := _entry(story_id)
+	entry["dialogue_node"] = node_id
+	_entries[story_id] = entry
+
+
+func clear_dialogue_node(story_id: String) -> void:
+	var entry := _entry(story_id)
+	entry["dialogue_node"] = ""
+	_entries[story_id] = entry
+
+
 func to_dictionary() -> Dictionary:
 	return _entries.duplicate(true)
 
@@ -83,5 +119,6 @@ func _entry(story_id: String) -> Dictionary:
 			"phase": PHASE_NONE,
 			"district": -1,
 			"collect_count": 0,
+			"variables": {},
 		}
 	return _entries[story_id]

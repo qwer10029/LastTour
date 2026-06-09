@@ -427,6 +427,11 @@ func building_label(index: int) -> String:
 					return custom
 			return "荒废军营"
 		"archive":
+			var archive_story := str(cells[index].get("story_id", ""))
+			if archive_story != "" and StoryData.has_story(archive_story):
+				var archive_label := str(StoryData.get_story(archive_story).get("building_label", ""))
+				if archive_label != "":
+					return archive_label
 			return "档案站"
 		"hub":
 			return "枢纽"
@@ -1364,6 +1369,28 @@ func _clear_special_building_from(district_index: int) -> void:
 		cells[district_index]["building_type"] = "archive"
 	cells[district_index]["has_elevator"] = false
 	cells[district_index]["has_kunlun_control"] = false
+
+
+func relocate_special_building_from(district_index: int) -> void:
+	if not is_valid_index(district_index) or not is_district(district_index):
+		return
+	var is_final_layer := bool(cells[district_index].get("has_kunlun_control", false))
+	var had_special := (
+		bool(cells[district_index].get("has_elevator", false))
+		or is_final_layer
+	)
+	if not had_special:
+		return
+	_clear_special_building_from(district_index)
+	for index in district_indices:
+		if index == district_index:
+			continue
+		if str(cells[index].get("story_id", "")) != "":
+			continue
+		if str(cells[index].get("special_encounter", "")) != "":
+			continue
+		_assign_special_building(index, is_final_layer)
+		return
 
 
 func _place_special_building_near_start(is_final_layer: bool) -> void:

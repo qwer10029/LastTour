@@ -1,0 +1,200 @@
+{
+  "npc_id": "S-09",
+  "npc_name": "高级哨兵 S-09",
+  "story_id": "sentinel_s09",
+  "start_node": "gate_01",
+  "item_aliases": {
+    "battery": "quest:sentinel_battery",
+    "parts": "parts",
+    "blueprint": "blueprint_pulse_tower"
+  },
+  "journal_map": {
+    "END_PARTS": {
+      "variable": "s09_battery_given",
+      "1": "sentinel_s09_parts_gave1",
+      "2": "sentinel_s09_parts_gave2"
+    },
+    "END_BLUEPRINT": {
+      "variable": "s09_battery_given",
+      "1": "sentinel_s09_blueprint_gave1",
+      "2": "sentinel_s09_blueprint_gave2"
+    }
+  },
+  "nodes": {
+    "gate_01": {
+      "speaker": "S-09",
+      "bubble": "请把枪放下，我并无敌意。劳驾您，帮我个忙。",
+      "text": "请把枪放下，我并无敌意。劳驾您，帮我个忙。",
+      "next": "gate_02"
+    },
+    "gate_02": {
+      "speaker": "S-09",
+      "bubble": "我是10032军营哨兵 S-09。战争结束后，只剩那棵变异植物——我养在花盆里，三年了。",
+      "text": "我是10032军营的哨兵，编号S-09。职责是守卫营区、保护友方单位。战争结束后，这里早就没人了。只剩下那棵变异的植物——我把它养在花盆里，三年了。",
+      "next": "gate_03"
+    },
+    "gate_03": {
+      "speaker": "S-09",
+      "bubble": "我不能离开门口。能源快耗尽了。若您愿帮我去东侧仓库取能量电池，我会给您报酬。",
+      "text": "我不能离开门口。营门是我的感知边界，超过三米，定位系统就会报错。我的能源快耗尽了。我分不清您是敌是友。但……如果您愿意帮我去东侧仓库拿几块能量电池，我会给您报酬。",
+      "next": "gate_choice"
+    },
+    "gate_choice": {
+      "speaker": "S-09",
+      "bubble": "……能帮我吗？",
+      "text": "……能帮我吗？",
+      "options": [
+        {
+          "text": "好，我帮你。",
+          "next": "gate_accept"
+        },
+        {
+          "text": "算了。",
+          "next": "gate_decline"
+        }
+      ]
+    },
+    "gate_decline": {
+      "speaker": "S-09",
+      "bubble": "……明白了。营门仍由我守着。",
+      "text": "……明白了。营门仍由我守着。",
+      "next": "gate_decline_done"
+    },
+    "gate_decline_done": {
+      "speaker": "System",
+      "text": "",
+      "actions": {
+        "close_dialogue": true,
+        "clear_checkpoint": true
+      }
+    },
+    "gate_accept": {
+      "speaker": "S-09",
+      "bubble": "东侧仓库，第二通道备件柜。密码0913，已替您解锁。我会在这里等您。",
+      "text": "东侧仓库，第二通道尽头的备件柜。柜门密码是0913，已替您解锁。我会在这里等您。",
+      "actions": {
+        "trigger_quest": true,
+        "open_gate": true
+      },
+      "next": "intro_done"
+    },
+    "intro_done": {
+      "speaker": "System",
+      "bubble": "",
+      "text": "委托已接受。进入军营拾取能量电池。",
+      "next": "intro_done_close"
+    },
+    "intro_done_close": {
+      "speaker": "System",
+      "text": "",
+      "actions": {
+        "close_dialogue": true,
+        "clear_checkpoint": true
+      }
+    },
+    "quest_remind": {
+      "speaker": "S-09",
+      "bubble": "东侧仓库，备件柜密码0913。我会在这里等您。",
+      "text": "东侧仓库，备件柜密码0913。我会在这里等您。",
+      "next": ""
+    },
+    "return_start": {
+      "speaker": "S-09",
+      "bubble": "找到了吗？",
+      "text": "找到了吗？它的声音里有一丝极轻的急切。",
+      "options": [
+        {
+          "text": "两块都给你。",
+          "condition_check": { "has_item": "battery", "count": 2 },
+          "next": "give_two"
+        },
+        {
+          "text": "只给你一块。",
+          "condition_check": { "has_item": "battery", "count": 1 },
+          "next": "give_one_a"
+        }
+      ]
+    },
+    "give_two": {
+      "speaker": "S-09",
+      "bubble": "一块给我，一块给它的保护装置。这样，我们都能再撑一段时间。",
+      "text": "哨兵把一块电池插进能源槽，另一块放进花盆稳压器。光学镜头明显亮了一截，花盆里的枝条也舒展开来。\n\n「一块给我，一块给它的保护装置。这样，我们都能再撑一段时间。」",
+      "actions": {
+        "remove_item": "battery",
+        "count": 2,
+        "set_variable": { "s09_battery_given": 2 }
+      },
+      "next": "reward_choice"
+    },
+    "give_one_a": {
+      "speaker": "S-09",
+      "bubble": "我把电池给了它的保护装置。它比我更需要。",
+      "text": "哨兵没有留给自己充能，直接将电池卡进花盆稳压器。花盆里的枝条猛地颤动了一下。\n\n「我把电池给了它的保护装置。它比我更需要。没有稳压器，它活不过这个月。」",
+      "next": "give_one_b"
+    },
+    "give_one_b": {
+      "speaker": "S-09",
+      "bubble": "我还能撑……大概两天。但没关系。它活下来了。",
+      "text": "「我还能撑……大概两天。两天后能源耗尽，永久停机。但没关系。它活下来了。」",
+      "actions": {
+        "remove_item": "battery",
+        "count": 1,
+        "set_variable": { "s09_battery_given": 1 }
+      },
+      "next": "reward_choice"
+    },
+    "reward_choice": {
+      "speaker": "S-09",
+      "bubble": "按协议，您帮了我，我会给您报酬。以下两项，任选其一。",
+      "text": "哨兵从胸甲内侧取出一块空白数据片。\n\n「按协议，您帮了我，我会给您报酬。以下两项，任选其一。」",
+      "options": [
+        {
+          "text": "【A】二十份零件",
+          "next": "reward_parts"
+        },
+        {
+          "text": "【B】强化防御塔蓝图",
+          "next": "reward_blueprint"
+        }
+      ]
+    },
+    "reward_parts": {
+      "speaker": "S-09",
+      "bubble": "仓库西侧，铁门后头。愿您旅途平安。",
+      "text": "「明白了。」数据片指示灯闪烁两下。\n\n「仓库西侧，铁门后头。愿您旅途平安。」",
+      "actions": {
+        "give_item": "parts",
+        "count": 20,
+        "unlock_journal_entry": "END_PARTS",
+        "spawn_reward_loot": "parts"
+      },
+      "next": "story_done"
+    },
+    "reward_blueprint": {
+      "speaker": "S-09",
+      "bubble": "这是第7修订版。我留着也没用了。走吧，天快黑了。",
+      "text": "「这是第7修订版。比标准版多一层脉冲护盾——当年专门用来挡无人机的。我留着也没用了。走吧，天快黑了。」",
+      "actions": {
+        "give_item": "blueprint",
+        "count": 1,
+        "unlock_journal_entry": "END_BLUEPRINT"
+      },
+      "next": "story_done"
+    },
+    "story_done": {
+      "speaker": "System",
+      "bubble": "",
+      "text": "对话结束。勘探日记已更新。",
+      "next": "story_done_close"
+    },
+    "story_done_close": {
+      "speaker": "System",
+      "text": "",
+      "actions": {
+        "end_dialogue": true,
+        "close_dialogue": true,
+        "clear_checkpoint": true
+      }
+    }
+  }
+}

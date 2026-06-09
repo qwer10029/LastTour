@@ -48,6 +48,34 @@
 			"stack_max": 400,
 			"color": "#8a9aa8",
 			"usable": false
+		},
+		"quest:sentinel_battery": {
+			"name": "能量电池",
+			"desc": "10032 军营备件柜取出的能量电池，仍有余量。",
+			"stack_max": 5,
+			"color": "#9ef0ff",
+			"usable": false
+		},
+		"blueprint_pulse_tower": {
+			"name": "强化防御塔蓝图",
+			"desc": "10032 军营夜间布防方案第 7 修订版，含脉冲护盾层。",
+			"stack_max": 1,
+			"color": "#8ec8e8",
+			"usable": false
+		},
+		"quest:chronicler_memory": {
+			"name": "存储模块",
+			"desc": "三楼通讯室备件箱取出的军用级记忆体，仍可读写。",
+			"stack_max": 5,
+			"color": "#b8a0e8",
+			"usable": false
+		},
+		"data_chip_supply_registry": {
+			"name": "物资登记数据片",
+			"desc": "编史者储存的战后初期区域物资登记表，含两处隐藏仓库坐标。",
+			"stack_max": 1,
+			"color": "#9ec8f0",
+			"usable": false
 		}
 	},
 	"loot_by_building": {

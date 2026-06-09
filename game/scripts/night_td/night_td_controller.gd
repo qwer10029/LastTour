@@ -96,6 +96,7 @@ var _screen_camera: Camera2D = null
 
 func _ready() -> void:
 	visible = false
+	set_process_unhandled_input(true)
 	_ensure_screen_camera()
 	if is_instance_valid(field):
 		field.bind_controller(self)
@@ -240,7 +241,55 @@ func start_session(
 			hud.set_phase_text(_session_phase_title("接敌中"))
 			hud.set_hint("没有进入布防模式，敌人将直接来袭。")
 		hud.clear_log()
+		_notify_debug_skip_available()
 	_update_hud_tools()
+
+
+func _debug_skip_available() -> bool:
+	return OS.is_debug_build()
+
+
+func _notify_debug_skip_available() -> void:
+	if _session_kind != "final_terminal_defense" or not _debug_skip_available():
+		return
+	if is_instance_valid(hud):
+		hud.append_log("[调试] 按 F9 跳过 Boss 战，直接进入终端剧情")
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not _debug_skip_available() or not visible or _session_kind != "final_terminal_defense":
+		return
+	if not event is InputEventKey or not event.pressed or event.is_echo():
+		return
+	if event.keycode != KEY_F9 and event.physical_keycode != KEY_F9:
+		return
+	debug_skip_final_terminal_boss()
+	get_viewport().set_input_as_handled()
+
+
+func debug_skip_final_terminal_boss() -> void:
+	if _session_kind != "final_terminal_defense" or not visible:
+		return
+	if phase == Phase.RESULT and not _last_result.is_empty():
+		_finish_session()
+		return
+	_combat_done = true
+	_enemies.clear()
+	_projectiles.clear()
+	base_hp = base_max_hp
+	_enemies_reached = 0
+	_breach_losses = {}
+	_last_result = _build_result()
+	_last_result["outcome"] = "success"
+	_last_result["loss_severity"] = "none"
+	_last_result["fuel_loss"] = 0.0
+	_last_result["inventory_loss"] = 0
+	_last_result["breach_losses"] = {}
+	_last_result["breach_total"] = 0
+	_last_result["message"] = "【调试跳过】顶层终端防线已清除。"
+	if is_instance_valid(hud):
+		hud.append_log("【调试】已跳过 Boss 战")
+	_finish_session()
 
 
 func _session_phase_title(suffix: String) -> String:
