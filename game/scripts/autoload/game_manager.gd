@@ -120,7 +120,8 @@ func go_to_main_menu() -> void:
 
 
 func continue_from_save() -> void:
-	if not SaveManager.has_save():
+	var save_manager := _save_manager()
+	if save_manager == null or not save_manager.has_save():
 		return
 	_pending_new_game = false
 	_pending_load_save = true
@@ -175,6 +176,10 @@ func apply_run_config_to_game(game: Node) -> void:
 	if not game.has_method("apply_run_config"):
 		return
 	game.apply_run_config(self)
+
+
+func _save_manager() -> Node:
+	return get_tree().root.get_node_or_null("SaveManager") if get_tree() != null else null
 
 
 func get_fuel_max(base: float) -> float:
