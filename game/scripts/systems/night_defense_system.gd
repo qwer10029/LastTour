@@ -23,11 +23,12 @@ func start_td_session(
 	vehicle_hp: float = -1.0,
 	vehicle_hp_max: float = -1.0,
 	backpack_snapshot: Dictionary = {},
+	session_options: Dictionary = {},
 ) -> void:
 	if _td == null:
 		return
 	_last_result = {}
-	_td.start_session(inventory, difficulty, day_index, allow_placement, vehicle_hp, vehicle_hp_max, backpack_snapshot)
+	_td.start_session(inventory, difficulty, day_index, allow_placement, vehicle_hp, vehicle_hp_max, backpack_snapshot, session_options)
 
 
 func hide_td_session() -> void:

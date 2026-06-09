@@ -49,28 +49,36 @@ var run_state = null   # RunState — 跨场景共享状态（类型在 preload 
 var _game_paused := false           # 暂停状态（NightTdRoot 需要查询）
 
 ## 请求切换到夜间塔防场景。
-func request_night_defense(rs) -> void:
+func request_night_defense(rs, session_options: Dictionary = {}) -> void:
+	if rs != null:
+		rs.night_session_options = session_options.duplicate(true)
+		rs.night_context = str(session_options.get("kind", "normal"))
+		rs.pending_open_terminal = false
 	run_state = rs
 	get_tree().change_scene_to_file(SCENE_NIGHT_TD)
 
 
 ## 夜间结束后切回白天场景。
 func apply_night_result_and_continue(result: Dictionary) -> void:
-	if run_state != null:
-		run_state.apply_night_result(result)
-		run_state.day_index += 1
-	# 检查车辆是否已毁
-	if run_state != null and run_state.run_ended:
-		go_to_main_menu()
+	if run_state == null:
+		push_error("GameManager: run_state is null when applying night result.")
+		start_day_exploration(null)
 		return
+	var context := str(result.get("kind", run_state.night_context))
+	var no_day_advance := bool(result.get("no_day_advance", false))
+	run_state.apply_night_result(result)
+	if not run_state.run_ended:
+		if context == "final_terminal_defense":
+			run_state.final_defense_cleared = true
+			run_state.pending_open_terminal = true
+		elif not no_day_advance:
+			run_state.advance_after_normal_night()
 	start_day_exploration(run_state)
 
 
-## 返回当前 RunState 并清空（供 NightTdRoot / DayExploration 读取）。
+## 返回当前 RunState。夜战结束前不能清空，否则结果无法回写。
 func consume_run_state():
-	var rs = run_state
-	run_state = null
-	return rs
+	return run_state
 
 
 ## 启动白天探索场景（方案四入口）。
@@ -117,14 +125,17 @@ func _load_run_config() -> void:
 func go_to_main_menu() -> void:
 	_pending_new_game = false
 	_pending_load_save = false
+	run_state = null
 	get_tree().change_scene_to_file(SCENE_MAIN_MENU)
 
 
 func continue_from_save() -> void:
-	if not SaveManager.has_save():
+	var save_manager := _save_manager()
+	if save_manager == null or not save_manager.has_save():
 		return
 	_pending_new_game = false
 	_pending_load_save = true
+	run_state = null
 	get_tree().change_scene_to_file(SCENE_GAME)
 
 
@@ -138,6 +149,7 @@ func begin_new_game_flow() -> void:
 	_pending_new_game = true
 	difficulty = Difficulty.NORMAL
 	squad_id = "scavenger"
+	run_state = null
 	get_tree().change_scene_to_file(SCENE_OPENING_PROLOGUE)
 
 
@@ -152,6 +164,7 @@ func go_to_squad_select() -> void:
 
 func start_run() -> void:
 	_pending_new_game = false
+	run_state = null
 	get_tree().change_scene_to_file(SCENE_GAME)
 
 
@@ -177,6 +190,10 @@ func apply_run_config_to_game(game: Node) -> void:
 	if not game.has_method("apply_run_config"):
 		return
 	game.apply_run_config(self)
+
+
+func _save_manager() -> Node:
+	return get_tree().root.get_node_or_null("SaveManager") if get_tree() != null else null
 
 
 func get_fuel_max(base: float) -> float:

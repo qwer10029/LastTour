@@ -98,6 +98,36 @@
 			"armor": 0.5,
 			"hack_resist": 1.8,
 			"is_shepherd": false
+		},
+		"repair_mender": {
+			"name": "修复中继机",
+			"hp": 95.0,
+			"speed": 24.0,
+			"base_damage": 4.0,
+			"color": "#64dca0",
+			"radius": 15.0,
+			"armor": 0.0,
+			"hack_resist": 1.2,
+			"is_shepherd": false,
+			"heal_radius": 82.0,
+			"heal_per_sec": 8.0
+		},
+		"terminal_overseer": {
+			"name": "终端监管者",
+			"hp": 900.0,
+			"speed": 16.0,
+			"base_damage": 30.0,
+			"color": "#ff3658",
+			"radius": 28.0,
+			"armor": 0.35,
+			"hack_resist": 999.0,
+			"hack_immune": true,
+			"effect_immune": true,
+			"is_shepherd": false,
+			"breach_damage_factor": 0.66,
+			"summon_enemy": "swarm",
+			"summon_interval_sec": 8.0,
+			"max_summoned_alive": 8
 		}
 	}
 }

@@ -96,7 +96,8 @@ func _append_single_entry(
 	var spawn_side := str(entry.get("spawn_side", ""))   # 限制出生方向（空=四面随机）
 	var alt_routes: Array = entry.get("alternate_routes", [])
 	var day_bonus := maxi((day_index - 1) / 2, 0)
-	count += day_bonus
+	if bool(entry.get("scale_with_day", true)):
+		count += day_bonus
 	match difficulty:
 		0:
 			count = maxi(count - 1, 1)

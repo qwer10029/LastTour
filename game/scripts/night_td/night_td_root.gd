@@ -41,6 +41,7 @@ func _ready() -> void:
 		_run_state.vehicle_hp,
 		_run_state.vehicle_hp_max,
 		snapshot,
+		_run_state.night_session_options,
 	)
 
 	# 暂停检查：将 GameManager 的暂停状态同步过来
@@ -50,8 +51,5 @@ func _ready() -> void:
 
 
 func _on_td_finished(result: Dictionary) -> void:
-	# 把夜间结果应用到 RunState
-	if _run_state != null:
-		_run_state.apply_night_result(result)
 	# 通知 GameManager 切回白天
 	GameManager.apply_night_result_and_continue(result)

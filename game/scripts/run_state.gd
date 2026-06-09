@@ -26,6 +26,7 @@ var current_layer: int = 1
 var total_layers: int = 3
 var elevator_repair_progress: int = 0
 var base_elevator_repair_cost: int = 3
+var final_defense_cleared: bool = false
 
 # -- 运行配置 --
 var difficulty: int = 1
@@ -40,10 +41,19 @@ var time_dict: Dictionary = {}
 # -- 玩家脚色位置 --
 var foot_dict: Dictionary = {}
 
+# -- 跨场景夜战上下文（normal / final_terminal_defense）--
+var night_context: String = "normal"
+var night_session_options: Dictionary = {}
+var pending_open_terminal: bool = false
+
 # -- 运行结束状态 --
 var run_ended: bool = false
 var run_end_reason: String = ""
 var final_choice_id: String = ""
+
+# -- 剧情/日记状态（用于场景切换恢复）--
+var journal_array: Array = []
+var stories_dict: Dictionary = {}
 
 # -- 夜间结算缓存（用于 UI 展示）--
 var last_night_losses: Array[String] = []
@@ -100,6 +110,7 @@ func capture_from(node: Node) -> void:
 	total_layers = int(node.get("total_layers")) if node.get("total_layers") != null else 3
 	elevator_repair_progress = int(node.get("_elevator_repair_progress")) if node.get("_elevator_repair_progress") != null else 0
 	base_elevator_repair_cost = int(node.get("_base_elevator_repair_cost")) if node.get("_base_elevator_repair_cost") != null else 3
+	final_defense_cleared = bool(node.get("_final_defense_cleared")) if node.get("_final_defense_cleared") != null else false
 
 	var gm: Node = Engine.get_main_loop().root.get_node_or_null("GameManager") if Engine.get_main_loop() is SceneTree else null
 	difficulty = gm.difficulty if gm != null else 1
@@ -122,6 +133,17 @@ func capture_from(node: Node) -> void:
 	run_ended = bool(node.get("_run_ended")) if node.get("_run_ended") != null else false
 	run_end_reason = str(node.get("_run_end_reason")) if node.get("_run_end_reason") != null else ""
 	final_choice_id = str(node.get("_final_choice_id")) if node.get("_final_choice_id") != null else ""
+
+	journal_array.clear()
+	if node.get("_run_journal") != null:
+		var journal = node.get("_run_journal")
+		if journal.has_method("to_array"):
+			journal_array = journal.to_array().duplicate(true)
+	stories_dict.clear()
+	if node.get("_story_controller") != null:
+		var stories = node.get("_story_controller")
+		if stories.has_method("to_save_dict"):
+			stories_dict = stories.to_save_dict().duplicate(true)
 
 	last_night_losses.clear()
 	var losses = node.get("_last_night_losses")
@@ -169,6 +191,7 @@ func _load_from_save_dict(data: Dictionary) -> void:
 	total_layers = int(data.get("total_layers", 3))
 	elevator_repair_progress = int(layer_raw.get("elevator_repair_progress", 0))
 	base_elevator_repair_cost = int(data.get("base_elevator_repair_cost", 3))
+	final_defense_cleared = bool(layer_raw.get("final_defense_cleared", false))
 
 	difficulty = int(data.get("difficulty", 1))
 	squad_id = str(data.get("squad_id", "scavenger"))
@@ -188,6 +211,8 @@ func _load_from_save_dict(data: Dictionary) -> void:
 	run_ended = bool(layer_raw.get("run_ended", false))
 	run_end_reason = str(layer_raw.get("run_end_reason", ""))
 	final_choice_id = str(layer_raw.get("final_choice_id", ""))
+	journal_array = data.get("journal", []).duplicate(true)
+	stories_dict = data.get("stories", {}).duplicate(true)
 
 
 ## 将 RunState 恢复到 DayExploration（或兼容的 main）节点。
@@ -231,6 +256,7 @@ func restore_to(node: Node) -> void:
 	node.set("_current_layer", current_layer)
 	node.set("_elevator_repair_progress", elevator_repair_progress)
 	node.set("_base_elevator_repair_cost", base_elevator_repair_cost)
+	node.set("_final_defense_cleared", final_defense_cleared)
 
 	node.set("_run_difficulty_name", run_difficulty_name)
 	node.set("_run_squad_name", run_squad_name)
@@ -306,6 +332,14 @@ func apply_night_result(result: Dictionary) -> void:
 		run_end_reason = "vehicle_destroyed"
 
 
+func advance_after_normal_night() -> void:
+	day_index += 1
+	time_dict["phase"] = 0
+	time_dict["day_index"] = day_index
+	time_dict["elapsed_in_phase"] = 0.0
+	time_dict["evening_warning_sent"] = false
+
+
 func _item_name(item_id: String) -> String:
 	# 安全方式获取物品名（避免循环依赖）
 	var defs: Resource = load("res://scripts/items/item_defs.gd")
@@ -343,12 +377,15 @@ func to_full_dict() -> Dictionary:
 		"layer": {
 			"current_layer": current_layer,
 			"elevator_repair_progress": elevator_repair_progress,
+			"final_defense_cleared": final_defense_cleared,
 			"run_ended": run_ended,
 			"run_end_reason": run_end_reason,
 			"final_choice_id": final_choice_id,
 		},
 		"time": time_dict,
 		"foot": foot_dict,
+		"journal": journal_array,
+		"stories": stories_dict,
 	}
 
 
@@ -375,6 +412,7 @@ func duplicate_state():  # -> RunState
 	rs.total_layers = total_layers
 	rs.elevator_repair_progress = elevator_repair_progress
 	rs.base_elevator_repair_cost = base_elevator_repair_cost
+	rs.final_defense_cleared = final_defense_cleared
 	rs.difficulty = difficulty
 	rs.squad_id = squad_id
 	rs.day_index = day_index
@@ -382,9 +420,14 @@ func duplicate_state():  # -> RunState
 	rs.run_squad_name = run_squad_name
 	rs.time_dict = time_dict.duplicate()
 	rs.foot_dict = foot_dict.duplicate()
+	rs.night_context = night_context
+	rs.night_session_options = night_session_options.duplicate(true)
+	rs.pending_open_terminal = pending_open_terminal
 	rs.run_ended = run_ended
 	rs.run_end_reason = run_end_reason
 	rs.final_choice_id = final_choice_id
+	rs.journal_array = journal_array.duplicate(true)
+	rs.stories_dict = stories_dict.duplicate(true)
 	rs.last_night_losses = last_night_losses.duplicate()
 	rs.last_night_salvage = last_night_salvage
 	return rs

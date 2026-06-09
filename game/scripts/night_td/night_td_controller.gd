@@ -87,10 +87,16 @@ var _session_paused := false             # 由 GameManager / 父场景控制暂�
 var _breach_losses: Dictionary = {}      # 突破被拖走的物资 item_id -> count（夜末汇报）
 var _combat_tower_ids: Array[int] = []   # 进入战斗时的塔 id 快照（排除布防阶段已撤销的塔）
 var _redraw_frame := 0                   # 帧计数器，用于节流 queue_redraw
+var _session_options: Dictionary = {}
+var _session_kind: String = "normal"
+var _phase_title_override: String = ""
+var _no_day_advance := false
+var _screen_camera: Camera2D = null
 
 
 func _ready() -> void:
 	visible = false
+	_ensure_screen_camera()
 	if is_instance_valid(field):
 		field.bind_controller(self)
 		field.cell_clicked.connect(_on_cell_clicked)
@@ -113,6 +119,7 @@ func _process(delta: float) -> void:
 		return
 	if not visible:
 		return
+	_update_screen_camera()
 	match phase:
 		Phase.PLACE:
 			_process_place(delta)
@@ -137,7 +144,12 @@ func start_session(
 	vehicle_hp: float = -1.0,
 	vehicle_hp_max: float = -1.0,
 	backpack_snapshot: Dictionary = {},
+	session_options: Dictionary = {},
 ) -> void:
+	_session_options = session_options.duplicate(true)
+	_session_kind = str(_session_options.get("kind", "normal"))
+	_phase_title_override = str(_session_options.get("phase_title", ""))
+	_no_day_advance = bool(_session_options.get("no_day_advance", false))
 	_allow_placement = allow_placement
 	# 从快照创建本地背包副本（切断对白天状态的引用）
 	_local_backpack = InventoryData.new()
@@ -154,7 +166,8 @@ func start_session(
 	resources_spent = 0
 	difficulty = diff
 	day_index = day
-	wave_plan_path = _resolve_wave_plan_path(day, diff)
+	var wave_override := str(_session_options.get("wave_plan_path", ""))
+	wave_plan_path = wave_override if wave_override != "" else _resolve_wave_plan_path(day, diff)
 	if vehicle_hp_max > 0.0:
 		base_max_hp = vehicle_hp_max
 	if vehicle_hp >= 0.0:
@@ -182,6 +195,7 @@ func start_session(
 	_selected_hacker_id = -1
 	_shepherd_degrade_until = 0.0
 	_combat_time = 0.0
+	_activate_screen_camera()
 	_flow_dirty = true
 	_flow_rebuild_cooldown = 0.0
 	_display_influence_dirty = true
@@ -208,7 +222,7 @@ func start_session(
 		_refresh_resource_hud()
 		if phase == Phase.PLACE:
 			hud.set_place_mode(true)
-			hud.set_phase_text("夜晚塔防 · 布防阶段")
+			hud.set_phase_text(_session_phase_title("布防阶段"))
 			hud.set_placement_timer(placement_remaining)
 			if _local_backpack != null:
 				hud.set_hint(
@@ -223,10 +237,16 @@ func start_session(
 		else:
 			hud.set_place_mode(false)
 			hud.set_combat_mode()
-			hud.set_phase_text("夜晚塔防 · 接敌中")
+			hud.set_phase_text(_session_phase_title("接敌中"))
 			hud.set_hint("没有进入布防模式，敌人将直接来袭。")
 		hud.clear_log()
 	_update_hud_tools()
+
+
+func _session_phase_title(suffix: String) -> String:
+	if _phase_title_override != "":
+		return "%s · %s" % [_phase_title_override, suffix]
+	return "夜晚塔防 · %s" % suffix
 
 
 func _compute_deploy_budget() -> int:
@@ -245,6 +265,7 @@ func _update_hud_tools() -> void:
 
 
 func hide_session() -> void:
+	_deactivate_screen_camera()
 	phase = Phase.PLACE
 	show_route_overlay = false
 	show_overlay = false
@@ -258,6 +279,39 @@ func hide_session() -> void:
 	_display_influence_dirty = true
 	if is_instance_valid(hud):
 		hud.hide_session_ui()
+
+
+func _ensure_screen_camera() -> void:
+	if is_instance_valid(_screen_camera):
+		return
+	_screen_camera = Camera2D.new()
+	_screen_camera.name = "NightTdScreenCamera"
+	_screen_camera.enabled = false
+	_screen_camera.zoom = Vector2.ONE
+	add_child(_screen_camera)
+	_update_screen_camera()
+
+
+func _activate_screen_camera() -> void:
+	_ensure_screen_camera()
+	_update_screen_camera()
+	_screen_camera.enabled = true
+	_screen_camera.make_current()
+
+
+func _deactivate_screen_camera() -> void:
+	if is_instance_valid(_screen_camera):
+		_screen_camera.enabled = false
+
+
+func _update_screen_camera() -> void:
+	if not is_instance_valid(_screen_camera):
+		return
+	var view_size := get_viewport_rect().size
+	if view_size == Vector2.ZERO:
+		view_size = Vector2(1280.0, 720.0)
+	_screen_camera.zoom = Vector2.ONE
+	_screen_camera.global_position = global_position + view_size * 0.5
 
 
 func _process_place(delta: float) -> void:
@@ -290,6 +344,8 @@ func _process_combat(delta: float) -> void:
 			_spawn_timer = spawn_interval_sec
 	_update_energy(delta)
 	_update_commander(delta)
+	_update_enemy_specials(delta)
+	_update_enemy_auras(delta)
 	_update_hackers(delta)
 	_update_enemies(delta)
 	_update_towers(delta)
@@ -331,14 +387,21 @@ func _spawn_from_spec(spec: Dictionary) -> void:
 	var route_id := str(spec.get("route_id", ""))
 	var spawn_point := str(spec.get("spawn_point", ""))
 	var spawn_side := str(spec.get("spawn_side", ""))
-	# 出生点：按 spawn_side 限制方向（集中威胁到 1-2 个正面），否则四面边缘随机
-	var spawn_cell := _resolve_spawn_cell(route_id, spawn_point, spawn_side)
-	var pos: Vector2 = _offgrid_spawn_pos(spawn_cell)
+	var spawn_cell := Vector2i.ZERO
+	var pos: Vector2
+	if spec.has("world_pos"):
+		pos = spec["world_pos"] as Vector2
+		spawn_cell = field.world_to_cell(pos)
+	else:
+		# 出生点：按 spawn_side 限制方向（集中威胁到 1-2 个正面），否则四面边缘随机
+		spawn_cell = _resolve_spawn_cell(route_id, spawn_point, spawn_side)
+		pos = _offgrid_spawn_pos(spawn_cell)
 	var eid := _next_enemy_id
 	_next_enemy_id += 1
 	_enemies.append({
 		"eid": eid,
 		"type": type_id,
+		"name": str(def.get("name", type_id)),
 		"pos": pos,
 		"hp": float(def.get("hp", 20)),
 		"max_hp": float(def.get("hp", 20)),
@@ -351,15 +414,28 @@ func _spawn_from_spec(spec: Dictionary) -> void:
 		"hacked_by": -1,
 		"is_shepherd": bool(def.get("is_shepherd", false)),
 		"hack_resist": float(def.get("hack_resist", 1.0)),
+		"hack_immune": bool(def.get("hack_immune", false)),
+		"effect_immune": bool(def.get("effect_immune", false)),
+		"breach_damage_factor": float(def.get("breach_damage_factor", -1.0)),
+		"summon_enemy": str(def.get("summon_enemy", "")),
+		"summon_interval_sec": float(def.get("summon_interval_sec", 0.0)),
+		"summon_timer": float(def.get("summon_interval_sec", 0.0)),
+		"max_summoned_alive": int(def.get("max_summoned_alive", 0)),
+		"summoned_by": int(spec.get("summoned_by", -1)),
+		"heal_radius": float(def.get("heal_radius", 0.0)),
+		"heal_per_sec": float(def.get("heal_per_sec", 0.0)),
 	})
 	_enemies_spawned += 1
 	if is_instance_valid(hud):
 		var route_hint := (" · 路线 %s" % route_id) if route_id != "" else ""
-		hud.append_log("敌袭：%s 自 %s 出现%s" % [
-			def.get("name", type_id),
-			NightTdWavePlan.cell_label(spawn_cell),
-			route_hint,
-		])
+		if spec.has("world_pos"):
+			hud.append_log("增援：%s 被召入战场" % def.get("name", type_id))
+		else:
+			hud.append_log("敌袭：%s 自 %s 出现%s" % [
+				def.get("name", type_id),
+				NightTdWavePlan.cell_label(spawn_cell),
+				route_hint,
+			])
 
 
 func _resolve_spawn_cell(_route_id: String, _spawn_point: String, spawn_side: String = "") -> Vector2i:
@@ -402,6 +478,94 @@ func _offgrid_spawn_pos(edge_cell: Vector2i) -> Vector2:
 	return field.cell_to_world(edge_cell) + out
 
 
+func _update_enemy_specials(delta: float) -> void:
+	var summon_specs: Array[Dictionary] = []
+	for enemy in _enemies:
+		if str(enemy.get("faction", "enemy")) != "enemy" or float(enemy.get("hp", 0.0)) <= 0.0:
+			continue
+		var summon_type := str(enemy.get("summon_enemy", ""))
+		var interval := float(enemy.get("summon_interval_sec", 0.0))
+		if summon_type == "" or interval <= 0.0:
+			continue
+		var max_alive := int(enemy.get("max_summoned_alive", 0))
+		if max_alive > 0 and _count_summons_alive(int(enemy.get("eid", -1))) >= max_alive:
+			continue
+		var timer := maxf(float(enemy.get("summon_timer", interval)) - delta, 0.0)
+		enemy["summon_timer"] = timer
+		if timer > 0.0:
+			continue
+		enemy["summon_timer"] = interval
+		var base_pos: Vector2 = enemy["pos"]
+		var offset := Vector2.RIGHT.rotated(randf_range(0.0, TAU)) * randf_range(24.0, 52.0)
+		summon_specs.append({
+			"enemy": summon_type,
+			"world_pos": base_pos + offset,
+			"summoned_by": int(enemy.get("eid", -1)),
+			"move_speed": -1.0,
+		})
+	for spec in summon_specs:
+		_spawn_from_spec(spec)
+
+
+func _count_summons_alive(parent_eid: int) -> int:
+	var count := 0
+	for enemy in _enemies:
+		if int(enemy.get("summoned_by", -1)) == parent_eid and str(enemy.get("faction", "enemy")) == "enemy" and float(enemy.get("hp", 0.0)) > 0.0:
+			count += 1
+	return count
+
+
+func _update_enemy_auras(delta: float) -> void:
+	for healer in _enemies:
+		if str(healer.get("faction", "enemy")) != "enemy" or float(healer.get("hp", 0.0)) <= 0.0:
+			continue
+		var radius := float(healer.get("heal_radius", 0.0))
+		var heal_per_sec := float(healer.get("heal_per_sec", 0.0))
+		if radius <= 0.0 or heal_per_sec <= 0.0:
+			continue
+		var center: Vector2 = healer["pos"]
+		var healer_eid := int(healer.get("eid", -1))
+		for target in _enemies:
+			if int(target.get("eid", -2)) == healer_eid:
+				continue
+			if str(target.get("faction", "enemy")) != "enemy" or float(target.get("hp", 0.0)) <= 0.0:
+				continue
+			if (target["pos"] as Vector2).distance_to(center) > radius:
+				continue
+			var max_hp := maxf(float(target.get("max_hp", 1.0)), 1.0)
+			target["hp"] = minf(float(target.get("hp", max_hp)) + heal_per_sec * delta, max_hp)
+
+
+func _slow_factor_at(pos: Vector2, enemy: Dictionary) -> float:
+	if bool(enemy.get("effect_immune", false)):
+		return 1.0
+	var slow := 1.0
+	for tower in _towers:
+		if tower.get("removed", false):
+			continue
+		var tdef: Dictionary = NightTdDefs.get_tower_def(str(tower["type"]))
+		if not bool(tdef.get("applies_slow", false)):
+			continue
+		var range_px := float(tdef.get("range", 0.0))
+		if range_px <= 0.0 or (tower["world_pos"] as Vector2).distance_to(pos) > range_px:
+			continue
+		var scale := float(tower.get("power_scale", 1.0))
+		if scale <= 0.05:
+			continue
+		var factor := clampf(float(tdef.get("slow_factor", 1.0)), 0.05, 1.0)
+		var curve: Dictionary = tdef.get("power_curve", {})
+		var extra := maxf(scale - 1.0, 0.0) * float(curve.get("slow_per_power", 0.0))
+		slow = minf(slow, clampf(factor - extra, 0.05, 1.0))
+	return slow
+
+
+func _breach_damage_for(enemy: Dictionary) -> float:
+	var override := float(enemy.get("breach_damage_factor", -1.0))
+	if override >= 0.0:
+		return base_max_hp * override
+	return float(enemy["base_damage"]) * BASE_DAMAGE_FACTOR
+
+
 
 func _update_enemies(delta: float) -> void:
 	var base_pos: Vector2 = field.get_vehicle_center_world()
@@ -421,7 +585,7 @@ func _update_enemies(delta: float) -> void:
 			if float(enemy.get("hp", 1.0)) <= 0.0:
 				to_remove.append(i)
 			continue
-		var slow: float = 1.0
+		var slow: float = _slow_factor_at(pos, enemy)
 		for tower in _towers:
 			if tower.get("removed", false):
 				continue
@@ -467,7 +631,7 @@ func _update_enemies(delta: float) -> void:
 			var loss := maxi(int(round(float(enemy["base_damage"]) * 0.5)), 1)
 			backpack_remaining = maxi(backpack_remaining - loss, 0)
 			_steal_resources(enemy)
-			base_hp = maxf(base_hp - float(enemy["base_damage"]) * BASE_DAMAGE_FACTOR, 0.0)
+			base_hp = maxf(base_hp - _breach_damage_for(enemy), 0.0)
 			_enemies_reached += 1
 			to_remove.append(i)
 			_on_enemy_breached(enemy, pos)
@@ -735,7 +899,7 @@ func _update_hackers(delta: float) -> void:
 			continue
 		var enemy := _enemy_by_eid(target_eid)
 		# 目标已死/越界/已策反/超出射程 → 取消引导，进度清零。
-		if enemy.is_empty() or str(enemy.get("faction", "enemy")) != "enemy":
+		if enemy.is_empty() or str(enemy.get("faction", "enemy")) != "enemy" or bool(enemy.get("hack_immune", false)):
 			tower["target_eid"] = -1
 			tower["hack_progress"] = 0.0
 			continue
@@ -813,6 +977,12 @@ func _on_cell_combat_clicked(cell: Vector2i) -> void:
 	if _selected_hacker_id >= 0:
 		var enemy := _enemy_at_cell(cell)
 		if not enemy.is_empty() and str(enemy.get("faction", "enemy")) == "enemy":
+			if bool(enemy.get("hack_immune", false)):
+				if is_instance_valid(hud):
+					var immune_name := str(NightTdDefs.get_enemy_def(str(enemy["type"])).get("name", enemy["type"]))
+					hud.append_log("%s 拒绝入侵：目标具备黑入免疫。" % immune_name, Color("#e87840"))
+				_selected_hacker_id = -1
+				return
 			var hacker := _tower_by_id(_selected_hacker_id)
 			if not hacker.is_empty():
 				hacker["target_eid"] = int(enemy["eid"])
@@ -1237,7 +1407,7 @@ func _begin_combat() -> void:
 		field.queue_redraw()
 	if is_instance_valid(hud):
 		hud.set_combat_mode()
-		hud.set_phase_text("夜晚塔防 · 接敌中")
+		hud.set_phase_text(_session_phase_title("接敌中"))
 		hud.set_hint("接敌中：敌人头顶箭头为当前前进方向，设施自动开火/阻挡。")
 		var total := _wave_scheduler.total_spawn_events if _wave_scheduler != null else _enemies_spawned + _wave_queue.size()
 		hud.set_combat_status("波次 %d/%d · 场上 %d 敌" % [_enemies_spawned, total, _count_hostiles()])
@@ -1257,7 +1427,7 @@ func _end_combat_vehicle_destroyed() -> void:
 	phase = Phase.RESULT
 	if is_instance_valid(hud):
 		hud.show_result(_compose_result_message(_last_result))
-		hud.set_phase_text("夜晚塔防 · 车辆损毁")
+		hud.set_phase_text(_session_phase_title("车辆损毁"))
 		hud.set_combat_status("车辆 HP 归零")
 
 
@@ -1267,7 +1437,7 @@ func _end_combat() -> void:
 	phase = Phase.RESULT
 	if is_instance_valid(hud):
 		hud.show_result(_compose_result_message(_last_result))
-		hud.set_phase_text("夜晚塔防 · 结算")
+		hud.set_phase_text(_session_phase_title("结算"))
 		hud.set_combat_status("交互结束，请确认结算")
 
 
@@ -1428,6 +1598,8 @@ func _build_result() -> Dictionary:
 	if _local_backpack != null and _local_backpack.has_method("to_dictionary"):
 		final_backpack_dict = _local_backpack.to_dictionary().duplicate()
 	return {
+		"kind": _session_kind,
+		"no_day_advance": _no_day_advance,
 		"outcome": outcome,
 		"message": msg,
 		"inventory_remaining": maxi(_exploration_inventory - inv_loss, 0),

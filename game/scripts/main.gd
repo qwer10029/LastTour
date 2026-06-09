@@ -5,6 +5,7 @@ const CommunicationTerminalScript = preload("res://scripts/ui/communication_term
 const EndingOutcomeOverlayScript = preload("res://scripts/ui/ending_outcome_overlay.gd")
 const DayTopdownRender = preload("res://scripts/day_topdown_render.gd")
 const RunStateClass = preload("res://scripts/run_state.gd")
+const FINAL_TERMINAL_WAVE_PATH := "res://data/night_td/waves/night_wave_final_terminal.json"
 var _building_pick_index: int = 0
 var _foot_local_pos: Vector2 = Vector2.ZERO
 var _foot_move_dir: Vector2 = Vector2.UP
@@ -76,6 +77,7 @@ var _elevator_repair_progress: int = 0
 var _run_ended := false
 var _run_end_reason := ""
 var _final_choice_id := ""
+var _final_defense_cleared := false
 var _run_end_overlay: CanvasLayer
 var _communication_terminal: CanvasLayer
 var _ending_outcome_overlay: CanvasLayer
@@ -511,6 +513,7 @@ func _start_new_run() -> void:
 	_run_ended = false
 	_run_end_reason = ""
 	_final_choice_id = ""
+	_final_defense_cleared = false
 	_run_journal = RunJournal.new()
 	_story_controller.reset_for_new_run()
 	_init_player_loadout()
@@ -646,6 +649,11 @@ func _physics_process(delta: float) -> void:
 		return
 	if _game_paused or _backpack_open:
 		return
+	if is_instance_valid(night_td) and night_td.visible:
+		_sync_view_cameras()
+		_refresh_ui()
+		queue_redraw()
+		return
 	if is_instance_valid(_world_map_overlay) and _world_map_overlay.is_open():
 		_refresh_focus()
 		_sync_world_map_overlay()
@@ -772,6 +780,14 @@ func _setup_world_camera() -> void:
 
 
 func _sync_view_cameras() -> void:
+	if is_instance_valid(night_td) and night_td.visible:
+		if is_instance_valid(_world_camera):
+			_world_camera.enabled = false
+		if is_instance_valid(_player) and is_instance_valid(_player.camera):
+			_player.camera.enabled = false
+		if is_instance_valid(_vehicle) and is_instance_valid(_vehicle.camera):
+			_vehicle.camera.enabled = false
+		return
 	var night_phase := _is_night_phase()
 	if night_phase:
 		if is_instance_valid(_world_camera):
@@ -1437,7 +1453,7 @@ func _repair_with_material(material: String) -> void:
 		_refresh_repair_choice_popup("电梯修复完成", false)
 		_close_repair_choice_popup()
 		if _current_layer >= total_layers:
-			_open_communication_terminal()
+			_request_terminal_access()
 		else:
 			_advance_layer()
 		return
@@ -1454,7 +1470,7 @@ func _attempt_repair_elevator() -> void:
 func _attempt_kunlun_terminal() -> void:
 	if not _can_use_kunlun_control() or not _is_near_kunlun_console():
 		return
-	_open_communication_terminal()
+	_request_terminal_access()
 
 func _on_resource_collected(district_index: int, item_id: String, pickup: Area2D) -> void:
 	var loot_id := str(item_id)
@@ -1927,6 +1943,55 @@ func _begin_final_ceremony() -> void:
 		_run_end_overlay.show_ceremony()
 
 
+func _request_terminal_access() -> void:
+	if _run_ended:
+		return
+	if _final_defense_cleared:
+		_open_communication_terminal()
+		return
+	_start_final_terminal_defense()
+
+
+func _final_terminal_session_options() -> Dictionary:
+	return {
+		"kind": "final_terminal_defense",
+		"wave_plan_path": FINAL_TERMINAL_WAVE_PATH,
+		"phase_title": "顶层终端防线",
+		"no_day_advance": true,
+	}
+
+
+func _start_final_terminal_defense() -> void:
+	_force_return_to_vehicle_for_night()
+	if is_instance_valid(time_system):
+		time_system.pause()
+	if is_instance_valid(evening_notice) and evening_notice.has_method("hide_notice"):
+		evening_notice.hide_notice()
+	var snapshot: Dictionary = {}
+	if is_instance_valid(_backpack) and _backpack.has_method("to_dictionary"):
+		snapshot = _backpack.to_dictionary().duplicate()
+	var options := _final_terminal_session_options()
+	if is_instance_valid(night_defense) and is_instance_valid(night_td):
+		_night_result_applied = false
+		night_defense.start_td_session(
+			_backpack.total_count(),
+			GameManager.difficulty,
+			time_system.day_index if is_instance_valid(time_system) else 1,
+			true,
+			_vehicle_hp,
+			_vehicle_hp_max,
+			snapshot,
+			options
+		)
+		_refresh_ui()
+		return
+	var rs = export_run_state()
+	rs.backpack_dict = snapshot
+	rs.night_context = "final_terminal_defense"
+	rs.night_session_options = options
+	GameManager.request_night_defense(rs, options)
+
+
 func _open_communication_terminal() -> void:
 	if _run_ended:
 		return
@@ -2137,6 +2202,7 @@ func init_from_run_state(rs) -> void:
 	_last_night_salvage = rs.last_night_salvage
 	_run_difficulty_name = rs.run_difficulty_name
 	_run_squad_name = rs.run_squad_name
+	_final_defense_cleared = rs.final_defense_cleared
 	GameManager.difficulty = rs.difficulty
 	GameManager.squad_id = rs.squad_id
 	_apply_run_config_from_manager()
@@ -2152,6 +2218,9 @@ func init_from_run_state(rs) -> void:
 		_restore_time_phase_after_load()
 	_sync_minimap_navigation()
 	_refresh_ui()
+	if rs.pending_open_terminal:
+		rs.pending_open_terminal = false
+		call_deferred("_open_communication_terminal")
 	queue_redraw()
 
 
@@ -2165,6 +2234,7 @@ func export_run_state():
 	rs.total_layers = total_layers
 	rs.run_difficulty_name = _run_difficulty_name
 	rs.run_squad_name = _run_squad_name
+	rs.final_defense_cleared = _final_defense_cleared
 	rs.last_night_losses.clear()
 	for s in _last_night_losses:
 		rs.last_night_losses.append(s)
@@ -2202,6 +2272,7 @@ func capture_save_data() -> Dictionary:
 		"layer": {
 			"current_layer": _current_layer,
 			"elevator_repair_progress": _elevator_repair_progress,
+			"final_defense_cleared": _final_defense_cleared,
 			"run_ended": _run_ended,
 			"run_end_reason": _run_end_reason,
 			"final_choice_id": _final_choice_id,
@@ -2251,6 +2322,7 @@ func _apply_save_data(data: Dictionary) -> void:
 	var layer: Dictionary = data.get("layer", {})
 	_current_layer = int(layer.get("current_layer", 1))
 	_elevator_repair_progress = int(layer.get("elevator_repair_progress", 0))
+	_final_defense_cleared = bool(layer.get("final_defense_cleared", false))
 	_run_ended = bool(layer.get("run_ended", false))
 	_run_end_reason = str(layer.get("run_end_reason", ""))
 	_final_choice_id = str(layer.get("final_choice_id", ""))
@@ -2508,6 +2580,14 @@ func _on_night_td_finished(result: Dictionary) -> void:
 		_apply_night_result(result)
 	_night_result_applied = false
 	if _check_vehicle_destroyed():
+		return
+	var kind := str(result.get("kind", "normal"))
+	if kind == "final_terminal_defense":
+		_final_defense_cleared = true
+		if is_instance_valid(time_system):
+			time_system.pause()
+		_refresh_ui()
+		call_deferred("_open_communication_terminal")
 		return
 	if is_instance_valid(time_system):
 		time_system.finish_night_and_advance_day()
@@ -3772,7 +3852,7 @@ func _advance_layer() -> void:
 	if _run_ended:
 		return
 	if _current_layer >= total_layers:
-		_open_communication_terminal()
+		_request_terminal_access()
 		return
 	_current_layer += 1
 	_mode = TravelMode.DRIVE
