@@ -134,6 +134,95 @@ static func apply_button(button: BaseButton) -> void:
 	button.add_theme_constant_override("outline_size", 1)
 
 
+static func apply_terminal_title(label: Label) -> void:
+	if label == null:
+		return
+	apply_label(label)
+	label.add_theme_font_size_override("font_size", 26)
+	label.add_theme_color_override("font_color", Color("#6eb8ff"))
+
+
+static func apply_terminal_section(label: Label) -> void:
+	if label == null:
+		return
+	label.add_theme_font_size_override("font_size", 12)
+	label.add_theme_color_override("font_color", Color("#5a8aaa"))
+
+
+static func apply_terminal_log_label(label: Label) -> void:
+	if label == null:
+		return
+	apply_label(label)
+	label.add_theme_font_size_override("font_size", 10)
+	label.add_theme_color_override("font_color", Color("#5a7080"))
+
+
+static func apply_terminal_log_rich(label: RichTextLabel) -> void:
+	if label == null:
+		return
+	label.add_theme_font_size_override("normal_font_size", 10)
+	label.add_theme_color_override("default_color", Color("#5a7080"))
+
+
+static func extract_terminal_header(raw: String) -> String:
+	var parts := raw.split("\n", false, 1)
+	if parts.is_empty():
+		return ""
+	var first := str(parts[0]).strip_edges()
+	if first.begins_with("【"):
+		return first
+	return ""
+
+
+static func format_terminal_log(raw: String, skip_bracket_headers: bool = true) -> String:
+	var lines: PackedStringArray = []
+	for line in raw.split("\n"):
+		var trimmed := str(line).strip_edges()
+		if trimmed.is_empty():
+			continue
+		if skip_bracket_headers and trimmed.begins_with("【"):
+			continue
+		lines.append("> %s" % trimmed)
+	return "\n".join(lines)
+
+
+static func apply_sci_fi_terminal_button(button: Button, accent: Color = Color("#5ec8ff")) -> void:
+	if button == null:
+		return
+	apply_button(button)
+	button.focus_mode = Control.FOCUS_NONE
+	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	var normal := StyleBoxFlat.new()
+	normal.bg_color = Color(0.05, 0.09, 0.14, 0.94)
+	normal.border_color = Color(accent.r, accent.g, accent.b, 0.45)
+	normal.border_width_left = 2
+	normal.border_width_top = 1
+	normal.border_width_right = 2
+	normal.border_width_bottom = 2
+	normal.corner_radius_top_left = 2
+	normal.corner_radius_top_right = 2
+	normal.corner_radius_bottom_left = 6
+	normal.corner_radius_bottom_right = 6
+	normal.content_margin_left = 18
+	normal.content_margin_right = 18
+	normal.content_margin_top = 10
+	normal.content_margin_bottom = 10
+	normal.shadow_color = Color(accent.r, accent.g, accent.b, 0.18)
+	normal.shadow_size = 4
+	button.add_theme_stylebox_override("normal", normal)
+	var hover := normal.duplicate() as StyleBoxFlat
+	hover.bg_color = Color(0.08, 0.14, 0.22, 0.98)
+	hover.border_color = Color(accent.r, accent.g, accent.b, 0.95)
+	hover.shadow_size = 6
+	hover.shadow_color = Color(accent.r, accent.g, accent.b, 0.28)
+	button.add_theme_stylebox_override("hover", hover)
+	button.add_theme_stylebox_override("focus", normal)
+	var pressed := hover.duplicate() as StyleBoxFlat
+	pressed.bg_color = Color(0.04, 0.08, 0.12, 1.0)
+	pressed.border_color = Color(accent.r, accent.g, accent.b, 0.72)
+	button.add_theme_stylebox_override("pressed", pressed)
+
+
 static func apply_choice_button(button: Button, accent: Color = Color("#8ec8e8")) -> void:
 	if button == null:
 		return

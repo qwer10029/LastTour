@@ -186,7 +186,8 @@ func ensure_story_districts(map: WorldMapData) -> void:
 			continue
 		var candidates: Array[int] = []
 		for district_index in map.district_indices:
-			if bool(map.get_cell(district_index).get("has_elevator", false)):
+			var pick_cell := map.get_cell(district_index)
+			if bool(pick_cell.get("has_elevator", false)) or bool(pick_cell.get("has_kunlun_control", false)):
 				continue
 			candidates.append(district_index)
 		if candidates.is_empty():

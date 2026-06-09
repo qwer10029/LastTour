@@ -68,6 +68,7 @@ static func _load_data() -> void:
 		"garage": ["parts", "scrap", "wood", "fuel"],
 		"archive": ["scrap", "supplies", "fuel"],
 		"elevator": ["parts", "scrap"],
+		"kunlun_control": ["parts", "scrap", "supplies"],
 		"hub": ["supplies", "fuel", "scrap"],
 		"default": ["wood", "parts", "supplies", "fuel"],
 	}

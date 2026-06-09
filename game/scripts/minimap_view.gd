@@ -306,10 +306,17 @@ func _draw_map_content(map_rect: Rect2, origin: Vector2, span: Vector2) -> void:
 			var building_rect := cell_rect.grow(-cell_size_mm.x * 0.22)
 			var building_bright := explored or not war_fog_enabled
 			draw_rect(building_rect, Color("#9e8564", 0.9) if building_bright else Color("#2a2f36", 0.5), true)
-			if bool(cell["has_elevator"]):
+			if bool(cell.get("has_elevator", false)):
 				draw_rect(
 					building_rect.grow(-cell_size_mm.x * 0.18),
 					Color("#6ed08b", 0.9) if building_bright else Color("#1a2a22", 0.45),
+					false,
+					1.5,
+				)
+			elif bool(cell.get("has_kunlun_control", false)):
+				draw_rect(
+					building_rect.grow(-cell_size_mm.x * 0.18),
+					Color("#6eb8ff", 0.9) if building_bright else Color("#1a2838", 0.45),
 					false,
 					1.5,
 				)

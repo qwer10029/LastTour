@@ -1,13 +1,16 @@
 extends CanvasLayer
 
+const SciFiFramePanelScript = preload("res://scripts/ui/sci_fi_frame_panel.gd")
+
 signal closed
 
 enum Mode { CREDITS, FAKE_SUCCESS, MESSAGE_ONLY_EPILOGUE }
 
 var _mode: int = Mode.CREDITS
 var _dim: ColorRect
-var _panel: PanelContainer
+var _frame: SciFiFramePanel
 var _title: Label
+var _section_label: Label
 var _body: RichTextLabel
 var _credits_scroll: ScrollContainer
 var _primary_btn: Button
@@ -39,20 +42,21 @@ func _build_ui() -> void:
 	_dim.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(_dim)
 
-	_panel = PanelContainer.new()
-	_panel.set_anchors_preset(Control.PRESET_CENTER)
-	_panel.offset_left = -380.0
-	_panel.offset_top = -280.0
-	_panel.offset_right = 380.0
-	_panel.offset_bottom = 280.0
-	add_child(_panel)
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(center)
+
+	_frame = SciFiFramePanelScript.new()
+	_frame.custom_minimum_size = Vector2(760, 520)
+	center.add_child(_frame)
 
 	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 28)
-	margin.add_theme_constant_override("margin_top", 24)
-	margin.add_theme_constant_override("margin_right", 28)
-	margin.add_theme_constant_override("margin_bottom", 24)
-	_panel.add_child(margin)
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", 32)
+	margin.add_theme_constant_override("margin_top", 28)
+	margin.add_theme_constant_override("margin_right", 32)
+	margin.add_theme_constant_override("margin_bottom", 28)
+	_frame.add_child(margin)
 
 	var root := VBoxContainer.new()
 	root.add_theme_constant_override("separation", 14)
@@ -61,7 +65,14 @@ func _build_ui() -> void:
 	_title = Label.new()
 	_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	HudTheme.apply_terminal_title(_title)
 	root.add_child(_title)
+
+	_section_label = Label.new()
+	_section_label.text = "◈ 系统日志"
+	_section_label.visible = false
+	HudTheme.apply_terminal_section(_section_label)
+	root.add_child(_section_label)
 
 	_body = RichTextLabel.new()
 	_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -70,6 +81,7 @@ func _build_ui() -> void:
 	_body.scroll_active = false
 	_body.fit_content = true
 	_body.visible = false
+	HudTheme.apply_terminal_log_rich(_body)
 	root.add_child(_body)
 
 	_credits_scroll = ScrollContainer.new()
@@ -86,11 +98,13 @@ func _build_ui() -> void:
 	credits_body.custom_minimum_size = Vector2(660, 480)
 	credits_body.scroll_active = false
 	credits_body.fit_content = true
+	HudTheme.apply_terminal_log_rich(credits_body)
 	_credits_scroll.add_child(credits_body)
 
 	_primary_btn = Button.new()
-	_primary_btn.custom_minimum_size = Vector2(280, 44)
+	_primary_btn.custom_minimum_size = Vector2(300, 46)
 	_primary_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	HudTheme.apply_sci_fi_terminal_button(_primary_btn)
 	_primary_btn.pressed.connect(_on_primary_pressed)
 	root.add_child(_primary_btn)
 
@@ -115,6 +129,8 @@ func hide_overlay() -> void:
 func _enter_credits() -> void:
 	_mode = Mode.CREDITS
 	_title.text = "克隆循环 · 终止"
+	_section_label.text = "◈ 制作名单"
+	_section_label.visible = true
 	_body.visible = false
 	_credits_scroll.visible = true
 	var credits_body := _credits_scroll.get_node_or_null("CreditsBody") as RichTextLabel
@@ -138,27 +154,30 @@ func _reset_credits_scroll() -> void:
 func _enter_fake_success() -> void:
 	_mode = Mode.FAKE_SUCCESS
 	_title.text = "勘探成功 · 伪造"
+	_section_label.visible = true
 	_credits_scroll.visible = false
 	_body.visible = true
-	_body.text = """昆仑中继收到一条伪造的「勘探成功」信号。
-
+	_body.text = HudTheme.format_terminal_log(
+		"""昆仑中继收到一条伪造的「勘探成功」信号。
 程序不会追问真伪。
 它只是需要一个理由停下来。
-
 循环以讽刺的方式停摆了。
 也许这就是人类能给出的最后答案。"""
+	)
 	_primary_btn.text = "返回主菜单"
 
 
 func _enter_message_only_epilogue() -> void:
 	_mode = Mode.MESSAGE_ONLY_EPILOGUE
 	_title.text = "只留言，不发停机"
+	_section_label.visible = true
 	_credits_scroll.visible = false
 	_body.visible = true
-	_body.text = """你没有发送终止信号。
-
+	_body.text = HudTheme.format_terminal_log(
+		"""你没有发送终止信号。
 本局勘探日记已上传至昆仑终端。
 程序将把新的克隆体送上来——循环继续。"""
+	)
 	_primary_btn.text = "返回主菜单"
 
 

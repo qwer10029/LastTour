@@ -1,8 +1,11 @@
-[gd_scene load_steps=2 format=3 uid="uid://difficulty_select_scene"]
+[gd_scene load_steps=5 format=3 uid="uid://difficulty_select_scene"]
 
 [ext_resource type="Script" path="res://scripts/menu/difficulty_select.gd" id="1_difficulty"]
+[ext_resource type="Texture2D" path="res://assets/menu/difficulty/card_easy.png" id="3_easy"]
+[ext_resource type="Texture2D" path="res://assets/menu/difficulty/card_normal.png" id="4_normal"]
+[ext_resource type="Texture2D" path="res://assets/menu/difficulty/card_hard.png" id="5_hard"]
 
-[node name="DifficultySelect" type="Control"]
+[node name="DifficultyMenu" type="Control"]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -11,73 +14,189 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_difficulty")
 
-[node name="Background" type="ColorRect" parent="."]
+[node name="BackgroundLayer" type="Control" parent="."]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-color = Color(0.0431373, 0.0627451, 0.0941176, 1)
+mouse_filter = 2
 
-[node name="CenterContainer" type="CenterContainer" parent="."]
+[node name="BackgroundTexture" type="TextureRect" parent="BackgroundLayer"]
+unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+modulate = Color(1.18, 1.18, 1.14, 1)
+expand_mode = 1
+stretch_mode = 6
 
-[node name="VBox" type="VBoxContainer" parent="CenterContainer"]
-layout_mode = 2
-theme_override_constants/separation = 16
+[node name="DarkOverlay" type="ColorRect" parent="BackgroundLayer"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.16)
+
+[node name="TitleLayer" type="VBoxContainer" parent="."]
+z_index = 2
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -300.0
+offset_top = 48.0
+offset_right = 300.0
+offset_bottom = 104.0
+grow_horizontal = 2
 alignment = 1
 
-[node name="TitleLabel" type="Label" parent="CenterContainer/VBox"]
+[node name="TitleLabel" type="Label" parent="TitleLayer"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "选择难度"
 horizontal_alignment = 1
 
-[node name="HintLabel" type="Label" parent="CenterContainer/VBox"]
+[node name="CardsCenter" type="CenterContainer" parent="."]
+z_index = 1
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = 100.0
+offset_bottom = -96.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="CardsContainer" type="HBoxContainer" parent="CardsCenter"]
+layout_mode = 2
+theme_override_constants/separation = 40
+alignment = 1
+
+[node name="CardEasySlot" type="Control" parent="CardsCenter/CardsContainer"]
+custom_minimum_size = Vector2(300, 400)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="GlowEasy" type="Panel" parent="CardsCenter/CardsContainer/CardEasySlot"]
+unique_name_in_owner = true
+z_index = -1
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -12.0
+offset_top = -12.0
+offset_right = 12.0
+offset_bottom = 12.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="CardEasy" type="TextureButton" parent="CardsCenter/CardsContainer/CardEasySlot"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+focus_mode = 0
+mouse_default_cursor_shape = 2
+texture_normal = ExtResource("3_easy")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="CardNormalSlot" type="Control" parent="CardsCenter/CardsContainer"]
+custom_minimum_size = Vector2(300, 400)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="GlowNormal" type="Panel" parent="CardsCenter/CardsContainer/CardNormalSlot"]
+unique_name_in_owner = true
+z_index = -1
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -12.0
+offset_top = -12.0
+offset_right = 12.0
+offset_bottom = 12.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="CardNormal" type="TextureButton" parent="CardsCenter/CardsContainer/CardNormalSlot"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+focus_mode = 0
+mouse_default_cursor_shape = 2
+texture_normal = ExtResource("4_normal")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="CardHardSlot" type="Control" parent="CardsCenter/CardsContainer"]
+custom_minimum_size = Vector2(300, 400)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="GlowHard" type="Panel" parent="CardsCenter/CardsContainer/CardHardSlot"]
+unique_name_in_owner = true
+z_index = -1
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -12.0
+offset_top = -12.0
+offset_right = 12.0
+offset_bottom = 12.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="CardHard" type="TextureButton" parent="CardsCenter/CardsContainer/CardHardSlot"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+focus_mode = 0
+mouse_default_cursor_shape = 2
+texture_normal = ExtResource("5_hard")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="BackButtonLayer" type="CenterContainer" parent="."]
+z_index = 2
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -120.0
+offset_top = -72.0
+offset_right = 120.0
+offset_bottom = -24.0
+grow_horizontal = 2
+grow_vertical = 0
+
+[node name="BackButton" type="Button" parent="BackButtonLayer"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "难度越高，燃料越紧张，电梯修复消耗越多"
-horizontal_alignment = 1
-autowrap_mode = 2
-
-[node name="Spacer" type="Control" parent="CenterContainer/VBox"]
-custom_minimum_size = Vector2(0, 12)
-layout_mode = 2
-
-[node name="EasyButton" type="Button" parent="CenterContainer/VBox"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(420, 64)
-layout_mode = 2
-text = "  ☀   简单
-燃料更充裕，电梯修复更轻松"
-
-[node name="NormalButton" type="Button" parent="CenterContainer/VBox"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(420, 64)
-layout_mode = 2
-text = "  ◆   普通
-标准探索体验"
-
-[node name="HardButton" type="Button" parent="CenterContainer/VBox"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(420, 64)
-layout_mode = 2
-text = "  ☠   困难
-资源稀缺，修复成本更高"
-
-[node name="SpacerBottom" type="Control" parent="CenterContainer/VBox"]
-custom_minimum_size = Vector2(0, 20)
-layout_mode = 2
-
-[node name="BackButton" type="Button" parent="CenterContainer/VBox"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(200, 44)
-layout_mode = 2
-size_flags_horizontal = 4
-text = "  ←   返回主菜单"
+text = "← 返回主菜单"

@@ -1,7 +1,9 @@
 extends Control
 
+const MAIN_MENU_BACKGROUND_PATH := "res://assets/menu/main_menu_bg.png"
+
+@onready var background_texture: TextureRect = $Background
 @onready var title_label: Label = %TitleLabel
-@onready var subtitle_label: Label = %SubtitleLabel
 @onready var new_game_button: Button = %NewGameButton
 @onready var continue_button: Button = %ContinueButton
 @onready var achievements_button: Button = %AchievementsButton
@@ -15,10 +17,10 @@ var _msg_status_label: Label
 
 
 func _ready() -> void:
-	MenuStyles.style_title(title_label, 48)
-	MenuStyles.style_subtitle(subtitle_label)
-	for button in [new_game_button, continue_button, achievements_button, settings_button]:
-		MenuStyles.style_menu_button(button)
+	_ensure_background_texture()
+	if is_instance_valid(title_label):
+		title_label.visible = false
+	_apply_menu_button_styles()
 
 	new_game_button.pressed.connect(_on_new_game_pressed)
 	continue_button.pressed.connect(_on_continue_pressed)
@@ -28,11 +30,28 @@ func _ready() -> void:
 	_refresh_continue_button()
 	achievements_button.text = "  📝   写下留言"
 	achievements_button.disabled = false
-	settings_button.disabled = true
-	if is_instance_valid(subtitle_label):
-		subtitle_label.text = "昆仑计划 · 地表勘探\n顶层通信终端或主菜单写留言时，可阅读前代留言"
+	settings_button.disabled = false
 
 	_build_message_wall_popup()
+
+
+func _ensure_background_texture() -> void:
+	if not is_instance_valid(background_texture):
+		return
+	var tex := _load_texture(MAIN_MENU_BACKGROUND_PATH)
+	if tex != null:
+		background_texture.texture = tex
+
+
+func _load_texture(path: String) -> Texture2D:
+	return MenuStyles.load_menu_texture(path)
+
+
+func _apply_menu_button_styles() -> void:
+	MenuStyles.style_new_game_button(new_game_button)
+	MenuStyles.style_message_button(achievements_button)
+	MenuStyles.style_settings_button(settings_button)
+	_refresh_continue_button()
 
 
 func _build_message_wall_popup() -> void:
@@ -171,7 +190,9 @@ func _on_message_wall_pressed() -> void:
 func _refresh_continue_button() -> void:
 	if not is_instance_valid(continue_button):
 		return
-	if SaveManager.has_save():
+	var has_save := SaveManager.has_save()
+	MenuStyles.style_continue_button(continue_button, has_save)
+	if has_save:
 		var summary := SaveManager.get_save_summary()
 		continue_button.disabled = false
 		continue_button.text = "  ▶   继续游戏（第 %d 天 · %s · %s）" % [

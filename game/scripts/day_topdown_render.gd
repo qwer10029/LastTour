@@ -318,7 +318,7 @@ static func reload_interior_textures() -> void:
 
 static func _interior_floor_texture(building_type: String) -> Texture2D:
 	_ensure_interior_textures()
-	if building_type == "elevator" and _tex_interior_floor_elevator != null:
+	if building_type in ["elevator", "kunlun_control"] and _tex_interior_floor_elevator != null:
 		return _tex_interior_floor_elevator
 	return _tex_interior_floor
 
@@ -388,7 +388,7 @@ static func draw_interior_floor_grid(
 	building_type: String = "",
 ) -> void:
 	draw_tiled_interior_floor(canvas, panel_rect, building_type)
-	if building_type == "elevator":
+	if building_type in ["elevator", "kunlun_control"]:
 		return
 	var tile_w := panel_rect.size.x / float(maxi(cols, 1))
 	var tile_h := panel_rect.size.y / float(maxi(rows, 1))
@@ -1136,6 +1136,9 @@ static func _building_colors(building_type: String) -> Dictionary:
 		"elevator":
 			wall_fill = Color("#6a5a42")
 			roof_fill = Color("#4a3c2c")
+		"kunlun_control":
+			wall_fill = Color("#4a5a6a")
+			roof_fill = Color("#2e3a48")
 		"archive":
 			wall_fill = Color("#4a4560")
 			roof_fill = Color("#353045")
@@ -1347,6 +1350,8 @@ static func draw_building_icon(canvas: CanvasItem, center: Vector2, building_typ
 	match building_type:
 		"elevator":
 			door = Color("#f0c168")
+		"kunlun_control":
+			door = Color("#6eb8ff")
 		"archive":
 			door = Color("#b88cff")
 		"warehouse":

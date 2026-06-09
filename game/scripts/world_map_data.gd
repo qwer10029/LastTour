@@ -35,7 +35,14 @@ var district_indices: Array[int] = []
 var hub_indices: Array[int] = []
 var start_node_index: int = -1
 
-func generate(new_columns: int, new_rows: int, new_cell_size: Vector2i, rng_seed: int = 0) -> void:
+func generate(
+	new_columns: int,
+	new_rows: int,
+	new_cell_size: Vector2i,
+	rng_seed: int = 0,
+	is_final_layer: bool = false,
+	debug_near_spawn: bool = false,
+) -> void:
 	columns = new_columns
 	rows = new_rows
 	cell_size = new_cell_size
@@ -69,8 +76,9 @@ func generate(new_columns: int, new_rows: int, new_cell_size: Vector2i, rng_seed
 		if index in hub_indices:
 			continue
 		cells[index]["kind"] = "district"
-		cells[index]["building_type"] = _pick_building_type(rng)
-		cells[index]["has_elevator"] = cells[index]["building_type"] == "elevator"
+		cells[index]["building_type"] = _pick_building_type(rng, is_final_layer)
+		cells[index]["has_elevator"] = not is_final_layer and cells[index]["building_type"] == "elevator"
+		cells[index]["has_kunlun_control"] = is_final_layer and cells[index]["building_type"] == "kunlun_control"
 		var building_type := str(cells[index]["building_type"])
 		cells[index]["seed"] = rng.randi()
 		var foot_layout := _build_foot_layout(rng, cell_size)
@@ -89,7 +97,10 @@ func generate(new_columns: int, new_rows: int, new_cell_size: Vector2i, rng_seed
 		)
 		district_indices.append(index)
 
-	_ensure_elevator_district()
+	if is_final_layer:
+		_ensure_kunlun_control_district()
+	else:
+		_ensure_elevator_district()
 
 	if district_indices.is_empty():
 		return
@@ -99,6 +110,8 @@ func generate(new_columns: int, new_rows: int, new_cell_size: Vector2i, rng_seed
 	_setup_district_roadside(rng)
 	_finalize_cell_kinds()
 	_mark_start_node()
+	if debug_near_spawn:
+		_place_special_building_near_start(is_final_layer)
 	_place_terrain_scatter(rng)
 	_place_road_blockages(rng)
 
@@ -402,6 +415,8 @@ func building_label(index: int) -> String:
 			return "仓库"
 		"elevator":
 			return "电梯楼"
+		"kunlun_control":
+			return "昆仑控制中心"
 		"garage":
 			return "车库"
 		"barracks":
@@ -444,6 +459,11 @@ func district_has_elevator(index: int) -> bool:
 		return false
 	return bool(cells[index]["has_elevator"])
 
+func district_has_kunlun_control(index: int) -> bool:
+	if not is_valid_index(index):
+		return false
+	return bool(cells[index].get("has_kunlun_control", false))
+
 func sector_has_elevator(index: int) -> bool:
 	return district_has_elevator(index)
 
@@ -454,6 +474,7 @@ func _create_empty_cell(coord: Vector2i) -> Dictionary:
 		"explored": false,
 		"building_type": "",
 		"has_elevator": false,
+		"has_kunlun_control": false,
 		"resource_total": 0,
 		"resource_remaining": 0,
 		"resource_spawns": [],
@@ -629,8 +650,12 @@ func _opposite_direction(direction: String) -> String:
 		_:
 			return ""
 
-func _pick_building_type(rng: RandomNumberGenerator) -> String:
-	var options := ["warehouse", "elevator", "garage", "archive", "warehouse", "market"]
+func _pick_building_type(rng: RandomNumberGenerator, is_final_layer: bool = false) -> String:
+	var options: Array[String]
+	if is_final_layer:
+		options = ["warehouse", "garage", "archive", "warehouse", "market"]
+	else:
+		options = ["warehouse", "elevator", "garage", "archive", "warehouse", "market"]
 	return options[rng.randi_range(0, options.size() - 1)]
 
 func _build_foot_layout(rng: RandomNumberGenerator, _district_size: Vector2i) -> Dictionary:
@@ -1289,14 +1314,98 @@ func _passable_graph_fully_connected() -> bool:
 
 
 func _ensure_elevator_district() -> void:
+	_ensure_special_building_district(false)
+
+
+func _ensure_kunlun_control_district() -> void:
+	_ensure_special_building_district(true)
+
+
+func _ensure_special_building_district(is_final_layer: bool) -> void:
 	if district_indices.is_empty():
 		return
+	var target_index := -1
 	for district_index in district_indices:
-		if bool(cells[district_index]["has_elevator"]):
+		if is_final_layer and bool(cells[district_index].get("has_kunlun_control", false)):
+			target_index = district_index
+			break
+		if not is_final_layer and bool(cells[district_index]["has_elevator"]):
+			target_index = district_index
+			break
+	if target_index < 0:
+		target_index = district_indices[0]
+	_assign_special_building(target_index, is_final_layer)
+
+
+func _assign_special_building(district_index: int, is_final_layer: bool) -> void:
+	if not is_valid_index(district_index) or not is_district(district_index):
+		return
+	for index in district_indices:
+		if index == district_index:
+			continue
+		_clear_special_building_from(index)
+	if is_final_layer:
+		cells[district_index]["building_type"] = "kunlun_control"
+		cells[district_index]["has_kunlun_control"] = true
+		cells[district_index]["has_elevator"] = false
+	else:
+		cells[district_index]["building_type"] = "elevator"
+		cells[district_index]["has_elevator"] = true
+		cells[district_index]["has_kunlun_control"] = false
+
+
+func _clear_special_building_from(district_index: int) -> void:
+	if not is_valid_index(district_index):
+		return
+	var building_type := str(cells[district_index].get("building_type", ""))
+	if building_type == "elevator":
+		cells[district_index]["building_type"] = "warehouse"
+	elif building_type == "kunlun_control":
+		cells[district_index]["building_type"] = "archive"
+	cells[district_index]["has_elevator"] = false
+	cells[district_index]["has_kunlun_control"] = false
+
+
+func _place_special_building_near_start(is_final_layer: bool) -> void:
+	if district_indices.is_empty():
+		return
+	var anchor_index := start_node_index
+	if not is_valid_index(anchor_index):
+		anchor_index = district_indices[0]
+	var anchor_coord := coord_from_index(anchor_index)
+	var best_index := -1
+	var best_distance := 1_000_000
+	for district_index in district_indices:
+		if str(cells[district_index].get("story_id", "")) != "":
+			continue
+		var district_coord := coord_from_index(district_index)
+		var distance := absi(district_coord.x - anchor_coord.x) + absi(district_coord.y - anchor_coord.y)
+		if distance < best_distance:
+			best_distance = distance
+			best_index = district_index
+	if best_index < 0:
+		best_index = district_indices[0]
+	_assign_special_building(best_index, is_final_layer)
+	_mark_start_at_special_building(is_final_layer)
+
+
+func set_start_near_special_building(is_final_layer: bool) -> void:
+	_mark_start_at_special_building(is_final_layer)
+
+
+func _mark_start_at_special_building(is_final_layer: bool) -> void:
+	for district_index in district_indices:
+		var is_special := (
+			bool(cells[district_index].get("has_kunlun_control", false))
+			if is_final_layer
+			else bool(cells[district_index].get("has_elevator", false))
+		)
+		if not is_special:
+			continue
+		var approach := int(cells[district_index].get("approach_road_index", -1))
+		if is_valid_index(approach) and is_drive_node(approach) and is_node_enterable(approach):
+			start_node_index = approach
 			return
-	var fallback_index := district_indices[0]
-	cells[fallback_index]["building_type"] = "elevator"
-	cells[fallback_index]["has_elevator"] = true
 
 
 func ensure_story_districts_from_data() -> void:
@@ -1392,6 +1501,7 @@ func _serialize_cell(cell: Dictionary) -> Dictionary:
 		"explored": bool(cell.get("explored", false)),
 		"building_type": str(cell.get("building_type", "")),
 		"has_elevator": bool(cell.get("has_elevator", false)),
+		"has_kunlun_control": bool(cell.get("has_kunlun_control", false)),
 		"resource_total": int(cell.get("resource_total", 0)),
 		"resource_remaining": int(cell.get("resource_remaining", 0)),
 		"resource_spawns": spawns,
@@ -1450,12 +1560,15 @@ func _deserialize_cell(data: Dictionary) -> Dictionary:
 	}
 	for direction in data.get("connections", {}).keys():
 		connections[direction] = int(data["connections"][direction])
+	var building_type := str(data.get("building_type", ""))
+	var has_kunlun := bool(data.get("has_kunlun_control", building_type == "kunlun_control"))
 	return {
 		"coord": coord,
 		"kind": str(data.get("kind", "empty")),
 		"explored": bool(data.get("explored", false)),
-		"building_type": str(data.get("building_type", "")),
+		"building_type": building_type,
 		"has_elevator": bool(data.get("has_elevator", false)),
+		"has_kunlun_control": has_kunlun,
 		"resource_total": int(data.get("resource_total", 0)),
 		"resource_remaining": int(data.get("resource_remaining", 0)),
 		"resource_spawns": spawns,

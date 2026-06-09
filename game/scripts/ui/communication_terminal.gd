@@ -1,9 +1,13 @@
 extends CanvasLayer
 
+const SciFiFramePanelScript = preload("res://scripts/ui/sci_fi_frame_panel.gd")
+
 signal strike_completed
 signal transfer_completed
 
 enum Phase { HIDDEN, INTRO, UPLOAD, READ, REPORT, CAPTCHA, RESULT_FAIL, RESULT_PASS }
+
+const COLOR_ALERT := Color("#ff3d4a")
 
 var _phase: int = Phase.HIDDEN
 var _report_choice: String = ""
@@ -13,9 +17,11 @@ var _run_journal_entries: Array = []
 var _upload_done: bool = false
 
 var _dim: ColorRect
-var _panel: PanelContainer
+var _frame: SciFiFramePanel
 var _title_label: Label
+var _header_label: Label
 var _body_label: Label
+var _log_section: Label
 var _log_history: RichTextLabel
 var _options_box: VBoxContainer
 var _captcha_box: VBoxContainer
@@ -35,24 +41,25 @@ func _ready() -> void:
 func _build_ui() -> void:
 	_dim = ColorRect.new()
 	_dim.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_dim.color = Color(0.02, 0.04, 0.08, 0.92)
+	_dim.color = Color(0.01, 0.03, 0.06, 0.9)
 	_dim.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(_dim)
 
-	_panel = PanelContainer.new()
-	_panel.set_anchors_preset(Control.PRESET_CENTER)
-	_panel.offset_left = -420.0
-	_panel.offset_top = -320.0
-	_panel.offset_right = 420.0
-	_panel.offset_bottom = 320.0
-	add_child(_panel)
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(center)
+
+	_frame = SciFiFramePanelScript.new()
+	_frame.custom_minimum_size = Vector2(800, 560)
+	center.add_child(_frame)
 
 	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 28)
-	margin.add_theme_constant_override("margin_top", 24)
-	margin.add_theme_constant_override("margin_right", 28)
-	margin.add_theme_constant_override("margin_bottom", 24)
-	_panel.add_child(margin)
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", 32)
+	margin.add_theme_constant_override("margin_top", 28)
+	margin.add_theme_constant_override("margin_right", 32)
+	margin.add_theme_constant_override("margin_bottom", 28)
+	_frame.add_child(margin)
 
 	var root := VBoxContainer.new()
 	root.add_theme_constant_override("separation", 12)
@@ -61,18 +68,35 @@ func _build_ui() -> void:
 	_title_label = Label.new()
 	_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_title_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	HudTheme.apply_terminal_title(_title_label)
 	root.add_child(_title_label)
+
+	_header_label = Label.new()
+	_header_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_header_label.visible = false
+	HudTheme.apply_terminal_section(_header_label)
+	root.add_child(_header_label)
+
+	var prompt_header := _make_section_label("◈ 终端提示")
+	root.add_child(prompt_header)
 
 	_body_label = Label.new()
 	_body_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_body_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_body_label.custom_minimum_size = Vector2(760, 100)
+	_body_label.custom_minimum_size = Vector2(720, 96)
+	HudTheme.apply_terminal_log_label(_body_label)
 	root.add_child(_body_label)
+
+	_log_section = _make_section_label("◈ 终端存档")
+	_log_section.visible = false
+	root.add_child(_log_section)
 
 	_log_history = RichTextLabel.new()
 	_log_history.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_log_history.custom_minimum_size = Vector2(760, 180)
+	_log_history.custom_minimum_size = Vector2(720, 180)
+	_log_history.scroll_active = true
 	_log_history.visible = false
+	HudTheme.apply_terminal_log_rich(_log_history)
 	root.add_child(_log_history)
 
 	_options_box = VBoxContainer.new()
@@ -87,6 +111,7 @@ func _build_ui() -> void:
 
 	_captcha_hint = Label.new()
 	_captcha_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	HudTheme.apply_terminal_section(_captcha_hint)
 	_captcha_box.add_child(_captcha_hint)
 
 	_captcha_slider = HSlider.new()
@@ -96,13 +121,15 @@ func _build_ui() -> void:
 	_captcha_slider.value = 0.0
 	_captcha_slider.custom_minimum_size = Vector2(560, 36)
 	_captcha_slider.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_apply_captcha_slider_theme()
 	_captcha_slider.value_changed.connect(_on_captcha_value_changed)
 	_captcha_box.add_child(_captcha_slider)
 
 	_primary_btn = Button.new()
 	_primary_btn.text = "继续"
-	_primary_btn.custom_minimum_size = Vector2(280, 44)
+	_primary_btn.custom_minimum_size = Vector2(300, 46)
 	_primary_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	HudTheme.apply_sci_fi_terminal_button(_primary_btn)
 	_primary_btn.pressed.connect(_on_primary_pressed)
 	root.add_child(_primary_btn)
 
@@ -127,33 +154,43 @@ func _enter_phase(phase: int) -> void:
 	_clear_option_buttons()
 	_options_box.visible = false
 	_captcha_box.visible = false
+	_log_section.visible = false
 	_log_history.visible = false
 	_body_label.visible = true
 	_primary_btn.visible = true
+	HudTheme.apply_terminal_title(_title_label)
+	HudTheme.apply_terminal_log_label(_body_label)
 	match phase:
 		Phase.INTRO:
 			_title_label.text = "通信终端 · 接入"
-			_body_label.text = RunEndingDefs.TERMINAL_INTRO_TEXT
+			_set_terminal_body(RunEndingDefs.TERMINAL_INTRO_TEXT)
 			_primary_btn.text = "继续"
 		Phase.UPLOAD:
 			_title_label.text = "通信终端 · 日志上传"
-			_body_label.text = "正在将本局勘探日记同步至昆仑中继……\n\n上传完成后，前代勘探者的记录将与此处合并存档。"
+			_header_label.visible = false
+			_body_label.text = HudTheme.format_terminal_log(
+				"正在将本局勘探日记同步至昆仑中继……\n上传完成后，前代勘探者的记录将与此处合并存档。"
+			)
 			_primary_btn.text = "开始上传"
 		Phase.READ:
 			_title_label.text = "通信终端 · 勘探日志"
-			_body_label.text = "已上传本局日记。下方为终端存档（含前代上传与本局记录）。"
+			_header_label.visible = false
+			_body_label.text = "> 已上传本局日记。下方为终端存档（含前代上传与本局记录）。"
+			_log_section.visible = true
 			_log_history.visible = true
 			_refresh_log_history()
 			_primary_btn.text = "继续汇报"
 		Phase.REPORT:
 			_title_label.text = "通信终端 · 勘探汇报"
-			_body_label.text = RunEndingDefs.TERMINAL_REPORT_PROMPT
+			_header_label.visible = false
+			_body_label.text = "> %s" % RunEndingDefs.TERMINAL_REPORT_PROMPT
 			_options_box.visible = true
 			_primary_btn.visible = false
 			_build_report_options()
 		Phase.CAPTCHA:
 			_title_label.text = "通信终端 · 身份识别"
-			_body_label.text = RunEndingDefs.TERMINAL_CAPTCHA_PROMPT
+			_header_label.visible = false
+			_body_label.text = "> %s" % RunEndingDefs.TERMINAL_CAPTCHA_PROMPT
 			_captcha_box.visible = true
 			_captcha_slider.value = 0.0
 			_captcha_hint.text = "滑块进度：0 / 100"
@@ -161,20 +198,38 @@ func _enter_phase(phase: int) -> void:
 			_primary_btn.disabled = true
 		Phase.RESULT_FAIL:
 			_title_label.text = "通信终端 · 验证失败"
-			_body_label.text = "%s\n\n%s" % [RunEndingDefs.TERMINAL_VERIFY_FAIL_TEXT, RunEndingDefs.TERMINAL_STRIKE_TEXT]
+			_title_label.add_theme_color_override("font_color", COLOR_ALERT)
+			_header_label.visible = false
+			_body_label.text = "%s\n\n%s" % [
+				HudTheme.format_terminal_log(RunEndingDefs.TERMINAL_VERIFY_FAIL_TEXT, false),
+				RunEndingDefs.TERMINAL_STRIKE_TEXT,
+			]
+			_body_label.add_theme_color_override("font_color", COLOR_ALERT)
 			_primary_btn.text = "接受结算"
 			_primary_btn.disabled = false
 		Phase.RESULT_PASS:
 			_title_label.text = "通信终端 · 权限移交"
-			_body_label.text = "%s\n\n%s" % [RunEndingDefs.TERMINAL_VERIFY_PASS_TEXT, RunEndingDefs.TERMINAL_TRANSFER_TEXT]
+			HudTheme.apply_terminal_title(_title_label)
+			_header_label.visible = false
+			_body_label.text = "%s\n\n%s" % [
+				HudTheme.format_terminal_log(RunEndingDefs.TERMINAL_VERIFY_PASS_TEXT, false),
+				HudTheme.format_terminal_log(RunEndingDefs.TERMINAL_TRANSFER_TEXT, false),
+			]
 			_primary_btn.text = "接管控制台"
 			_primary_btn.disabled = false
+
+
+func _set_terminal_body(raw: String) -> void:
+	var header := HudTheme.extract_terminal_header(raw)
+	_header_label.text = header
+	_header_label.visible = not header.is_empty()
+	_body_label.text = HudTheme.format_terminal_log(raw)
 
 
 func _refresh_log_history() -> void:
 	if not is_instance_valid(_log_history):
 		return
-	var intel := "情报收集：%d / %d" % [
+	var intel := "> 情报收集：%d / %d" % [
 		MetaManager.encounters_unlocked_count(),
 		MetaManager.required_encounter_count(),
 	]
@@ -198,7 +253,8 @@ func _build_report_options() -> void:
 		var label: String = RunEndingDefs.TERMINAL_REPORT_OPTIONS[key]
 		var btn := Button.new()
 		btn.text = label
-		btn.custom_minimum_size = Vector2(0, 40)
+		btn.custom_minimum_size = Vector2(0, 42)
+		HudTheme.apply_sci_fi_terminal_button(btn, Color("#8ec8e8"))
 		btn.pressed.connect(_on_report_chosen.bind(str(key)))
 		_options_box.add_child(btn)
 		_option_buttons.append(btn)
@@ -209,6 +265,33 @@ func _clear_option_buttons() -> void:
 		if is_instance_valid(btn):
 			btn.queue_free()
 	_option_buttons.clear()
+
+
+func _make_section_label(text: String) -> Label:
+	var label := Label.new()
+	label.text = text
+	HudTheme.apply_terminal_section(label)
+	return label
+
+
+func _apply_captcha_slider_theme() -> void:
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.06, 0.10, 0.14, 0.88)
+	bg.set_corner_radius_all(4)
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = Color("#3a8ab0")
+	fill.set_corner_radius_all(4)
+	var grabber := StyleBoxFlat.new()
+	grabber.bg_color = Color("#6eb8ff")
+	grabber.set_corner_radius_all(3)
+	grabber.content_margin_top = 4
+	grabber.content_margin_bottom = 4
+	_captcha_slider.add_theme_stylebox_override("slider", bg)
+	_captcha_slider.add_theme_stylebox_override("grabber_area", fill)
+	_captcha_slider.add_theme_stylebox_override("grabber_area_highlight", fill)
+	_captcha_slider.add_theme_icon_override("grabber", null)
+	_captcha_slider.add_theme_stylebox_override("grabber", grabber)
+	_captcha_slider.add_theme_stylebox_override("grabber_highlight", grabber)
 
 
 func _on_report_chosen(choice_id: String) -> void:

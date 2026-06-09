@@ -33,6 +33,7 @@ var _world_camera: Camera2D
 @export var base_elevator_repair_cost: int = 3
 @export var war_fog_enabled: bool = true
 @export var debug_start_at_story: bool = true
+@export var debug_start_near_special: bool = true
 
 var _map: WorldMapData = WorldMapData.new()
 var _mode: int = TravelMode.DRIVE
@@ -694,7 +695,10 @@ func _physics_process(delta: float) -> void:
 		if not gate_active:
 			_try_begin_drive_from_input()
 	if Input.is_action_just_pressed("repair"):
-		_attempt_repair_elevator()
+		if _can_use_kunlun_control():
+			_attempt_kunlun_terminal()
+		else:
+			_attempt_repair_elevator()
 
 	match _mode:
 		TravelMode.DRIVE:
@@ -1330,7 +1334,10 @@ func _on_return_pressed() -> void:
 			_refresh_ui()
 
 func _on_repair_pressed() -> void:
-	_attempt_repair_elevator()
+	if _can_use_kunlun_control():
+		_attempt_kunlun_terminal()
+	else:
+		_attempt_repair_elevator()
 
 func _can_disembark() -> bool:
 	if _mode != TravelMode.DRIVE or _segment_target_index >= 0:
@@ -1362,6 +1369,16 @@ func _sync_day_entity_visibility() -> void:
 
 func _can_repair_elevator() -> bool:
 	return _mode == TravelMode.FOOT and _current_district_index >= 0 and _map.district_has_elevator(_current_district_index) and not _run_ended
+
+
+func _can_use_kunlun_control() -> bool:
+	return (
+		_mode == TravelMode.FOOT
+		and _current_district_index >= 0
+		and _current_layer >= total_layers
+		and _map.district_has_kunlun_control(_current_district_index)
+		and not _run_ended
+	)
 
 func apply_run_config(manager: Node) -> void:
 	if manager == null:
@@ -1432,6 +1449,12 @@ func _attempt_repair_elevator() -> void:
 	if not _can_repair_elevator() or not _is_near_elevator_console():
 		return
 	_show_repair_choices()
+
+
+func _attempt_kunlun_terminal() -> void:
+	if not _can_use_kunlun_control() or not _is_near_kunlun_console():
+		return
+	_open_communication_terminal()
 
 func _on_resource_collected(district_index: int, item_id: String, pickup: Area2D) -> void:
 	var loot_id := str(item_id)
@@ -1972,7 +1995,6 @@ func _show_run_summary() -> void:
 	if not is_instance_valid(_run_end_overlay):
 		return
 	var title := ""
-	var body := _build_run_summary_text()
 	match _run_end_reason:
 		"vehicle_destroyed":
 			title = "本局结束 · 车辆损毁"
@@ -1984,56 +2006,69 @@ func _show_run_summary() -> void:
 			title = "本局结束 · 通讯被打击"
 		_:
 			title = "本局结算"
-	_run_end_overlay.show_summary(title, body)
+	var summary_data := _build_run_summary_data(title)
+	_run_end_overlay.show_summary(summary_data)
 
 
-func _build_run_summary_text() -> String:
-	var lines: PackedStringArray = []
+func _build_run_summary_data(title: String) -> Dictionary:
 	var day_n := 1
 	if is_instance_valid(time_system):
 		day_n = time_system.day_index
-	lines.append("—— 勘探记录 ——")
-	lines.append("难度: %s  |  分队: %s" % [_run_difficulty_name, _run_squad_name])
-	lines.append("抵达层数: %d / %d" % [_current_layer, total_layers])
-	lines.append("生存天数: %d" % day_n)
-	lines.append("车辆耐久: %.0f / %.0f" % [_vehicle_hp, _vehicle_hp_max])
-	lines.append("背包: %s  |  燃料: %.1f" % [_inventory_summary(), _fuel])
-	lines.append("体力 %.0f" % _survival.stamina)
-	lines.append("地图探索: %d / %d 格" % [_map.explored_count(), _map.cells.size()])
+	var stats: Array = [
+		{"label": "难度", "value": _run_difficulty_name},
+		{"label": "分队", "value": _run_squad_name},
+		{"label": "抵达层数", "value": "%d / %d" % [_current_layer, total_layers]},
+		{"label": "生存天数", "value": "%d" % day_n},
+		{"label": "车辆耐久", "value": "%.0f / %.0f" % [_vehicle_hp, _vehicle_hp_max]},
+		{"label": "体力", "value": "%.0f" % _survival.stamina},
+		{"label": "燃料", "value": "%.1f" % _fuel},
+		{"label": "地图探索", "value": "%d / %d 格" % [_map.explored_count(), _map.cells.size()]},
+	]
 	if not _last_night_losses.is_empty():
-		lines.append("夜间物资损耗: %s" % "、".join(_last_night_losses))
+		stats.append({"label": "夜间损耗", "value": "、".join(_last_night_losses)})
 	if _last_night_salvage != "":
-		lines.append(_last_night_salvage)
+		stats.append({"label": "夜间回收", "value": _last_night_salvage})
+
+	var inventory: Array = []
+	for entry in _backpack.get_sorted_entries():
+		var item_id := str(entry["id"])
+		var count := int(entry["count"])
+		if item_id == "" or count <= 0:
+			continue
+		inventory.append({"id": item_id, "count": count})
+
+	var log_lines: PackedStringArray = []
 	if _run_end_reason == "vehicle_destroyed":
-		lines.append("")
-		lines.append("车辆在夜间防线崩溃后失去作战能力。")
-		lines.append("昆仑程序将判定本次勘探失败，新的克隆体即将被派遣。")
+		log_lines.append("车辆在夜间防线崩溃后失去作战能力。")
+		log_lines.append("昆仑程序将判定本次勘探失败，新的克隆体即将被派遣。")
 	elif _run_end_reason == "player_collapsed":
-		lines.append("")
-		lines.append("体力耗尽，乘员已无法继续行动。")
-		lines.append("本局勘探失败，新的克隆体即将被派遣。")
+		log_lines.append("体力耗尽，乘员已无法继续行动。")
+		log_lines.append("本局勘探失败，新的克隆体即将被派遣。")
 	elif _run_end_reason == "strike":
-		lines.append("")
-		lines.append("通讯终端身份验证未通过，昆仑程序对本次勘探实施打击。")
-		lines.append("本局失败；与终端的接触已被记录，新的克隆体即将被派遣。")
+		log_lines.append("通讯终端身份验证未通过，昆仑程序对本次勘探实施打击。")
+		log_lines.append("本局失败；与终端的接触已被记录，新的克隆体即将被派遣。")
 	elif _run_end_reason == "reached_top":
-		lines.append("")
-		lines.append("你已抵达顶层并完成归档仪式。")
+		log_lines.append("你已抵达顶层并完成归档仪式。")
 		if _final_choice_id != "":
-			lines.append("最终抉择: %s" % RunEndingDefs.choice_title(_final_choice_id))
-			lines.append(RunEndingDefs.choice_summary(_final_choice_id))
+			log_lines.append("最终抉择: %s" % RunEndingDefs.choice_title(_final_choice_id))
+			log_lines.append(RunEndingDefs.choice_summary(_final_choice_id))
 		match _final_choice_id:
 			"stop_signal":
-				lines.append("")
-				lines.append("终止信号已发送。克隆循环停止。")
-				lines.append("（真结局 · 制作人员名单）")
+				log_lines.append("终止信号已发送。克隆循环停止。")
+				log_lines.append("（真结局 · 制作人员名单）")
 			"message_only":
-				lines.append("")
-				lines.append("未发送终止信号。程序将继续运转。")
+				log_lines.append("未发送终止信号。程序将继续运转。")
 			"fake_success":
-				lines.append("")
-				lines.append("虚假成功信号已注入。循环以讽刺的方式停摆。")
-	return "\n".join(lines)
+				log_lines.append("虚假成功信号已注入。循环以讽刺的方式停摆。")
+
+	var is_failure := _run_end_reason in ["vehicle_destroyed", "player_collapsed", "strike"]
+	return {
+		"title": title,
+		"is_failure": is_failure,
+		"stats": stats,
+		"inventory": inventory,
+		"log_lines": log_lines,
+	}
 
 
 func _on_run_summary_closed() -> void:
@@ -2768,7 +2803,7 @@ func _update_foot_prompts() -> void:
 		return
 	if _game_paused or _backpack_open:
 		return
-	if _can_repair_elevator() and _is_near_elevator_console():
+	if (_can_repair_elevator() and _is_near_elevator_console()) or (_can_use_kunlun_control() and _is_near_kunlun_console()):
 		return
 	# 返回提示画在门口世界坐标，底部 ActionPanel 不再重复显示
 	prompt_label.text = ""
@@ -3339,7 +3374,9 @@ func _draw_door_exit_hint(door_rect: Rect2) -> void:
 
 
 func _handle_foot_interact() -> void:
-	if _is_near_elevator_console():
+	if _is_near_kunlun_console():
+		_attempt_kunlun_terminal()
+	elif _is_near_elevator_console():
 		_attempt_repair_elevator()
 	else:
 		_return_to_vehicle()
@@ -3378,6 +3415,16 @@ func _is_near_foot_door() -> bool:
 func _is_near_elevator_console() -> bool:
 	if not _can_repair_elevator():
 		return false
+	return _is_near_interior_console()
+
+
+func _is_near_kunlun_console() -> bool:
+	if not _can_use_kunlun_control():
+		return false
+	return _is_near_interior_console()
+
+
+func _is_near_interior_console() -> bool:
 	var console_rect := _elevator_console_panel_rect()
 	var player_panel := _foot_local_to_panel(_foot_local_pos, _current_district_index)
 	var console_center := console_rect.position + console_rect.size * 0.5
@@ -3399,13 +3446,22 @@ func _elevator_console_hint_text() -> String:
 func _draw_elevator_console_hint(console_rect: Rect2) -> void:
 	if not _can_repair_elevator() or not _is_near_elevator_console():
 		return
+	_draw_interior_console_hint(console_rect, _elevator_console_hint_text(), Color("#f0c168"))
+
+
+func _draw_kunlun_console_hint(console_rect: Rect2) -> void:
+	if not _can_use_kunlun_control() or not _is_near_kunlun_console():
+		return
+	_draw_interior_console_hint(console_rect, "E 启动通信终端", Color("#6eb8ff"))
+
+
+func _draw_interior_console_hint(console_rect: Rect2, text: String, accent: Color) -> void:
 	var center := console_rect.position + console_rect.size * 0.5
-	var text := _elevator_console_hint_text()
 	var bubble_w := maxf(96.0, float(text.length()) * 7.0 + 16.0)
 	var bubble_h := 16.0
 	var bubble_pos := Vector2(center.x - bubble_w * 0.5, console_rect.position.y - 22.0)
 	draw_rect(Rect2(bubble_pos, Vector2(bubble_w, bubble_h)), Color(0.05, 0.09, 0.13, 0.78), true)
-	draw_rect(Rect2(bubble_pos, Vector2(bubble_w, bubble_h)), Color("#f0c168", 0.5), false, 1.0)
+	draw_rect(Rect2(bubble_pos, Vector2(bubble_w, bubble_h)), accent, false, 1.0)
 	HudTheme.draw_string(self, bubble_pos + Vector2(8.0, 12.0), text, 10, Color("#f8ecd8"))
 
 
@@ -3492,14 +3548,19 @@ func _draw_foot_interior_static_layer(canvas: CanvasItem, district_index: int, p
 	var tile_py := panel.size.y / float(rows)
 	var building_type := str(_map.get_cell(district_index).get("building_type", ""))
 	DayTopdownRender.draw_interior_floor_grid(canvas, panel, cols, rows, floor_seed, building_type)
-	var is_elevator := building_type == "elevator" or _map.district_has_elevator(district_index)
+	var has_console := (
+		building_type == "elevator"
+		or building_type == "kunlun_control"
+		or _map.district_has_elevator(district_index)
+		or _map.district_has_kunlun_control(district_index)
+	)
 	var console_tile := _map.get_foot_console_tile(district_index)
 	for gx in range(cols):
 		for gy in range(rows):
 			if not blocked_set.has(Vector2i(gx, gy)):
 				continue
 			var tile := Vector2i(gx, gy)
-			if is_elevator and tile == console_tile:
+			if has_console and tile == console_tile:
 				continue
 			var tile_rect := Rect2(
 				panel.position + Vector2(float(gx) * tile_px, float(gy) * tile_py),
@@ -3536,7 +3597,16 @@ func _draw_foot_interior() -> void:
 	var tile_py := panel.size.y / float(rows)
 	_draw_foot_interior_static_layer(self, _current_district_index, panel)
 	var door_rect := _foot_door_panel_rect(_current_district_index)
-	if _map.district_has_elevator(_current_district_index):
+	if _map.district_has_kunlun_control(_current_district_index):
+		var kunlun_rect := _elevator_console_panel_rect(_current_district_index)
+		DayTopdownRender.draw_elevator_console(
+			self,
+			kunlun_rect,
+			_is_near_kunlun_console(),
+			0.0,
+		)
+		_draw_kunlun_console_hint(kunlun_rect)
+	elif _map.district_has_elevator(_current_district_index):
 		var console_rect := _elevator_console_panel_rect(_current_district_index)
 		DayTopdownRender.draw_elevator_console(
 			self,
@@ -3681,9 +3751,18 @@ func _apply_overworld_biome_for_layer() -> void:
 func _generate_layer_map() -> void:
 	if is_instance_valid(_story_controller):
 		_story_controller.reset_for_new_run()
-	_map.generate(map_columns, map_rows, cell_size)
+	_map.generate(
+		map_columns,
+		map_rows,
+		cell_size,
+		0,
+		_current_layer >= total_layers,
+		debug_start_near_special,
+	)
 	StoryData.ensure_story_districts(_map)
-	if debug_start_at_story:
+	if debug_start_near_special:
+		_map.set_start_near_special_building(_current_layer >= total_layers)
+	elif debug_start_at_story:
 		StoryData.set_debug_start_near_story(_map)
 	_elevator_repair_progress = 0
 	_current_district_index = -1
