@@ -91,10 +91,12 @@ var _session_options: Dictionary = {}
 var _session_kind: String = "normal"
 var _phase_title_override: String = ""
 var _no_day_advance := false
+var _screen_camera: Camera2D = null
 
 
 func _ready() -> void:
 	visible = false
+	_ensure_screen_camera()
 	if is_instance_valid(field):
 		field.bind_controller(self)
 		field.cell_clicked.connect(_on_cell_clicked)
@@ -117,6 +119,7 @@ func _process(delta: float) -> void:
 		return
 	if not visible:
 		return
+	_update_screen_camera()
 	match phase:
 		Phase.PLACE:
 			_process_place(delta)
@@ -192,6 +195,7 @@ func start_session(
 	_selected_hacker_id = -1
 	_shepherd_degrade_until = 0.0
 	_combat_time = 0.0
+	_activate_screen_camera()
 	_flow_dirty = true
 	_flow_rebuild_cooldown = 0.0
 	_display_influence_dirty = true
@@ -261,6 +265,7 @@ func _update_hud_tools() -> void:
 
 
 func hide_session() -> void:
+	_deactivate_screen_camera()
 	phase = Phase.PLACE
 	show_route_overlay = false
 	show_overlay = false
@@ -274,6 +279,39 @@ func hide_session() -> void:
 	_display_influence_dirty = true
 	if is_instance_valid(hud):
 		hud.hide_session_ui()
+
+
+func _ensure_screen_camera() -> void:
+	if is_instance_valid(_screen_camera):
+		return
+	_screen_camera = Camera2D.new()
+	_screen_camera.name = "NightTdScreenCamera"
+	_screen_camera.enabled = false
+	_screen_camera.zoom = Vector2.ONE
+	add_child(_screen_camera)
+	_update_screen_camera()
+
+
+func _activate_screen_camera() -> void:
+	_ensure_screen_camera()
+	_update_screen_camera()
+	_screen_camera.enabled = true
+	_screen_camera.make_current()
+
+
+func _deactivate_screen_camera() -> void:
+	if is_instance_valid(_screen_camera):
+		_screen_camera.enabled = false
+
+
+func _update_screen_camera() -> void:
+	if not is_instance_valid(_screen_camera):
+		return
+	var view_size := get_viewport_rect().size
+	if view_size == Vector2.ZERO:
+		view_size = Vector2(1280.0, 720.0)
+	_screen_camera.zoom = Vector2.ONE
+	_screen_camera.global_position = global_position + view_size * 0.5
 
 
 func _process_place(delta: float) -> void:

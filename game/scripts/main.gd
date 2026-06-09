@@ -649,6 +649,11 @@ func _physics_process(delta: float) -> void:
 		return
 	if _game_paused or _backpack_open:
 		return
+	if is_instance_valid(night_td) and night_td.visible:
+		_sync_view_cameras()
+		_refresh_ui()
+		queue_redraw()
+		return
 	if is_instance_valid(_world_map_overlay) and _world_map_overlay.is_open():
 		_refresh_focus()
 		_sync_world_map_overlay()
@@ -775,6 +780,14 @@ func _setup_world_camera() -> void:
 
 
 func _sync_view_cameras() -> void:
+	if is_instance_valid(night_td) and night_td.visible:
+		if is_instance_valid(_world_camera):
+			_world_camera.enabled = false
+		if is_instance_valid(_player) and is_instance_valid(_player.camera):
+			_player.camera.enabled = false
+		if is_instance_valid(_vehicle) and is_instance_valid(_vehicle.camera):
+			_vehicle.camera.enabled = false
+		return
 	var night_phase := _is_night_phase()
 	if night_phase:
 		if is_instance_valid(_world_camera):
