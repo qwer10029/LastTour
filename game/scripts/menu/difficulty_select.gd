@@ -1,4 +1,5 @@
 extends Control
+class_name DifficultySelect
 
 const HOVER_SCALE := Vector2(1.05, 1.05)
 const HOVER_DURATION := 0.15
@@ -12,8 +13,6 @@ const GLOW_COLORS := {
 	CardKind.HARD: Color(1.0, 0.25, 0.2, 0.6),
 }
 
-const HARD_HOVER_MODULATE := Color(1.08, 0.88, 0.82, 1.0)
-
 const CARD_TEXTURE_PATHS := {
 	CardKind.EASY: "res://assets/menu/difficulty/card_easy.png",
 	CardKind.NORMAL: "res://assets/menu/difficulty/card_normal.png",
@@ -23,6 +22,23 @@ const CARD_TEXTURE_PATHS := {
 const BACKGROUND_PATH := "res://assets/menu/difficulty/background.png"
 const BACKGROUND_BRIGHTNESS := Color(1.18, 1.18, 1.14, 1.0)
 const OVERLAY_COLOR := Color(0.0, 0.0, 0.0, 0.16)
+
+static var _texture_cache: Dictionary = {}
+
+
+static func preload_assets() -> void:
+	var paths: Array[String] = [
+		BACKGROUND_PATH,
+		CARD_TEXTURE_PATHS[CardKind.EASY],
+		CARD_TEXTURE_PATHS[CardKind.NORMAL],
+		CARD_TEXTURE_PATHS[CardKind.HARD],
+	]
+	for path in paths:
+		if _texture_cache.has(path):
+			continue
+		var tex := MenuStyles.load_menu_texture(path)
+		if tex != null:
+			_texture_cache[path] = tex
 
 @onready var background_texture: TextureRect = %BackgroundTexture
 @onready var dark_overlay: ColorRect = $BackgroundLayer/DarkOverlay
@@ -36,16 +52,14 @@ const OVERLAY_COLOR := Color(0.0, 0.0, 0.0, 0.16)
 @onready var back_button: Button = %BackButton
 
 var _scale_tweens: Dictionary = {}
-var _modulate_tweens: Dictionary = {}
 var _glow_tweens: Dictionary = {}
 
 
 func _ready() -> void:
+	preload_assets()
 	_ensure_background_texture()
 	MenuStyles.style_title(title_label, 42)
 	_style_back_button()
-
-	await get_tree().process_frame
 
 	_setup_card(card_easy, glow_easy, CardKind.EASY, GameManager.Difficulty.EASY)
 	_setup_card(card_normal, glow_normal, CardKind.NORMAL, GameManager.Difficulty.NORMAL)
@@ -69,19 +83,32 @@ func _ensure_background_texture() -> void:
 
 
 func _load_texture(path: String) -> Texture2D:
-	return MenuStyles.load_menu_texture(path)
+	if _texture_cache.has(path):
+		return _texture_cache[path] as Texture2D
+	var tex := MenuStyles.load_menu_texture(path)
+	if tex != null:
+		_texture_cache[path] = tex
+	return tex
+
+
+func _load_card_texture(kind: CardKind) -> Texture2D:
+	return _load_texture(CARD_TEXTURE_PATHS[kind])
 
 
 func _setup_card(card: TextureButton, glow: Panel, kind: CardKind, difficulty: int) -> void:
 	var slot := card.get_parent() as Control
-	var tex := _load_texture(CARD_TEXTURE_PATHS[kind])
-	if tex != null:
+	var tex := _load_card_texture(kind)
+	if tex == null:
+		push_warning("难度卡片加载失败: %s" % CARD_TEXTURE_PATHS[kind])
+	else:
 		card.texture_normal = tex
 
 	card.ignore_texture_size = true
-	card.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
+	# 统一填满 300×400，避免不同宽高比导致可见边长不一致
+	card.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_COVERED
+	card.set_anchors_preset(Control.PRESET_FULL_RECT)
 	card.custom_minimum_size = CARD_DISPLAY_SIZE
-	card.size = CARD_DISPLAY_SIZE
+	_make_card_button_transparent(card)
 	if slot:
 		slot.custom_minimum_size = CARD_DISPLAY_SIZE
 
@@ -106,10 +133,19 @@ func _setup_card(card: TextureButton, glow: Panel, kind: CardKind, difficulty: i
 	)
 
 
+func _make_card_button_transparent(card: TextureButton) -> void:
+	var empty := StyleBoxEmpty.new()
+	card.add_theme_stylebox_override("normal", empty)
+	card.add_theme_stylebox_override("hover", empty)
+	card.add_theme_stylebox_override("pressed", empty)
+	card.add_theme_stylebox_override("disabled", empty)
+	card.add_theme_stylebox_override("focus", empty)
+
+
 func _apply_glow_style(glow: Panel, kind: CardKind) -> void:
 	var color: Color = GLOW_COLORS[kind]
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color(color.r, color.g, color.b, 0.06)
+	style.bg_color = Color(0.0, 0.0, 0.0, 0.0)
 	style.border_color = Color(color.r, color.g, color.b, 0.72)
 	style.set_border_width_all(2)
 	style.set_corner_radius_all(14)
@@ -153,18 +189,14 @@ func _style_back_button() -> void:
 	back_button.add_theme_color_override("font_hover_color", Color("#e8f0f8"))
 
 
-func _on_card_hover_enter(card: TextureButton, glow: Panel, kind: CardKind) -> void:
+func _on_card_hover_enter(card: TextureButton, glow: Panel, _kind: CardKind) -> void:
 	_tween_scale(card, HOVER_SCALE)
 	_tween_glow(glow, 1.0)
-	if kind == CardKind.HARD:
-		_tween_modulate(card, HARD_HOVER_MODULATE)
 
 
-func _on_card_hover_exit(card: TextureButton, glow: Panel, kind: CardKind) -> void:
+func _on_card_hover_exit(card: TextureButton, glow: Panel, _kind: CardKind) -> void:
 	_tween_scale(card, Vector2.ONE)
 	_tween_glow(glow, 0.0)
-	if kind == CardKind.HARD:
-		_tween_modulate(card, Color.WHITE)
 
 
 func _tween_scale(card: TextureButton, target: Vector2) -> void:
@@ -174,15 +206,6 @@ func _tween_scale(card: TextureButton, target: Vector2) -> void:
 	tween.set_ease(Tween.EASE_OUT)
 	tween.tween_property(card, "scale", target, HOVER_DURATION)
 	_scale_tweens[card] = tween
-
-
-func _tween_modulate(card: TextureButton, target: Color) -> void:
-	_kill_tween(_modulate_tweens, card)
-	var tween := create_tween()
-	tween.set_trans(Tween.TRANS_CUBIC)
-	tween.set_ease(Tween.EASE_OUT)
-	tween.tween_property(card, "modulate", target, HOVER_DURATION)
-	_modulate_tweens[card] = tween
 
 
 func _tween_glow(glow: Panel, alpha: float) -> void:

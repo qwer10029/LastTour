@@ -1,6 +1,7 @@
 extends Node
 
 const RunStateClass = preload("res://scripts/run_state.gd")
+const DifficultySelectScript := preload("res://scripts/menu/difficulty_select.gd")
 
 enum Difficulty { EASY, NORMAL, HARD }
 const RUN_CONFIG_PATH := "res://data/run_config.json"
@@ -141,6 +142,7 @@ func begin_new_game_flow() -> void:
 
 
 func go_to_difficulty_select() -> void:
+	DifficultySelectScript.preload_assets()
 	get_tree().change_scene_to_file(SCENE_DIFFICULTY)
 
 

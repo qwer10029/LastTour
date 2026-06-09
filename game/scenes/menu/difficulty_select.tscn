@@ -1,9 +1,6 @@
-[gd_scene load_steps=5 format=3 uid="uid://difficulty_select_scene"]
+[gd_scene load_steps=2 format=3 uid="uid://difficulty_select_scene"]
 
 [ext_resource type="Script" path="res://scripts/menu/difficulty_select.gd" id="1_difficulty"]
-[ext_resource type="Texture2D" path="res://assets/menu/difficulty/card_easy.png" id="3_easy"]
-[ext_resource type="Texture2D" path="res://assets/menu/difficulty/card_normal.png" id="4_normal"]
-[ext_resource type="Texture2D" path="res://assets/menu/difficulty/card_hard.png" id="5_hard"]
 
 [node name="DifficultyMenu" type="Control"]
 layout_mode = 3
@@ -109,9 +106,8 @@ grow_horizontal = 2
 grow_vertical = 2
 focus_mode = 0
 mouse_default_cursor_shape = 2
-texture_normal = ExtResource("3_easy")
 ignore_texture_size = true
-stretch_mode = 5
+stretch_mode = 6
 
 [node name="CardNormalSlot" type="Control" parent="CardsCenter/CardsContainer"]
 custom_minimum_size = Vector2(300, 400)
@@ -143,9 +139,8 @@ grow_horizontal = 2
 grow_vertical = 2
 focus_mode = 0
 mouse_default_cursor_shape = 2
-texture_normal = ExtResource("4_normal")
 ignore_texture_size = true
-stretch_mode = 5
+stretch_mode = 6
 
 [node name="CardHardSlot" type="Control" parent="CardsCenter/CardsContainer"]
 custom_minimum_size = Vector2(300, 400)
@@ -177,9 +172,8 @@ grow_horizontal = 2
 grow_vertical = 2
 focus_mode = 0
 mouse_default_cursor_shape = 2
-texture_normal = ExtResource("5_hard")
 ignore_texture_size = true
-stretch_mode = 5
+stretch_mode = 6
 
 [node name="BackButtonLayer" type="CenterContainer" parent="."]
 z_index = 2
