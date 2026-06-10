@@ -111,6 +111,7 @@ func _build_ui() -> void:
 
 func show_outcome(choice_id: String, _run_layer: int, _day_index: int = 1) -> void:
 	visible = true
+	_play_music_cue("final_choice", 0.9)
 	match choice_id:
 		"stop_signal":
 			_enter_credits()
@@ -124,6 +125,12 @@ func show_outcome(choice_id: String, _run_layer: int, _day_index: int = 1) -> vo
 
 func hide_overlay() -> void:
 	visible = false
+
+
+func _play_music_cue(cue_id: String, fade_sec: float = -1.0) -> void:
+	var music := get_tree().root.get_node_or_null("MusicManager") if get_tree() != null else null
+	if music != null and music.has_method("play_cue"):
+		music.play_cue(cue_id, fade_sec)
 
 
 func _enter_credits() -> void:

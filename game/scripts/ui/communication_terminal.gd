@@ -141,12 +141,19 @@ func start_flow(run_journal_entries: Array, run_layer: int = 3, day_index: int =
 	_day_index = day_index
 	_upload_done = false
 	visible = true
+	_play_music_cue("terminal", 0.9)
 	_enter_phase(Phase.INTRO)
 
 
 func hide_terminal() -> void:
 	_phase = Phase.HIDDEN
 	visible = false
+
+
+func _play_music_cue(cue_id: String, fade_sec: float = -1.0) -> void:
+	var music := get_tree().root.get_node_or_null("MusicManager") if get_tree() != null else null
+	if music != null and music.has_method("play_cue"):
+		music.play_cue(cue_id, fade_sec)
 
 
 func _enter_phase(phase: int) -> void:

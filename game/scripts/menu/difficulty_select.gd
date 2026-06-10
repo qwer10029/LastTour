@@ -57,6 +57,7 @@ var _glow_tweens: Dictionary = {}
 
 func _ready() -> void:
 	preload_assets()
+	_play_music_cue("menu_select", 0.8)
 	_ensure_background_texture()
 	MenuStyles.style_title(title_label, 42)
 	_style_back_button()
@@ -66,6 +67,12 @@ func _ready() -> void:
 	_setup_card(card_hard, glow_hard, CardKind.HARD, GameManager.Difficulty.HARD)
 
 	back_button.pressed.connect(_on_back_pressed)
+
+
+func _play_music_cue(cue_id: String, fade_sec: float = -1.0) -> void:
+	var music := get_tree().root.get_node_or_null("MusicManager") if get_tree() != null else null
+	if music != null and music.has_method("play_cue"):
+		music.play_cue(cue_id, fade_sec)
 
 
 func _ensure_background_texture() -> void:

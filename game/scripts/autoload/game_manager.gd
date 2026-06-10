@@ -55,6 +55,7 @@ func request_night_defense(rs, session_options: Dictionary = {}) -> void:
 		rs.night_context = str(session_options.get("kind", "normal"))
 		rs.pending_open_terminal = false
 	run_state = rs
+	_play_music_cue("night_setup", 1.0)
 	get_tree().change_scene_to_file(SCENE_NIGHT_TD)
 
 
@@ -86,6 +87,10 @@ func start_day_exploration(rs = null) -> void:
 	run_state = rs
 	_pending_new_game = false
 	_pending_load_save = false
+	if rs != null and bool(rs.pending_open_terminal):
+		_play_music_cue("terminal", 0.9)
+	else:
+		_play_music_cue("day_exploration", 1.2)
 	get_tree().change_scene_to_file(SCENE_DAY)
 
 
@@ -96,6 +101,16 @@ func is_game_paused() -> bool:
 
 func _ready() -> void:
 	_load_run_config()
+
+
+func _music_manager() -> Node:
+	return get_tree().root.get_node_or_null("MusicManager") if get_tree() != null else null
+
+
+func _play_music_cue(cue_id: String, fade_sec: float = -1.0, restart: bool = false) -> void:
+	var music := _music_manager()
+	if music != null and music.has_method("play_cue"):
+		music.play_cue(cue_id, fade_sec, restart)
 
 
 func _load_run_config() -> void:
@@ -126,6 +141,7 @@ func go_to_main_menu() -> void:
 	_pending_new_game = false
 	_pending_load_save = false
 	run_state = null
+	_play_music_cue("menu_main", 1.0)
 	get_tree().change_scene_to_file(SCENE_MAIN_MENU)
 
 
@@ -136,6 +152,7 @@ func continue_from_save() -> void:
 	_pending_new_game = false
 	_pending_load_save = true
 	run_state = null
+	_play_music_cue("day_exploration", 1.0)
 	get_tree().change_scene_to_file(SCENE_GAME)
 
 
@@ -150,21 +167,25 @@ func begin_new_game_flow() -> void:
 	difficulty = Difficulty.NORMAL
 	squad_id = "scavenger"
 	run_state = null
+	_play_music_cue("opening_prologue", 1.0)
 	get_tree().change_scene_to_file(SCENE_OPENING_PROLOGUE)
 
 
 func go_to_difficulty_select() -> void:
 	DifficultySelectScript.preload_assets()
+	_play_music_cue("menu_select", 0.8)
 	get_tree().change_scene_to_file(SCENE_DIFFICULTY)
 
 
 func go_to_squad_select() -> void:
+	_play_music_cue("menu_select", 0.8)
 	get_tree().change_scene_to_file(SCENE_SQUAD)
 
 
 func start_run() -> void:
 	_pending_new_game = false
 	run_state = null
+	_play_music_cue("day_exploration", 1.0)
 	get_tree().change_scene_to_file(SCENE_GAME)
 
 

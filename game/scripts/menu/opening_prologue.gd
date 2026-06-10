@@ -24,6 +24,7 @@ var _is_typing := false
 
 
 func _ready() -> void:
+	_play_music_cue("opening_prologue", 1.0)
 	_setup_bottom_fade_shader()
 	_apply_narration_style(_narration_label)
 	_apply_page_style(_page_label)
@@ -34,6 +35,12 @@ func _ready() -> void:
 	resized.connect(_on_viewport_layout_changed)
 	call_deferred("_on_viewport_layout_changed")
 	_show_slide(0)
+
+
+func _play_music_cue(cue_id: String, fade_sec: float = -1.0) -> void:
+	var music := get_tree().root.get_node_or_null("MusicManager") if get_tree() != null else null
+	if music != null and music.has_method("play_cue"):
+		music.play_cue(cue_id, fade_sec)
 
 
 func _on_viewport_layout_changed() -> void:
