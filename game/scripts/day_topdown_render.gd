@@ -51,8 +51,8 @@ const GATE_NPC_FILES := {
 const THUNDER_BOSS_IDLE := "npc_thunder_leiting.png"
 const THUNDER_BOSS_WALK := "npc_thunder_leiting_walk.png"
 const THUNDER_WALK_FRAME_COUNT := 4
-const THUNDER_GATE_DISPLAY_HEIGHT := 92.0
-const THUNDER_TD_DISPLAY_HEIGHT := 88.0
+const THUNDER_GATE_DISPLAY_HEIGHT := 124.0
+const THUNDER_TD_DISPLAY_HEIGHT := 132.0
 ## 四帧行走图切换速率（帧/秒），与 walk_phase 取整配合：frame = int(walk_phase) % 4
 const THUNDER_WALK_ANIM_FPS := 8.0
 const THUNDER_WALK_BLOCKED_FPS := 5.0
@@ -927,41 +927,30 @@ static func _ensure_thunder_boss_textures() -> void:
 
 static func _load_thunder_boss_texture(filename: String) -> Texture2D:
 	var path := NPC_SPRITE_DIR + filename
-	var raw := ArtAssetLoader.load_texture_from_disk(path)
-	if raw == null:
+	var img := ArtAssetLoader.load_image_from_disk(path)
+	if img == null:
 		push_warning("雷霆 Boss 贴图加载失败: %s" % path)
 		return null
-	if _texture_has_premultiplied_alpha(raw):
-		return raw
-	var keyed := ArtAssetLoader.apply_road_background_key(raw)
-	if ArtAssetLoader.texture_has_visible_pixels(keyed):
-		return keyed
-	if ArtAssetLoader.texture_has_visible_pixels(raw):
-		return raw
-	return null
+	if img.get_format() != Image.FORMAT_RGBA8:
+		img = img.duplicate()
+		img.convert(Image.FORMAT_RGBA8)
+	# 真透明 PNG（待机图）直接用原图。
+	if ArtAssetLoader.image_uses_alpha_channel(img):
+		return ImageTexture.create_from_image(img)
+	# JPEG / 不透明黑底行走图：边缘洪泛去黑 + 硬化 alpha，避免整块黑底与虚化。
+	var tex := ImageTexture.create_from_image(img)
+	var keyed := ArtAssetLoader.apply_flood_background_key(tex, 0.05)
+	if not ArtAssetLoader.texture_has_visible_pixels(keyed):
+		keyed = ArtAssetLoader.apply_black_alpha_key(tex, 0.08)
+	if not ArtAssetLoader.texture_has_visible_pixels(keyed):
+		return tex
+	return ArtAssetLoader.harden_alpha_texture(keyed, 0.5)
 
 
 static func _thunder_walk_frame_index(walk_phase: float, is_walking: bool) -> int:
 	if not is_walking:
 		return 0
 	return int(walk_phase) % THUNDER_WALK_FRAME_COUNT
-
-
-static func _texture_has_premultiplied_alpha(tex: Texture2D) -> bool:
-	var img := tex.get_image()
-	if img == null or img.is_empty():
-		return false
-	var w := img.get_width()
-	var h := img.get_height()
-	if w <= 0 or h <= 0:
-		return false
-	var step_x := maxi(1, w / 12)
-	var step_y := maxi(1, h / 12)
-	for y in range(0, h, step_y):
-		for x in range(0, w, step_x):
-			if img.get_pixel(x, y).a < 0.92:
-				return true
-	return false
 
 
 static func draw_thunder_gate_boss(
@@ -1043,28 +1032,33 @@ static func _draw_thunder_boss_texture(
 	if tex_size.x <= 0.0 or tex_size.y <= 0.0:
 		return
 	var frame_count := THUNDER_WALK_FRAME_COUNT if use_walk_sheet else 1
-	var frame_w := tex_size.x / float(frame_count)
-	var frame_h := tex_size.y
+	var frame_w := floori(tex_size.x / float(frame_count))
+	var frame_h := floori(tex_size.y)
+	if frame_w <= 0 or frame_h <= 0:
+		return
 	var frame_idx := clampi(frame_index, 0, frame_count - 1)
-	var src := Rect2(frame_w * float(frame_idx), 0.0, frame_w, frame_h)
-	var display_w := display_h * (frame_w / frame_h)
-	canvas.draw_circle(center + Vector2(0.0, 4.0), display_w * 0.22, Color(0.0, 0.0, 0.0, 0.34))
+	var src := Rect2(float(frame_w * frame_idx), 0.0, float(frame_w), float(frame_h))
+	var display_w := display_h * (float(frame_w) / float(frame_h))
 	var dest := Rect2(
-		center.x - display_w * 0.5,
-		center.y - display_h * 0.5,
-		display_w,
-		display_h,
+		floorf(center.x - display_w * 0.5),
+		floorf(center.y - display_h * 0.5),
+		roundf(display_w),
+		roundf(display_h),
 	)
+	canvas.draw_circle(center + Vector2(0.0, 4.0), display_w * 0.22, Color(0.0, 0.0, 0.0, 0.34))
+	var prev_filter := canvas.texture_filter
+	canvas.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	if flip_h:
 		canvas.draw_set_transform(center, 0.0, Vector2(-1.0, 1.0))
 		canvas.draw_texture_rect_region(
 			tex,
-			Rect2(-display_w * 0.5, -display_h * 0.5, display_w, display_h),
+			Rect2(-roundf(display_w * 0.5), -roundf(display_h * 0.5), roundf(display_w), roundf(display_h)),
 			src,
 		)
 		canvas.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	else:
 		canvas.draw_texture_rect_region(tex, dest, src)
+	canvas.texture_filter = prev_filter
 
 
 static func _draw_thunder_gate_boss_fallback(canvas: CanvasItem, anchor: Vector2, s: float) -> void:

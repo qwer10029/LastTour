@@ -498,7 +498,7 @@ func _draw_combat_entities() -> void:
 				local_pos,
 				enemy.get("move_dir", Vector2.ZERO),
 				float(enemy.get("walk_phase", 0.0)),
-				1.0,
+				1.18,
 				bool(enemy.get("is_walking", false)),
 			)
 		if not used_boss_sprite:
@@ -516,9 +516,9 @@ func _draw_combat_entities() -> void:
 			draw_arc(local_pos, radius + 9.0, 0.0, TAU, 36, Color("#64dca0", 0.72), 2.0)
 			draw_string(_font, local_pos + Vector2(-10, 32), "修", HORIZONTAL_ALIGNMENT_CENTER, -1, 9, Color("#c8ffe0"))
 		if bool(enemy.get("hack_immune", false)) and not is_ally:
-			var immune_r := radius + (14.0 if used_boss_sprite else 13.0)
+			var immune_r := radius + (18.0 if used_boss_sprite else 13.0)
 			draw_arc(local_pos, immune_r, 0.0, TAU, 44, Color("#ff3658", 0.78), 2.5)
-			var immune_y := -52.0 if used_boss_sprite else -42.0
+			var immune_y := -62.0 if used_boss_sprite else -42.0
 			draw_string(_font, local_pos + Vector2(-12, immune_y), "免疫", HORIZONTAL_ALIGNMENT_CENTER, -1, 9, Color("#ffd0d8"))
 		# 战斗中显示指挥官分配的组标签
 		if _controller.phase == NightTdController.Phase.COMBAT:
@@ -537,8 +537,8 @@ func _draw_combat_entities() -> void:
 				var arrow_tip := local_pos + move_dir * (radius + 14.0)
 				_draw_arrow_head(arrow_tip, move_dir, 11.0, Color(1.0, 0.45, 0.35, 0.95))
 		var hp_ratio: float = clampf(float(enemy["hp"]) / maxf(float(enemy["max_hp"]), 1.0), 0.0, 1.0)
-		var bar_w := 52.0 if used_boss_sprite else 36.0
-		var bar_y := local_pos.y - (54.0 if used_boss_sprite else 28.0)
+		var bar_w := 58.0 if used_boss_sprite else 36.0
+		var bar_y := local_pos.y - (64.0 if used_boss_sprite else 28.0)
 		draw_rect(Rect2(local_pos.x - bar_w * 0.5, bar_y, bar_w, 5), Color(0.05, 0.05, 0.05, 0.95), true)
 		draw_rect(Rect2(local_pos.x - bar_w * 0.5, bar_y, bar_w * hp_ratio, 5), Color("#ff5f57"), true)
 

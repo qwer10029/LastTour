@@ -227,6 +227,43 @@ static func apply_flood_background_key(tex: Texture2D, tolerance: float = 0.055)
 	return ImageTexture.create_from_image(img)
 
 
+## 采样检测 PNG 是否已带真透明（JPEG 载入后 alpha 全为 1）。
+static func image_uses_alpha_channel(img: Image, alpha_cutoff: float = 0.92) -> bool:
+	if img == null or img.is_empty():
+		return false
+	var w := img.get_width()
+	var h := img.get_height()
+	if w <= 0 or h <= 0:
+		return false
+	var step_x := maxi(1, w / 16)
+	var step_y := maxi(1, h / 16)
+	for y in range(0, h, step_y):
+		for x in range(0, w, step_x):
+			if img.get_pixel(x, y).a < alpha_cutoff:
+				return true
+	return false
+
+
+## 抠底后硬化 alpha，避免 JPEG 边缘半透明发虚。
+static func harden_alpha_texture(tex: Texture2D, cutoff: float = 0.5) -> Texture2D:
+	if tex == null:
+		return null
+	var img := tex.get_image()
+	if img == null or img.is_empty():
+		return tex
+	if img.get_format() != Image.FORMAT_RGBA8:
+		img = img.duplicate()
+		img.convert(Image.FORMAT_RGBA8)
+	else:
+		img = img.duplicate()
+	for y in range(img.get_height()):
+		for x in range(img.get_width()):
+			var c := img.get_pixel(x, y)
+			c.a = 1.0 if c.a >= cutoff else 0.0
+			img.set_pixel(x, y, c)
+	return ImageTexture.create_from_image(img)
+
+
 static func load_texture_icon_alpha_key(
 	preferred_path: String,
 	tolerance: float = 0.055,
