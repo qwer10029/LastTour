@@ -87,6 +87,8 @@ func can_enter_district(district_index: int) -> bool:
 		return true
 	if run_state.is_completed(story_id):
 		return false
+	if StoryData.is_interior_encounter(story_id):
+		return true
 	if _uses_dialogue_file(story_id):
 		return run_state.is_quest_active(story_id) and _quest_collect_remaining(story_id) > 0
 	if run_state.is_reward_pending(story_id):
@@ -107,6 +109,8 @@ func handle_drive_interact(node_index: int) -> bool:
 	if story_id == "" or run_state.is_completed(story_id):
 		return false
 	if _uses_dialogue_file(story_id):
+		if StoryData.is_interior_encounter(story_id):
+			return false
 		# 任务进行中且尚未集齐物品时，E 应进入建筑而非弹出门口复读对话
 		if run_state.is_quest_active(story_id) and _quest_collect_remaining(story_id) > 0:
 			return false
@@ -185,11 +189,95 @@ func start_story_talk(story_id: String, district_index: int = -1) -> void:
 
 func on_entered_district_foot(district_index: int) -> void:
 	var story_id := _story_id_of_district(district_index)
-	if story_id == "" or not run_state.is_quest_active(story_id):
+	if story_id == "":
 		return
 	run_state.set_district(story_id, district_index)
+	if StoryData.is_interior_encounter(story_id):
+		if not run_state.is_completed(story_id):
+			call_deferred("_begin_interior_encounter", story_id)
+		_sync_ambient_loot(story_id, district_index)
+		if run_state.is_quest_active(story_id):
+			_sync_quest_pickups(story_id, district_index)
+			fix_foot_loot_positions(district_index)
+		return
+	if not run_state.is_quest_active(story_id):
+		return
 	_sync_quest_pickups(story_id, district_index)
 	fix_foot_loot_positions(district_index)
+
+
+func _interior_dialogue_entry(story_id: String) -> String:
+	if story_id == "staff_officer_07" and not run_state.is_completed(story_id):
+		var backpack: InventoryData = _backpack()
+		if backpack != null and backpack.has("data_chip_echo_operation", 1):
+			return _normalize_dialogue_entry(story_id, "choice")
+	if run_state.is_quest_active(story_id):
+		var need := int(StoryData.quest_def(story_id).get("collect_count", 0))
+		if run_state.get_collect_count(story_id) >= need:
+			return _normalize_dialogue_entry(story_id, "return_start")
+		return ""
+	if run_state.is_completed(story_id):
+		return ""
+	return _normalize_dialogue_entry(story_id, "")
+
+
+func _begin_interior_encounter(story_id: String) -> void:
+	if not is_instance_valid(npc_dialogue) or run_state.is_completed(story_id):
+		return
+	if npc_dialogue.is_active() and npc_dialogue.story_id == story_id:
+		ui_refresh_requested.emit()
+		return
+	if StoryData.dialogue_path(story_id) == "":
+		push_warning("[Story] 室内遭遇缺少对话文件: %s" % story_id)
+		return
+	var entry := _interior_dialogue_entry(story_id)
+	if entry == "" and run_state.is_quest_active(story_id):
+		ui_refresh_requested.emit()
+		return
+	_active_story_id = story_id
+	_ui_locked = true
+	npc_dialogue.start_dialogue(story_id, entry, _dialogue_context(story_id))
+	if not npc_dialogue.is_active():
+		_ui_locked = false
+		push_warning("[Story] 室内遭遇对话未能启动: %s" % story_id)
+		return
+	ui_refresh_requested.emit()
+
+
+func try_interior_story_interact(district_index: int) -> bool:
+	var story_id := _story_id_of_district(district_index)
+	if story_id == "" or not StoryData.is_interior_encounter(story_id):
+		return false
+	if run_state.is_completed(story_id) or not run_state.is_quest_active(story_id):
+		return false
+	var need := int(StoryData.quest_def(story_id).get("collect_count", 0))
+	if run_state.get_collect_count(story_id) < need:
+		return false
+	if not is_instance_valid(npc_dialogue) or npc_dialogue.is_active():
+		return false
+	return _handle_npc_dialogue_interact(story_id, _current_node_index())
+
+
+func ensure_interior_encounter_at(district_index: int) -> void:
+	var story_id := _story_id_of_district(district_index)
+	if story_id == "":
+		return
+	if not StoryData.is_interior_encounter(story_id):
+		return
+	if run_state.is_completed(story_id):
+		return
+	_begin_interior_encounter(story_id)
+
+
+func story_id_of_district(district_index: int) -> String:
+	return _story_id_of_district(district_index)
+
+
+func blocks_foot_exit(district_index: int) -> bool:
+	var story_id := _story_id_of_district(district_index)
+	if story_id == "" or run_state.is_completed(story_id):
+		return false
+	return StoryData.locks_exit_until_resolved(story_id)
 
 
 func on_exited_district_to_drive(district_index: int) -> bool:
@@ -225,9 +313,63 @@ func try_collect_foot_loot(district_index: int, player_local: Vector2, radius: f
 	_prune_invalid_quest_nodes()
 	_prune_invalid_unlocked_loot_nodes()
 	for node in _quest_nodes.duplicate():
+		if bool(node.get_meta("interact_only", false)):
+			continue
 		_try_collect_node(node, district_index, player_local, radius)
 	for node in _unlocked_loot_nodes.duplicate():
 		_try_collect_node(node, district_index, player_local, radius)
+
+
+func try_interact_foot_loot(district_index: int, player_local: Vector2, radius: float = 80.0) -> bool:
+	_prune_invalid_quest_nodes()
+	for node in _quest_nodes.duplicate():
+		if not is_instance_valid(node):
+			continue
+		if not bool(node.get_meta("interact_only", false)):
+			continue
+		if int(node.get_meta("district_index", -1)) != district_index:
+			continue
+		if not is_foot_loot_visible(node, district_index):
+			continue
+		var loot_local := _foot_local_of_pickup(node, district_index)
+		if loot_local.distance_to(player_local) > radius:
+			continue
+		_try_collect_node(node, district_index, player_local, radius)
+		return true
+	return false
+
+
+func foot_loot_prop_id(node: Area2D) -> String:
+	if not is_instance_valid(node):
+		return ""
+	return str(node.get_meta("pickup_prop", ""))
+
+
+func quest_interact_hint(district_index: int, player_local: Vector2, radius: float = 88.0) -> Dictionary:
+	var story_id := _story_id_of_district(district_index)
+	if story_id == "" or not run_state.is_quest_active(story_id):
+		return {}
+	if not bool(StoryData.quest_def(story_id).get("interact_to_collect", false)):
+		return {}
+	var need := int(StoryData.quest_def(story_id).get("collect_count", 0))
+	if run_state.get_collect_count(story_id) >= need:
+		return {}
+	for node in _quest_nodes:
+		if not is_instance_valid(node):
+			continue
+		if not bool(node.get_meta("interact_only", false)):
+			continue
+		if int(node.get_meta("district_index", -1)) != district_index:
+			continue
+		var loot_local := _foot_local_of_pickup(node, district_index)
+		if loot_local.distance_to(player_local) > radius:
+			continue
+		var hint := str(StoryData.quest_def(story_id).get("interact_hint", "E 交互"))
+		return {
+			"text": hint,
+			"local": loot_local,
+		}
+	return {}
 
 
 func is_foot_loot_visible(node: Area2D, district_index: int) -> bool:
@@ -404,11 +546,9 @@ func draw_gate_bubbles(canvas: CanvasItem, vehicle_pos: Vector2, draw_bubble: Ca
 
 func should_hide_map_loot(district_index: int) -> bool:
 	var story_id := _story_id_of_district(district_index)
-	if story_id == "":
-		return false
-	if run_state.is_completed(story_id):
-		return false
-	return run_state.is_quest_active(story_id) or run_state.is_reward_pending(story_id)
+	if story_id != "":
+		return true
+	return false
 
 
 func build_prompt(story_id: String) -> Dictionary:
@@ -434,6 +574,23 @@ func build_prompt(story_id: String) -> Dictionary:
 			var body := npc_dialogue.panel_text.strip_edges()
 			out["text"] = body if body != "" else "……"
 			out["continue_hint"] = "按 E 继续"
+		return out
+	if StoryData.is_interior_encounter(story_id):
+		if run_state.is_quest_active(story_id):
+			var quest: Dictionary = StoryData.quest_def(story_id)
+			var need := int(quest.get("collect_count", 0))
+			if run_state.get_collect_count(story_id) >= need:
+				out["text"] = StoryData.prompt_return(story_id)
+				out["disembark"] = StoryData.prompt_disembark(story_id)
+				out["show_disembark"] = true
+				return out
+			out["text"] = str(quest.get("hint", "E 进入完成委托"))
+			out["disembark"] = "进入 (E)"
+			out["show_disembark"] = true
+			return out
+		out["text"] = "%s · E 进入" % StoryData.title_of(story_id)
+		out["disembark"] = StoryData.prompt_disembark(story_id)
+		out["show_disembark"] = true
 		return out
 	if is_instance_valid(gate_dialogue) and gate_dialogue.is_active():
 		match gate_dialogue.phase:
@@ -475,6 +632,8 @@ func build_prompt(story_id: String) -> Dictionary:
 
 func foot_door_hint(district_index: int) -> String:
 	var story_id := _story_id_of_district(district_index)
+	if story_id != "" and blocks_foot_exit(district_index):
+		return "先完成抉择"
 	if story_id != "" and _uses_dialogue_file(story_id):
 		var quest: Dictionary = StoryData.quest_def(story_id)
 		var need := int(quest.get("collect_count", 0))
@@ -505,8 +664,30 @@ func restore_after_load() -> void:
 		if run_state.is_quest_active(story_id):
 			var district := run_state.get_district(story_id)
 			if district >= 0:
+				_sync_ambient_loot(story_id, district)
 				_sync_quest_pickups(story_id, district)
 				fix_foot_loot_positions(district)
+	_try_reveal_tactical_sites_from_inventory()
+
+
+func _reveal_tactical_hidden_sites(source_id: String = "") -> void:
+	var map: WorldMapData = _map()
+	if map == null:
+		return
+	if not map.reveal_tactical_hidden_sites(source_id):
+		return
+	if _host != null and _host.has_method("_on_tactical_sites_revealed"):
+		_host.call("_on_tactical_sites_revealed", source_id)
+
+
+func _try_reveal_tactical_sites_from_inventory() -> void:
+	var backpack: InventoryData = _backpack()
+	if backpack == null:
+		return
+	if backpack.has("data_chip_tactical_map", 1):
+		_reveal_tactical_hidden_sites("staff_officer_07")
+	if backpack.has("data_chip_radar_coords", 1):
+		_reveal_tactical_hidden_sites("ad_1_radar")
 
 
 func to_save_dict() -> Dictionary:
@@ -606,12 +787,17 @@ func _on_npc_story_completed(story_id: String, result: Dictionary) -> void:
 		else:
 			push_warning("[Story] 日记未写入: %s (body=%s)" % [encounter_id, JournalData.body_of(encounter_id)])
 	var loot_key := str(result.get("reward_loot_key", ""))
+	if loot_key == "tactical_map" or encounter_id == "staff_officer_07_calibrate":
+		_reveal_tactical_hidden_sites("staff_officer_07")
+	if encounter_id == "ad_1_radar_coords":
+		_reveal_tactical_hidden_sites("ad_1_radar")
 	if loot_key != "":
 		var district := run_state.get_district(story_id)
 		var loot_def: Dictionary = StoryData.reward_loot_def(story_id, loot_key)
 		var pickups: Variant = loot_def.get("pickups", [])
 		if typeof(pickups) == TYPE_ARRAY:
 			_spawn_unlocked_loot(district, pickups)
+			fix_foot_loot_positions(district)
 	run_state.mark_done(story_id)
 	_ui_locked = false
 	ui_refresh_requested.emit()
@@ -662,6 +848,9 @@ func _dialogue_context(story_id: String) -> Dictionary:
 		"set_checkpoint": func(node_id: String) -> void: run_state.set_dialogue_node(story_id, node_id),
 		"clear_checkpoint": func() -> void: run_state.clear_dialogue_node(story_id),
 		"get_quest_collect_count": func() -> int: return run_state.get_collect_count(story_id),
+		"trigger_clone_restart": func() -> void:
+			if _host != null and _host.has_method("_trigger_clone_restart"):
+				_host.call("_trigger_clone_restart"),
 	}
 
 
@@ -687,6 +876,43 @@ func _story_apply_effect(district_index: int, effect: Dictionary) -> void:
 			if typeof(pickups) != TYPE_ARRAY or district_index < 0:
 				return
 			_spawn_unlocked_loot(district_index, pickups)
+
+
+func _sync_ambient_loot(story_id: String, district_index: int) -> void:
+	if story_id == "" or district_index < 0:
+		return
+	for node in _unlocked_loot_nodes:
+		if not is_instance_valid(node):
+			continue
+		if int(node.get_meta("district_index", -1)) != district_index:
+			continue
+		if str(node.get_meta("ambient_story_id", "")) == story_id:
+			return
+	var pickups := StoryData.interior_ambient_loot_pickups(story_id)
+	if pickups.is_empty():
+		return
+	_spawn_ambient_loot(story_id, district_index, pickups)
+	fix_foot_loot_positions(district_index)
+
+
+func _spawn_ambient_loot(story_id: String, district_index: int, pickups: Array) -> void:
+	var map: WorldMapData = _map()
+	if map == null:
+		return
+	map.ensure_foot_layout(district_index)
+	var foot_origin := map.get_foot_origin(district_index)
+	for pickup_var in pickups:
+		if typeof(pickup_var) != TYPE_DICTIONARY:
+			continue
+		var pickup: Dictionary = pickup_var
+		var item_id := str(pickup.get("item_id", "scrap"))
+		var offset_arr: Variant = pickup.get("offset", [64, 64])
+		var offset := Vector2(64, 64)
+		if typeof(offset_arr) == TYPE_ARRAY and (offset_arr as Array).size() >= 2:
+			offset = Vector2(float(offset_arr[0]), float(offset_arr[1]))
+		var node := _create_pickup(district_index, item_id, foot_origin + offset, "", false)
+		node.set_meta("ambient_story_id", story_id)
+		_unlocked_loot_nodes.append(node)
 
 
 func _sync_quest_pickups(story_id: String, district_index: int) -> void:
@@ -775,6 +1001,12 @@ func _create_pickup(district_index: int, item_id: String, world_pos: Vector2, st
 		pickup.set_meta("story_id", story_id)
 	if is_quest:
 		pickup.set_meta("story_quest", true)
+		var quest := StoryData.quest_def(story_id)
+		if bool(quest.get("interact_to_collect", false)):
+			pickup.set_meta("interact_only", true)
+			var prop_id := str(quest.get("pickup_prop", ""))
+			if prop_id != "":
+				pickup.set_meta("pickup_prop", prop_id)
 	if pickup.has_method("setup_loot"):
 		pickup.setup_loot(item_id)
 	if pickup.has_signal("collected") and _host.has_method("_on_resource_collected"):

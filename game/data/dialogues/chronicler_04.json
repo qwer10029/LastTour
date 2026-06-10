@@ -80,7 +80,7 @@
     "intro_done": {
       "speaker": "System",
       "bubble": "",
-      "text": "委托已接受。进入档案室，前往三楼通讯室拾取存储模块（2 块）。",
+      "text": "委托已接受。前往三楼通讯室拾取存储模块（2 块）。",
       "next": "intro_done_close"
     },
     "intro_done_close": {

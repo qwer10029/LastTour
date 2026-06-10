@@ -932,7 +932,12 @@ static func _ensure_prop_textures() -> void:
 		"rubble_barricade": "rubble_barricade.png",
 	}
 	for prop_id in prop_files.keys():
-		var tex := ArtAssetLoader.load_texture(PROPS_DIR + str(prop_files[prop_id]))
+		var path := PROPS_DIR + str(prop_files[prop_id])
+		var tex: Texture2D = null
+		if prop_id == "rubble_pile":
+			tex = ArtAssetLoader.load_texture_sprite_alpha_key(path)
+		else:
+			tex = ArtAssetLoader.load_texture(path)
 		if tex != null and ArtAssetLoader.texture_has_visible_pixels(tex):
 			_prop_textures[prop_id] = tex
 	# 弹坑深色坑洞须保持不透明，不能用 road_alpha_key（会把黑色抠掉）
@@ -1151,6 +1156,12 @@ static func _building_colors(building_type: String) -> Dictionary:
 		"barracks":
 			wall_fill = Color("#5a4a40")
 			roof_fill = Color("#3a3028")
+		"command":
+			wall_fill = Color("#4a5060")
+			roof_fill = Color("#2e3444")
+		"radar":
+			wall_fill = Color("#3a5048")
+			roof_fill = Color("#283830")
 		"market":
 			wall_fill = Color("#6a5540")
 			roof_fill = Color("#4a3c2c")
@@ -1308,6 +1319,25 @@ static func draw_roadside_building(canvas: CanvasItem, road_rect: Rect2, distric
 	draw_world_building(canvas, road_rect, district_rect, building_type, label, false)
 
 
+static func draw_interior_quest_prop(
+	canvas: CanvasItem,
+	center: Vector2,
+	prop_type: String,
+	show_hint: bool = false,
+	hint_text: String = "",
+) -> void:
+	var display_px := _prop_display_px(prop_type, 1.15)
+	_draw_prop_at(canvas, center, prop_type, 0.0, display_px, Color.WHITE)
+	if not show_hint or hint_text.strip_edges() == "":
+		return
+	var bubble_w := maxf(72.0, float(hint_text.length()) * 7.0 + 16.0)
+	var bubble_h := 16.0
+	var bubble_pos := Vector2(center.x - bubble_w * 0.5, center.y - display_px * 0.55 - 22.0)
+	canvas.draw_rect(Rect2(bubble_pos, Vector2(bubble_w, bubble_h)), Color(0.05, 0.09, 0.13, 0.78), true)
+	canvas.draw_rect(Rect2(bubble_pos, Vector2(bubble_w, bubble_h)), Color("#a89878", 0.55), false, 1.0)
+	HudTheme.draw_string(canvas, bubble_pos + Vector2(8.0, 12.0), hint_text, 10, Color("#f8ecd8"))
+
+
 static func draw_loot_pickup(
 	canvas: CanvasItem,
 	center: Vector2,
@@ -1360,6 +1390,10 @@ static func draw_building_icon(canvas: CanvasItem, center: Vector2, building_typ
 			door = Color("#9ec9ff")
 		"barracks":
 			door = Color("#c8a080")
+		"command":
+			door = Color("#88b0e8")
+		"radar":
+			door = Color("#68e8a0")
 		"market":
 			door = Color("#e8a86e")
 	canvas.draw_rect(Rect2(center - Vector2(10, 12), Vector2(20, 16)), Color("#2a2f34"), true)
@@ -1393,6 +1427,124 @@ static func draw_interior_door(canvas: CanvasItem, tile_rect: Rect2, emphasized:
 	canvas.draw_colored_polygon(
 		PackedVector2Array([Vector2(cx, arrow_y), Vector2(cx - 8.0, arrow_y - 10.0), Vector2(cx + 8.0, arrow_y - 10.0)]),
 		Color("#f0c168", 0.9 if emphasized else 0.5),
+	)
+
+
+static func draw_furnace_machine(canvas: CanvasItem, panel_rect: Rect2, highlighted: bool = true) -> void:
+	var center := panel_rect.position + panel_rect.size * Vector2(0.5, 0.42)
+	var body_w := minf(panel_rect.size.x, panel_rect.size.y) * 0.34
+	var body_h := body_w * 1.15
+	var body := Rect2(center - Vector2(body_w * 0.5, body_h * 0.62), Vector2(body_w, body_h))
+	if highlighted:
+		canvas.draw_rect(body.grow(10.0), Color("#ff5030", 0.12), true)
+	canvas.draw_rect(body, Color("#4a2824"), true)
+	canvas.draw_rect(body, Color("#8a4038"), false, 2.0)
+	var stack := body.grow(-body.size.x * 0.12)
+	stack.position.y += body.size.y * 0.08
+	canvas.draw_rect(stack, Color("#5a3028"), true)
+	canvas.draw_rect(stack, Color("#2a1410"), false, 1.0)
+	var eye_center := center + Vector2(0.0, -body_h * 0.18)
+	var eye_r := body_w * 0.16
+	canvas.draw_circle(eye_center, eye_r + 3.0, Color("#143018", 0.9))
+	canvas.draw_circle(eye_center, eye_r, Color("#58f078", 0.95))
+	canvas.draw_circle(eye_center + Vector2(-eye_r * 0.25, -eye_r * 0.15), eye_r * 0.22, Color("#d8ffe0", 0.85))
+	for side in [-1.0, 1.0]:
+		var arm_start := center + Vector2(side * body_w * 0.42, -body_h * 0.05)
+		var arm_end := arm_start + Vector2(side * body_w * 0.28, body_h * 0.22)
+		canvas.draw_line(arm_start, arm_end, Color("#6a4038"), 5.0, true)
+		canvas.draw_circle(arm_end, 6.0, Color("#3a2820"))
+	var furnace_label := "熔炉"
+	var label_w := float(furnace_label.length()) * 11.0 + 12.0
+	var label_rect := Rect2(center.x - label_w * 0.5, body.position.y - 18.0, label_w, 14.0)
+	canvas.draw_rect(label_rect, Color(0.04, 0.08, 0.12, 0.82), true)
+	canvas.draw_string(
+		ThemeDB.fallback_font,
+		label_rect.position + Vector2(6.0, 11.0),
+		furnace_label,
+		HORIZONTAL_ALIGNMENT_LEFT,
+		-1,
+		11,
+		Color("#ffb0a0"),
+	)
+
+
+static func draw_tactical_hologram(canvas: CanvasItem, panel_rect: Rect2, highlighted: bool = true) -> void:
+	var center := panel_rect.position + panel_rect.size * Vector2(0.5, 0.48)
+	var table_r := minf(panel_rect.size.x, panel_rect.size.y) * 0.22
+	if highlighted:
+		canvas.draw_circle(center, table_r + 14.0, Color("#4080ff", 0.10), true)
+	canvas.draw_circle(center, table_r, Color("#1a2430", 0.92), true)
+	canvas.draw_arc(center, table_r, 0.0, TAU, 48, Color("#5a7898"), 2.0, true)
+	for i in range(6):
+		var angle := float(i) / 6.0 * TAU
+		var inner := center + Vector2(cos(angle), sin(angle)) * table_r * 0.55
+		var outer := center + Vector2(cos(angle), sin(angle)) * table_r * 0.88
+		canvas.draw_line(inner, outer, Color("#304860", 0.55), 1.0, true)
+	var holo_base := center + Vector2(0.0, -table_r * 0.35)
+	var torso_h := table_r * 0.95
+	var torso_w := table_r * 0.42
+	var torso := Rect2(holo_base - Vector2(torso_w * 0.5, torso_h), Vector2(torso_w, torso_h))
+	canvas.draw_rect(torso, Color("#68b0ff", 0.35), true)
+	canvas.draw_rect(torso, Color("#a8d8ff", 0.55), false, 1.5)
+	var head_y := holo_base.y - torso_h - table_r * 0.08
+	canvas.draw_circle(Vector2(center.x, head_y), table_r * 0.12, Color("#88c8ff", 0.28), true)
+	var arm_start := holo_base + Vector2(torso_w * 0.35, -torso_h * 0.72)
+	var arm_end := arm_start + Vector2(table_r * 0.38, -table_r * 0.22)
+	canvas.draw_line(arm_start, arm_end, Color("#88c8ff", 0.75), 3.0, true)
+	canvas.draw_circle(arm_end, 4.0, Color("#d0ecff", 0.9))
+	var label := "参谋-07"
+	var label_w := float(label.length()) * 11.0 + 12.0
+	var label_rect := Rect2(center.x - label_w * 0.5, center.y + table_r + 6.0, label_w, 14.0)
+	canvas.draw_rect(label_rect, Color(0.04, 0.08, 0.14, 0.82), true)
+	canvas.draw_string(
+		ThemeDB.fallback_font,
+		label_rect.position + Vector2(6.0, 11.0),
+		label,
+		HORIZONTAL_ALIGNMENT_LEFT,
+		-1,
+		11,
+		Color("#a8d8ff"),
+	)
+
+
+static func draw_radar_ad1(canvas: CanvasItem, panel_rect: Rect2, highlighted: bool = true) -> void:
+	var center := panel_rect.position + panel_rect.size * Vector2(0.5, 0.46)
+	var term_w := minf(panel_rect.size.x, panel_rect.size.y) * 0.38
+	var term_h := term_w * 0.72
+	var term := Rect2(center - Vector2(term_w * 0.5, term_h * 0.55), Vector2(term_w, term_h))
+	if highlighted:
+		canvas.draw_rect(term.grow(12.0), Color("#40ff80", 0.08), true)
+	canvas.draw_rect(term, Color("#1a2820"), true)
+	canvas.draw_rect(term, Color("#3a5848"), false, 2.0)
+	var screen := term.grow(-term.size.x * 0.1)
+	screen.size.y *= 0.72
+	screen.position.y += term.size.y * 0.08
+	canvas.draw_rect(screen, Color("#0a1810"), true)
+	var scan_center := screen.get_center()
+	var scan_r := minf(screen.size.x, screen.size.y) * 0.38
+	var t := float(Time.get_ticks_msec() % 12000) / 12000.0
+	var sweep := t * TAU
+	canvas.draw_arc(scan_center, scan_r, 0.0, TAU, 48, Color("#1a4030", 0.85), 1.0, true)
+	canvas.draw_arc(scan_center, scan_r, sweep - 0.55, sweep, 24, Color("#58f088", 0.75), 2.5, true)
+	canvas.draw_line(scan_center, scan_center + Vector2(cos(sweep), sin(sweep)) * scan_r, Color("#88ffb0", 0.9), 1.5, true)
+	var base_y := term.end.y + 4.0
+	canvas.draw_rect(Rect2(center.x - term_w * 0.12, base_y, term_w * 0.24, term_h * 0.18), Color("#2a3830"), true)
+	var dish_center := Vector2(center.x, base_y - term_h * 0.08)
+	var dish_r := term_w * 0.22
+	canvas.draw_arc(dish_center, dish_r, PI * 0.15, PI * 0.85, 24, Color("#4a6058"), 2.0, true)
+	canvas.draw_line(dish_center, dish_center + Vector2(0.0, -dish_r * 0.85), Color("#5a7068"), 2.0, true)
+	var label := "AD-1"
+	var label_w := float(label.length()) * 11.0 + 12.0
+	var label_rect := Rect2(center.x - label_w * 0.5, term.position.y - 18.0, label_w, 14.0)
+	canvas.draw_rect(label_rect, Color(0.04, 0.08, 0.10, 0.82), true)
+	canvas.draw_string(
+		ThemeDB.fallback_font,
+		label_rect.position + Vector2(6.0, 11.0),
+		label,
+		HORIZONTAL_ALIGNMENT_LEFT,
+		-1,
+		11,
+		Color("#88ffb0"),
 	)
 
 

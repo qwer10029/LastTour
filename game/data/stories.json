@@ -5,7 +5,14 @@
     "sentinel_s09_blueprint_gave2",
     "sentinel_s09_blueprint_gave1",
     "chronicler_repair",
-    "chronicler_plunder"
+    "chronicler_plunder",
+    "furnace_scavenge",
+    "furnace_truth",
+    "staff_officer_07_steal_battery",
+    "staff_officer_07_calibrate",
+    "ad_1_radar_fuel",
+    "ad_1_radar_coords",
+    "ad_1_radar_tower"
   ],
   "stories": [
     {
@@ -15,6 +22,7 @@
       "district_tag": "sentinel_s09",
       "building_type": "barracks",
       "building_label": "荒废军营",
+      "spawn_layer": 1,
       "spawn_near_start": false,
       "prompt_disembark": "与哨兵交谈",
       "prompt_return": "E 与哨兵交谈交还电池",
@@ -53,13 +61,14 @@
       "district_tag": "chronicler_04",
       "building_type": "archive",
       "building_label": "社区档案室",
-      "spawn_near_start": true,
-      "prompt_disembark": "与编史者交谈",
-      "prompt_return": "E 与编史者交谈交还存储模块",
-      "prompt_reward": "E 与编史者交谈",
+      "spawn_layer": 1,
+      "spawn_near_start": false,
+      "interior_encounter": true,
+      "prompt_disembark": "进入档案室",
+      "prompt_return": "E 与编史者交还存储模块",
       "dialogue_path": "res://data/dialogues/chronicler_04.json",
       "quest": {
-        "hint": "进入档案室，前往三楼通讯室拾取存储模块（2 块）。",
+        "hint": "前往三楼通讯室拾取存储模块（2 块）。",
         "collect_item_id": "quest:chronicler_memory",
         "collect_count": 2,
         "pickup_label": "存储模块",
@@ -78,6 +87,87 @@
           ]
         }
       }
+    },
+    {
+      "story_id": "furnace_qc",
+      "title": "弹药库 · 熔炉",
+      "npc_id": "furnace",
+      "district_tag": "furnace_qc",
+      "building_type": "warehouse",
+      "building_label": "废弃弹药库",
+      "spawn_layer": 1,
+      "spawn_near_start": false,
+      "interior_encounter": true,
+      "lock_exit_until_resolved": true,
+      "prompt_disembark": "进入弹药库",
+      "dialogue_path": "res://data/dialogues/furnace_qc.json",
+      "interior_ambient_loot": [
+        { "item_id": "scrap", "offset": [56, 152] },
+        { "item_id": "scrap", "offset": [232, 168] },
+        { "item_id": "scrap", "offset": [168, 52] },
+        { "item_id": "scrap", "offset": [88, 96] }
+      ]
+    },
+    {
+      "story_id": "staff_officer_07",
+      "title": "废弃指挥部 · 战术室",
+      "npc_id": "staff_officer_07",
+      "district_tag": "staff_officer_07",
+      "building_type": "command",
+      "building_label": "废弃指挥部",
+      "spawn_layer": 1,
+      "spawn_near_start": false,
+      "interior_encounter": true,
+      "lock_exit_until_resolved": true,
+      "prompt_disembark": "进入指挥部",
+      "dialogue_path": "res://data/dialogues/staff_officer_07.json",
+      "tactical_hidden_sites": [
+        { "building_type": "warehouse", "building_label": "隐藏仓库" },
+        { "building_type": "garage", "building_label": "备件藏匿点" },
+        { "building_type": "market", "building_label": "燃料储备点" }
+      ],
+      "reward_loot": {
+        "tactical_map": {
+          "pickups": [
+            { "item_id": "parts", "offset": [220, 72] },
+            { "item_id": "parts", "offset": [248, 104] },
+            { "item_id": "scrap", "offset": [184, 128] },
+            { "item_id": "fuel", "offset": [160, 96] },
+            { "item_id": "supplies", "offset": [128, 112] }
+          ]
+        }
+      }
+    },
+    {
+      "story_id": "ad_1_radar",
+      "title": "防空雷达站 · AD-1",
+      "npc_id": "ad_1_radar",
+      "district_tag": "ad_1_radar",
+      "building_type": "radar",
+      "building_label": "防空雷达站",
+      "spawn_layer": 1,
+      "spawn_near_start": true,
+      "interior_encounter": true,
+      "prompt_disembark": "进入雷达站",
+      "prompt_return": "E 与 AD-1 交还电机组件",
+      "dialogue_path": "res://data/dialogues/ad_1_radar.json",
+      "quest": {
+        "hint": "绕到掩体后方塌方处，按 E 挖掘碎石。",
+        "collect_item_id": "quest:radar_motor",
+        "collect_count": 1,
+        "pickup_label": "电机组件",
+        "interact_to_collect": true,
+        "pickup_prop": "rubble_pile",
+        "interact_hint": "E 挖掘碎石",
+        "interior_offsets": [
+          [72, 168]
+        ]
+      },
+      "tactical_hidden_sites": [
+        { "building_type": "warehouse", "building_label": "雷达回波仓库" },
+        { "building_type": "garage", "building_label": "半埋车库" },
+        { "building_type": "archive", "building_label": "未标记档案站" }
+      ]
     }
   ]
 }

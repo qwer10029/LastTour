@@ -189,12 +189,19 @@ func _resolve_condition(node: Dictionary) -> String:
 	var cond: Variant = node.get("condition", {})
 	if typeof(cond) != TYPE_DICTIONARY or (cond as Dictionary).is_empty():
 		return ""
-	var need_item := _resolve_item_id(str(cond.get("has_item", "")))
-	var need_count := int(cond.get("count", 1))
+	var cond_dict: Dictionary = cond
+	if cond_dict.has("random_below"):
+		var rng := RandomNumberGenerator.new()
+		rng.randomize()
+		if rng.randf() < float(cond_dict.get("random_below", 0.5)):
+			return str(cond_dict.get("if_true", ""))
+		return str(cond_dict.get("if_false", ""))
+	var need_item := _resolve_item_id(str(cond_dict.get("has_item", "")))
+	var need_count := int(cond_dict.get("count", 1))
 	var has := _count_item(need_item)
 	if has >= need_count:
-		return str(cond.get("if_true", ""))
-	return str(cond.get("if_false", ""))
+		return str(cond_dict.get("if_true", ""))
+	return str(cond_dict.get("if_false", ""))
 
 
 func _option_available(opt: Dictionary) -> bool:
@@ -241,6 +248,11 @@ func _execute_actions(actions: Variant) -> bool:
 		_clear_checkpoint()
 	if bool(act.get("close_dialogue", false)):
 		_close_session()
+		return true
+	if bool(act.get("trigger_clone_restart", false)):
+		var restart_cb: Callable = _context.get("trigger_clone_restart", Callable())
+		if restart_cb.is_valid():
+			restart_cb.call()
 		return true
 	return false
 

@@ -235,6 +235,8 @@ func _cell_visible(index: int) -> bool:
 		return true
 	if world_map == null or not world_map.is_valid_index(index):
 		return false
+	if world_map.is_tactical_revealed(index):
+		return true
 	return bool(world_map.get_cell(index)["explored"])
 
 
@@ -298,14 +300,18 @@ func _draw_map_content(map_rect: Rect2, origin: Vector2, span: Vector2) -> void:
 			var road_color := Color("#a89472", 0.85) if explored or not war_fog_enabled else Color("#5c5448", 0.55)
 			draw_line(line_center, other_center, road_color, 1.8 if local_radar_mode else 2.2)
 
-		if (explored or not war_fog_enabled) and int(cell["resource_remaining"]) > 0:
+		if (explored or not war_fog_enabled or world_map.is_tactical_revealed(index)) and int(cell["resource_remaining"]) > 0:
 			var dot_r := 2.5 if local_radar_mode else maxf(3.0, cell_size_mm.x * 0.12)
 			draw_circle(cell_center, dot_r, Color("#f3d34a", 0.95))
 
 		if kind == "district":
+			if world_map.is_tactical_dormant(index):
+				continue
 			var building_rect := cell_rect.grow(-cell_size_mm.x * 0.22)
-			var building_bright := explored or not war_fog_enabled
+			var building_bright := explored or not war_fog_enabled or world_map.is_tactical_revealed(index)
 			draw_rect(building_rect, Color("#9e8564", 0.9) if building_bright else Color("#2a2f36", 0.5), true)
+			if world_map.is_tactical_revealed(index):
+				draw_rect(building_rect.grow(2.0), Color("#68b0ff", 0.85), false, 1.5)
 			if bool(cell.get("has_elevator", false)):
 				draw_rect(
 					building_rect.grow(-cell_size_mm.x * 0.18),
@@ -328,7 +334,7 @@ func _draw_map_content(map_rect: Rect2, origin: Vector2, span: Vector2) -> void:
 						building_rect.position + Vector2(2.0, 2.0),
 						label,
 						maxi(9, int(cell_size_mm.y * 0.28)),
-						Color("#e8dcc8", 0.92),
+						Color("#a8d8ff" if world_map.is_tactical_revealed(index) else Color("#e8dcc8", 0.92)),
 					)
 
 	if world_map.is_valid_index(focus_node_index):

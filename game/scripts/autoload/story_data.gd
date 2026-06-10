@@ -119,6 +119,31 @@ func reward_loot_def(story_id: String, loot_key: String) -> Dictionary:
 	return (bucket as Dictionary).duplicate(true)
 
 
+func interior_ambient_loot_pickups(story_id: String) -> Array:
+	var raw: Variant = get_story(story_id).get("interior_ambient_loot", [])
+	if typeof(raw) != TYPE_ARRAY:
+		return []
+	return (raw as Array).duplicate(true)
+
+
+func tactical_hidden_sites(story_id: String) -> Array:
+	var raw: Variant = get_story(story_id).get("tactical_hidden_sites", [])
+	if typeof(raw) != TYPE_ARRAY:
+		return []
+	return (raw as Array).duplicate(true)
+
+
+func setup_tactical_hidden_sites(map: WorldMapData, layer: int) -> void:
+	for story_id in _stories.keys():
+		var story: Dictionary = _stories[story_id]
+		if int(story.get("spawn_layer", 1)) != layer:
+			continue
+		var sites := tactical_hidden_sites(story_id)
+		if sites.is_empty():
+			continue
+		map.prepare_tactical_hidden_sites(sites, story_id)
+
+
 func gate_lines(story_id: String) -> Array:
 	var gate: Dictionary = get_story(story_id).get("gate", {})
 	var raw: Variant = gate.get("lines", [])
@@ -206,9 +231,20 @@ func _clear_district_map_loot(cell: Dictionary) -> void:
 	cell["resource_spawns"] = []
 
 
-func ensure_story_districts(map: WorldMapData) -> void:
+func is_interior_encounter(story_id: String) -> bool:
+	return bool(get_story(story_id).get("interior_encounter", false))
+
+
+func locks_exit_until_resolved(story_id: String) -> bool:
+	return bool(get_story(story_id).get("lock_exit_until_resolved", false))
+
+
+func ensure_story_districts(map: WorldMapData, layer: int = 1) -> void:
 	for story_id in _stories.keys():
 		var story: Dictionary = _stories[story_id]
+		var required_layer := int(story.get("spawn_layer", 1))
+		if layer != required_layer:
+			continue
 		var building_type := str(story.get("building_type", ""))
 		if building_type == "":
 			continue
