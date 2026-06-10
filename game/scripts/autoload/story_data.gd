@@ -235,58 +235,93 @@ func is_interior_encounter(story_id: String) -> bool:
 	return bool(get_story(story_id).get("interior_encounter", false))
 
 
+func gate_boss_id(story_id: String) -> String:
+	return str(get_story(story_id).get("gate_boss_id", ""))
+
+
 func locks_exit_until_resolved(story_id: String) -> bool:
 	return bool(get_story(story_id).get("lock_exit_until_resolved", false))
 
 
 func ensure_story_districts(map: WorldMapData, layer: int = 1) -> void:
+	var near_start_ids: Array[String] = []
+	var other_ids: Array[String] = []
 	for story_id in _stories.keys():
 		var story: Dictionary = _stories[story_id]
-		var required_layer := int(story.get("spawn_layer", 1))
-		if layer != required_layer:
+		if int(story.get("spawn_layer", 1)) != layer:
 			continue
-		var building_type := str(story.get("building_type", ""))
-		if building_type == "":
+		if str(story.get("building_type", "")) == "":
 			continue
-		var tag := str(story.get("district_tag", story_id))
-		var already := false
-		for district_index in map.district_indices:
-			var cell := map.get_cell(district_index)
-			if str(cell.get("story_id", "")) == story_id:
-				_clear_district_map_loot(cell)
-				already = true
-				break
-			if str(cell.get("special_encounter", "")) == tag:
-				cell["story_id"] = story_id
-				cell["building_type"] = building_type
-				_clear_district_map_loot(cell)
-				already = true
-				break
-		if already:
-			continue
-		var candidates: Array[int] = []
-		for district_index in map.district_indices:
-			var pick_cell := map.get_cell(district_index)
-			if bool(pick_cell.get("has_elevator", false)) or bool(pick_cell.get("has_kunlun_control", false)):
-				continue
-			if str(pick_cell.get("story_id", "")) != "" or str(pick_cell.get("special_encounter", "")) != "":
-				continue
-			candidates.append(district_index)
-		if candidates.is_empty():
-			continue
-		var pick := -1
 		if bool(story.get("spawn_near_start", false)):
-			pick = _pick_district_near_start(map, candidates)
-		if pick < 0:
-			var rng := RandomNumberGenerator.new()
-			rng.randomize()
-			pick = candidates[rng.randi_range(0, candidates.size() - 1)]
-		var cell_pick := map.get_cell(pick)
-		cell_pick["building_type"] = building_type
-		cell_pick["story_id"] = story_id
-		cell_pick["district_tag"] = tag
-		cell_pick["special_encounter"] = tag
-		_clear_district_map_loot(cell_pick)
+			near_start_ids.append(story_id)
+		else:
+			other_ids.append(story_id)
+	for story_id in near_start_ids + other_ids:
+		_assign_story_district(map, story_id, layer)
+
+
+func _assign_story_district(map: WorldMapData, story_id: String, layer: int) -> void:
+	var story: Dictionary = _stories[story_id]
+	var required_layer := int(story.get("spawn_layer", 1))
+	if layer != required_layer:
+		return
+	var building_type := str(story.get("building_type", ""))
+	if building_type == "":
+		return
+	var tag := str(story.get("district_tag", story_id))
+	var assigned_index := -1
+	for district_index in map.district_indices:
+		var cell := map.get_cell(district_index)
+		if str(cell.get("story_id", "")) == story_id:
+			_clear_district_map_loot(cell)
+			assigned_index = district_index
+			break
+		if str(cell.get("special_encounter", "")) == tag:
+			cell["story_id"] = story_id
+			cell["building_type"] = building_type
+			_clear_district_map_loot(cell)
+			assigned_index = district_index
+			break
+	if assigned_index >= 0:
+		_apply_story_district_layout(map, story_id, assigned_index)
+		return
+	var candidates: Array[int] = []
+	for district_index in map.district_indices:
+		var pick_cell := map.get_cell(district_index)
+		if bool(pick_cell.get("has_elevator", false)) or bool(pick_cell.get("has_kunlun_control", false)):
+			continue
+		if str(pick_cell.get("story_id", "")) != "" or str(pick_cell.get("special_encounter", "")) != "":
+			continue
+		candidates.append(district_index)
+	if candidates.is_empty():
+		return
+	if story_id == WorldMapData.SENTINEL_STORY_ID:
+		var north_candidates := map.filter_districts_with_north_road(candidates)
+		if not north_candidates.is_empty():
+			candidates = north_candidates
+	var pick := -1
+	if story_id == WorldMapData.SENTINEL_STORY_ID:
+		pick = map.pick_district_with_north_road(candidates)
+	if pick < 0 and bool(story.get("spawn_near_start", false)):
+		pick = _pick_district_near_start(map, candidates)
+	if pick < 0:
+		var rng := RandomNumberGenerator.new()
+		rng.randomize()
+		pick = candidates[rng.randi_range(0, candidates.size() - 1)]
+	var cell_pick := map.get_cell(pick)
+	cell_pick["building_type"] = building_type
+	cell_pick["story_id"] = story_id
+	cell_pick["district_tag"] = tag
+	cell_pick["special_encounter"] = tag
+	_clear_district_map_loot(cell_pick)
+	_apply_story_district_layout(map, story_id, pick)
+
+
+func _apply_story_district_layout(map: WorldMapData, story_id: String, district_index: int) -> void:
+	if story_id == WorldMapData.SENTINEL_STORY_ID:
+		map.orient_district_door_north(district_index)
+	if story_id == WorldMapData.MARIAN_STORY_ID:
+		map.clear_interior_obstacles(district_index)
 
 
 func _pick_district_near_start(map: WorldMapData, candidates: Array[int]) -> int:

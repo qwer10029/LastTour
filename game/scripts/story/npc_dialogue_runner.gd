@@ -196,6 +196,14 @@ func _resolve_condition(node: Dictionary) -> String:
 		if rng.randf() < float(cond_dict.get("random_below", 0.5)):
 			return str(cond_dict.get("if_true", ""))
 		return str(cond_dict.get("if_false", ""))
+	if cond_dict.has("thunder_recognition"):
+		var getter: Callable = _context.get("get_thunder_recognition", Callable())
+		var recognition := "enemy"
+		if getter.is_valid():
+			recognition = str(getter.call())
+		if recognition == str(cond_dict.get("thunder_recognition", "")):
+			return str(cond_dict.get("if_true", ""))
+		return str(cond_dict.get("if_false", ""))
 	var need_item := _resolve_item_id(str(cond_dict.get("has_item", "")))
 	var need_count := int(cond_dict.get("count", 1))
 	var has := _count_item(need_item)
@@ -246,13 +254,19 @@ func _execute_actions(actions: Variant) -> bool:
 	if bool(act.get("end_dialogue", false)):
 		_finish_story()
 		_clear_checkpoint()
-	if bool(act.get("close_dialogue", false)):
-		_close_session()
-		return true
 	if bool(act.get("trigger_clone_restart", false)):
 		var restart_cb: Callable = _context.get("trigger_clone_restart", Callable())
 		if restart_cb.is_valid():
 			restart_cb.call()
+		return true
+	if bool(act.get("start_thunder_boss", false)):
+		var boss_cb: Callable = _context.get("start_thunder_boss", Callable())
+		if boss_cb.is_valid():
+			boss_cb.call()
+		_close_session()
+		return true
+	if bool(act.get("close_dialogue", false)):
+		_close_session()
 		return true
 	return false
 

@@ -128,6 +128,23 @@
 			"summon_enemy": "swarm",
 			"summon_interval_sec": 8.0,
 			"max_summoned_alive": 8
+		},
+		"thunder_leiting": {
+			"name": "不败之盾-雷霆",
+			"hp": 1100.0,
+			"speed": 14.0,
+			"base_damage": 34.0,
+			"color": "#c83828",
+			"radius": 30.0,
+			"armor": 0.42,
+			"hack_resist": 999.0,
+			"hack_immune": true,
+			"effect_immune": true,
+			"is_shepherd": false,
+			"breach_damage_factor": 0.72,
+			"summon_enemy": "drone",
+			"summon_interval_sec": 7.0,
+			"max_summoned_alive": 6
 		}
 	}
 }

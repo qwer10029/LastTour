@@ -126,6 +126,34 @@
 			"stack_max": 1,
 			"color": "#88e8b0",
 			"usable": false
+		},
+		"data_chip_clone_gene": {
+			"name": "克隆基因情报",
+			"desc": "玛丽安旧日记夹带的培育登记表：母本 M-142，克隆体 K-142。",
+			"stack_max": 1,
+			"color": "#e8c8a8",
+			"usable": false
+		},
+		"data_chip_marian_love": {
+			"name": "玛丽安留言数据片",
+			"desc": "残骸终端里她自己输入的一行话：复制品也要被爱。",
+			"stack_max": 1,
+			"color": "#d8a8b0",
+			"usable": false
+		},
+		"composite_armor_panel": {
+			"name": "复合装甲板",
+			"desc": "从不败之盾-雷霆残骸拆下的装甲片段，仍可焊接到车体。",
+			"stack_max": 99,
+			"color": "#a0a8b8",
+			"usable": false
+		},
+		"auto_turret_auth": {
+			"name": "自动炮塔授权码",
+			"desc": "雷霆单元死前未销毁的炮塔控制密钥，可写入夜间布防系统。",
+			"stack_max": 99,
+			"color": "#e8c060",
+			"usable": false
 		}
 	},
 	"loot_by_building": {

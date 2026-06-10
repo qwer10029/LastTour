@@ -1,0 +1,61 @@
+【全局风格 · 每条英文提示末尾已内置，生成时勿再加精细/写实词】
+对标现有素材：player_foot（Q 版像素、粗轮廓、2～3 阶平涂）、quest_battery / scrap（大块造型、低细节、末世灰绿灰蓝）。
+禁止：写实、3D 渲染、金属光泽、复杂纹理、精细机械、渐变光晕、高分辨率插画感。
+
+---
+1. 哨兵 S-09 · sentinel_s09
+门口俯视角 npc_sentinel_s09.png（已采用用户提供的贴图，勿重新生成）
+路径 game/assets/sprites/npc/npc_sentinel_s09.png · 军营门口站立展示，含头部传感器 + 躯干两部分
+
+能量电池 quest_sentinel_battery.png（替换通用电池）
+64x64 simple flat inventory icon like quest_battery, chunky battery block, one green stripe, small plus/minus marks, cyan accent #9ef0ff, dark outline, 2-tone shading, transparent background, no labels no text
+
+强化防御塔蓝图 blueprint_pulse_tower.png
+64x64 simple flat icon, rolled paper scroll as rectangle blocks, one simple tower stick figure and circle ring drawn with thick lines, blue-cyan ink #8ec8e8, worn paper as darker edge only, no readable text no fine diagram
+
+---
+2. 编史者 04 · chronicler_04
+NPC 头像 npc_chronicler_04.png
+96x96 simple pixel portrait, small boxy tracked robot in dusty room, cracked pale screen as one light rectangle, tiny candle blob on screen, broken treads as two dark blocks, purple-gray #b8a0e8, dark outline, 2-tone flat shading, sad mood, no room detail
+
+存储模块 quest_chronicler_memory.png
+64x64 simple flat icon, chunky memory cartridge rectangle, purple face #b8a0e8, few gold pin dots at bottom, dark outline, 2-tone shading, transparent background, no circuit detail
+
+物资登记数据片 data_chip_supply_registry.png
+64x64 simple flat icon, slim chip rectangle with one notch, pale blue stripe #9ec8f0, tiny warehouse box symbol as simple squares, dark outline, 2-tone shading, transparent background, no hologram no text
+
+---
+3. 熔炉 · furnace_qc
+NPC 头像 npc_furnace.png
+96x96 simple pixel portrait, big blocky furnace machine, rust-red body #a85848, four thick arm rectangles, one green dot eye on top, dark outline, 2-tone flat shading, factory mood, no hydraulic detail no background clutter
+
+昆仑基因备份数据片 data_chip_kunlun_k142.png
+64x64 simple flat icon, chunky chip rectangle, cracked corner as jagged edge, red warning dot #e8a0a0, simple DNA zigzag as thick line, dark outline, 2-tone shading, transparent background, no readable text
+
+---
+4. 参谋-07 · staff_officer_07
+NPC 头像 npc_staff_officer_07.png
+96x96 simple pixel portrait, blocky hologram officer torso, smooth blue light head as oval blob #a8d8ff, one arm raised as thick rectangle, faint circle under feet as sand table hint, dark outline, 2-tone flat shading, bunker mood, no face detail
+
+回响行动附件数据片 data_chip_echo_operation.png
+64x64 simple flat icon, chip rectangle, blue file tab #88c8f0, abstract classified mark as thick X or seal blob, dark outline, 2-tone shading, transparent background, no readable text
+
+全息发生器电池 quest_hologram_battery.png
+64x64 simple flat icon like quest_battery, compact power cell block, pale blue cap #a8d8f0, one small port rectangle on top, dark outline, 2-tone shading, transparent background, no sleek metal
+
+战术坐标数据片 data_chip_tactical_map.png
+64x64 simple flat icon, chip rectangle, tiny grid as 4x4 dots, few cyan marker dots #88c8f0, dark outline, 2-tone shading, transparent background, no projected map glow
+
+---
+5. 防空雷达 AD-1 · ad_1_radar
+NPC 头像 npc_ad_1_radar.png
+96x96 simple pixel portrait, blocky radar console, green CRT screen rectangle with one sweep line #88ffb0, simple dish antenna shape behind, concrete bunker as gray blocks, dark outline, 2-tone flat shading, lonely mood, no CRT scan detail
+
+电机组件 quest_radar_motor.png
+64x64 simple flat icon, chunky motor block, olive-green body #8a9868, copper coil as orange-brown ring, short shaft stub, dark outline, 2-tone shading, transparent background, no brass screws no mechanical cutaway
+
+雷达回波坐标数据片 data_chip_radar_coords.png
+64x64 simple flat icon, chip rectangle, two concentric arc lines and few green blip dots #78d8a0, dark outline, 2-tone shading, transparent background, no radar glow
+
+雷达防御加固模块 data_chip_radar_tower_mod.png
+64x64 simple flat icon, rugged chip rectangle, shield arc as thick curved line, mint-green accent #88e8b0, dark outline, 2-tone shading, transparent background, no etched schematic detail

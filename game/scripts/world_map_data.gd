@@ -8,6 +8,9 @@ const INTERIOR_ROWS := 10
 const FOOT_ANCHOR_OBSTACLE := Vector2i(6, 4)
 const FOOT_ELEVATOR_CONSOLE_TILE := FOOT_ANCHOR_OBSTACLE
 const FOOT_DOOR_TILE := Vector2i(6, 9)
+const FOOT_DOOR_TILE_NORTH := Vector2i(6, 0)
+const SENTINEL_STORY_ID := "sentinel_s09"
+const MARIAN_STORY_ID := "marian_k142"
 
 const DIRECTIONS := {
 	"up": Vector2i(0, -1),
@@ -200,6 +203,69 @@ func get_building_entrance_world_pos(district_index: int) -> Vector2:
 	var facade_depth := unit * 0.14
 	var edge := road_center + side_dir * (unit * 0.32)
 	return edge + side_dir * (facade_depth * 0.42)
+
+
+func district_toward_road_vector(district_index: int) -> Vector2:
+	if not is_valid_index(district_index) or not is_district(district_index):
+		return Vector2.ZERO
+	var approach := int(cells[district_index].get("approach_road_index", -1))
+	if not is_valid_index(approach):
+		return Vector2.ZERO
+	return cell_center(approach) - cell_center(district_index)
+
+
+func clear_interior_obstacles(index: int) -> void:
+	if not is_valid_index(index) or not is_district(index):
+		return
+	ensure_foot_layout(index)
+	cells[index]["foot_blocked"] = []
+
+
+func uses_north_foot_door(cell: Dictionary) -> bool:
+	return str(cell.get("story_id", "")) == SENTINEL_STORY_ID
+
+
+func orient_district_door_north(district_index: int) -> bool:
+	if not is_valid_index(district_index) or not is_district(district_index):
+		return false
+	var north_index := -1
+	for candidate in _district_door_candidates(district_index):
+		if direction_between(district_index, candidate) == "up":
+			north_index = candidate
+			break
+	if north_index < 0:
+		return false
+	for neighbor in get_connected_indices(district_index).duplicate():
+		if is_district(neighbor):
+			_disconnect_cells(district_index, neighbor)
+	for direction in DIRECTIONS.keys():
+		var linked := int(cells[district_index]["connections"][direction])
+		if linked >= 0:
+			_disconnect_cells(district_index, linked)
+	cells[district_index]["connections"]["up"] = north_index
+	cells[north_index]["connections"]["down"] = district_index
+	cells[district_index]["approach_road_index"] = north_index
+	cells[district_index]["entry_from_road"] = "down"
+	cells[district_index]["door_facing"] = "up"
+	return true
+
+
+func pick_district_with_north_road(candidates: Array[int]) -> int:
+	for district_index in candidates:
+		for candidate in _district_door_candidates(district_index):
+			if direction_between(district_index, candidate) == "up":
+				return district_index
+	return -1
+
+
+func filter_districts_with_north_road(candidates: Array[int]) -> Array[int]:
+	var result: Array[int] = []
+	for district_index in candidates:
+		for candidate in _district_door_candidates(district_index):
+			if direction_between(district_index, candidate) == "up":
+				result.append(district_index)
+				break
+	return result
 
 
 func get_roadside_parking_world_pos(road_index: int, district_index: int) -> Vector2:
@@ -450,6 +516,13 @@ func building_label(index: int) -> String:
 				if radar_label != "":
 					return radar_label
 			return "防空雷达站"
+		"market":
+			var market_story := str(cells[index].get("story_id", ""))
+			if market_story != "" and StoryData.has_story(market_story):
+				var market_label := str(StoryData.get_story(market_story).get("building_label", ""))
+				if market_label != "":
+					return market_label
+			return "集市"
 		_:
 			return "建筑群"
 
@@ -949,17 +1022,25 @@ func get_foot_door_tile(index: int) -> Vector2i:
 	var cols: int = maxi(int(cell.get("foot_grid_cols", 1)), 1)
 	var rows: int = maxi(int(cell.get("foot_grid_rows", 1)), 1)
 	var blocked: Array = cell.get("foot_blocked", [])
+	var door_seed := FOOT_DOOR_TILE_NORTH if uses_north_foot_door(cell) else FOOT_DOOR_TILE
 	var door_tile := Vector2i(
-		clampi(FOOT_DOOR_TILE.x, 0, cols - 1),
-		clampi(FOOT_DOOR_TILE.y, 0, rows - 1),
+		clampi(door_seed.x, 0, cols - 1),
+		clampi(door_seed.y, 0, rows - 1),
 	)
 	if _tile_blocked(door_tile, blocked):
 		door_tile = _pick_foot_spawn_tile(cols, rows, door_tile, blocked)
-	for row in range(door_tile.y, maxi(door_tile.y - 3, -1), -1):
-		var candidate := Vector2i(door_tile.x, row)
-		if not _tile_blocked(candidate, blocked):
-			door_tile = candidate
-			break
+	if uses_north_foot_door(cell):
+		for row in range(door_tile.y, mini(door_tile.y + 3, rows)):
+			var candidate := Vector2i(door_tile.x, row)
+			if not _tile_blocked(candidate, blocked):
+				door_tile = candidate
+				break
+	else:
+		for row in range(door_tile.y, maxi(door_tile.y - 3, -1), -1):
+			var candidate := Vector2i(door_tile.x, row)
+			if not _tile_blocked(candidate, blocked):
+				door_tile = candidate
+				break
 	return door_tile
 
 

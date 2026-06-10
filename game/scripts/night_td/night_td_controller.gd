@@ -257,30 +257,42 @@ func start_session(
 	_play_music_cue("night_setup" if phase == Phase.PLACE else "night_combat", 0.8)
 
 
+const DEBUG_SKIP_SESSION_KINDS := ["final_terminal_defense", "thunder_leiting_boss"]
+
+
 func _debug_skip_available() -> bool:
-	return OS.is_debug_build()
+	return OS.is_debug_build() or Engine.is_editor_hint()
+
+
+func _supports_debug_skip() -> bool:
+	return _session_kind in DEBUG_SKIP_SESSION_KINDS
 
 
 func _notify_debug_skip_available() -> void:
-	if _session_kind != "final_terminal_defense" or not _debug_skip_available():
+	if not _supports_debug_skip() or not _debug_skip_available():
 		return
 	if is_instance_valid(hud):
-		hud.append_log("[调试] 按 F9 跳过 Boss 战，直接进入终端剧情")
+		var hint := "[调试] 按 F9 跳过 Boss 战"
+		if _session_kind == "final_terminal_defense":
+			hint = "[调试] 按 F9 跳过 Boss 战，直接进入终端剧情"
+		elif _session_kind == "thunder_leiting_boss":
+			hint = "[调试] 按 F9 跳过 Boss 战，解锁指挥中心"
+		hud.append_log(hint)
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not _debug_skip_available() or not visible or _session_kind != "final_terminal_defense":
+	if not _debug_skip_available() or not visible or not _supports_debug_skip():
 		return
 	if not event is InputEventKey or not event.pressed or event.is_echo():
 		return
 	if event.keycode != KEY_F9 and event.physical_keycode != KEY_F9:
 		return
-	debug_skip_final_terminal_boss()
+	debug_skip_boss_fight()
 	get_viewport().set_input_as_handled()
 
 
-func debug_skip_final_terminal_boss() -> void:
-	if _session_kind != "final_terminal_defense" or not visible:
+func debug_skip_boss_fight() -> void:
+	if not visible or not _supports_debug_skip():
 		return
 	if phase == Phase.RESULT and not _last_result.is_empty():
 		_finish_session()
@@ -298,10 +310,20 @@ func debug_skip_final_terminal_boss() -> void:
 	_last_result["inventory_loss"] = 0
 	_last_result["breach_losses"] = {}
 	_last_result["breach_total"] = 0
-	_last_result["message"] = "【调试跳过】顶层终端防线已清除。"
+	match _session_kind:
+		"final_terminal_defense":
+			_last_result["message"] = "【调试跳过】顶层终端防线已清除。"
+		"thunder_leiting_boss":
+			_last_result["message"] = "【调试跳过】不败之盾-雷霆已击败。"
+		_:
+			_last_result["message"] = "【调试跳过】Boss 战已结束。"
 	if is_instance_valid(hud):
 		hud.append_log("【调试】已跳过 Boss 战")
 	_finish_session()
+
+
+func debug_skip_final_terminal_boss() -> void:
+	debug_skip_boss_fight()
 
 
 func _session_phase_title(suffix: String) -> String:

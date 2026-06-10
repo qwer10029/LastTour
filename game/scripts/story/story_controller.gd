@@ -3,7 +3,14 @@ class_name StoryController
 
 const _NpcDialogueRunner := preload("res://scripts/story/npc_dialogue_runner.gd")
 
+const FOOT_WALK_LOOT_RADIUS := 30.0
+const FOOT_INTERACT_LOOT_RADIUS := 36.0
+const FOOT_INTERACT_HINT_RADIUS := 44.0
+const PROP_DIG_DURATION := 0.85
+const THUNDER_LEITING_STORY_ID := "thunder_leiting"
+
 signal ui_refresh_requested
+signal thunder_boss_requested(district_index: int)
 
 var run_state := StoryRunState.new()
 var gate_dialogue: StoryGateDialogue
@@ -14,6 +21,7 @@ var _unlocked_loot_nodes: Array[Area2D] = []
 var _gate_entrance_world: Vector2 = Vector2.ZERO
 var _active_story_id: String = ""
 var _ui_locked := false
+var _prop_dig_fx: Dictionary = {}
 
 
 func setup(host: Node) -> void:
@@ -37,6 +45,7 @@ func reset_for_new_run() -> void:
 	run_state.clear()
 	_clear_quest_nodes()
 	_clear_unlocked_loot_nodes()
+	_prop_dig_fx.clear()
 	_gate_entrance_world = Vector2.ZERO
 	_active_story_id = ""
 	_ui_locked = false
@@ -85,6 +94,8 @@ func can_enter_district(district_index: int) -> bool:
 	var story_id := _story_id_of_district(district_index)
 	if story_id == "":
 		return true
+	if is_thunder_blocking_district(district_index):
+		return false
 	if run_state.is_completed(story_id):
 		return false
 	if StoryData.is_interior_encounter(story_id):
@@ -166,12 +177,111 @@ func _handle_npc_dialogue_interact(story_id: String, node_index: int) -> bool:
 
 
 func try_enter_district(district_index: int) -> bool:
+	if is_thunder_blocking_district(district_index):
+		begin_thunder_gate_encounter(district_index)
+		return false
 	if not can_enter_district(district_index):
 		var story_id := _story_id_of_district(district_index)
 		if story_id != "":
 			_begin_gate_talk(story_id, district_index)
 		return false
 	return true
+
+
+func is_thunder_blocking_district(district_index: int) -> bool:
+	if district_index < 0 or is_thunder_defeated():
+		return false
+	if not _is_final_layer():
+		return false
+	var map: WorldMapData = _map()
+	if map == null:
+		return false
+	return map.district_has_kunlun_control(district_index)
+
+
+func is_thunder_defeated() -> bool:
+	if _host == null:
+		return true
+	return bool(_host.get("_thunder_leiting_defeated"))
+
+
+func should_show_thunder_gate_boss(district_index: int) -> bool:
+	return is_thunder_blocking_district(district_index)
+
+
+func advance_active_drive_dialogue() -> bool:
+	if not is_instance_valid(npc_dialogue) or not npc_dialogue.is_active():
+		return false
+	if npc_dialogue.phase == _NpcDialogueRunner.Phase.LINE:
+		npc_dialogue.advance_line()
+		ui_refresh_requested.emit()
+		return true
+	if npc_dialogue.phase == _NpcDialogueRunner.Phase.OPTIONS:
+		ui_refresh_requested.emit()
+		return true
+	return false
+
+
+func begin_thunder_gate_encounter(district_index: int) -> void:
+	if not is_thunder_blocking_district(district_index):
+		return
+	var checkpoint := str(run_state.get_dialogue_node(THUNDER_LEITING_STORY_ID))
+	var ready_for_battle := bool(
+		run_state.get_variable(THUNDER_LEITING_STORY_ID, "pre_battle_done", false)
+	) or checkpoint in ["combat_ready", "combat_start"]
+	if ready_for_battle:
+		_active_story_id = ""
+		_ui_locked = false
+		run_state.clear_dialogue_node(THUNDER_LEITING_STORY_ID)
+		thunder_boss_requested.emit(district_index)
+		ui_refresh_requested.emit()
+		return
+	if not is_instance_valid(npc_dialogue):
+		return
+	if npc_dialogue.is_active() and npc_dialogue.story_id == THUNDER_LEITING_STORY_ID:
+		advance_active_drive_dialogue()
+		return
+	if npc_dialogue.is_active():
+		return
+	run_state.set_district(THUNDER_LEITING_STORY_ID, district_index)
+	_cache_gate_entrance(district_index)
+	_active_story_id = THUNDER_LEITING_STORY_ID
+	_ui_locked = true
+	var ctx := _dialogue_context(THUNDER_LEITING_STORY_ID)
+	ctx["get_thunder_recognition"] = Callable(self, "thunder_recognition")
+	ctx["start_thunder_boss"] = func() -> void:
+		thunder_boss_requested.emit(district_index)
+	npc_dialogue.start_dialogue(THUNDER_LEITING_STORY_ID, "", ctx)
+	ui_refresh_requested.emit()
+
+
+func thunder_recognition() -> String:
+	var journal: RunJournal = _journal()
+	if journal == null:
+		return "enemy"
+	if journal.has_encounter("chronicler_plunder"):
+		return "enemy"
+	if (
+		journal.has_encounter("sentinel_s09_parts_gave1")
+		or journal.has_encounter("sentinel_s09_blueprint_gave1")
+	):
+		return "enemy"
+	if journal.has_encounter("chronicler_repair"):
+		return "ally"
+	if (
+		journal.has_encounter("sentinel_s09_parts_gave2")
+		or journal.has_encounter("sentinel_s09_blueprint_gave2")
+	):
+		return "ally"
+	return "enemy"
+
+
+func _is_final_layer() -> bool:
+	if _host == null:
+		return false
+	var layer := int(_host.get("_current_layer"))
+	var total := int(_host.get("total_layers"))
+	return layer >= total
 
 
 func start_story_talk(story_id: String, district_index: int = -1) -> void:
@@ -193,12 +303,12 @@ func on_entered_district_foot(district_index: int) -> void:
 		return
 	run_state.set_district(story_id, district_index)
 	if StoryData.is_interior_encounter(story_id):
-		if not run_state.is_completed(story_id):
-			call_deferred("_begin_interior_encounter", story_id)
-		_sync_ambient_loot(story_id, district_index)
 		if run_state.is_quest_active(story_id):
 			_sync_quest_pickups(story_id, district_index)
 			fix_foot_loot_positions(district_index)
+		if not run_state.is_completed(story_id) and not run_state.is_quest_active(story_id):
+			call_deferred("_begin_interior_encounter", story_id)
+		_sync_ambient_loot(story_id, district_index)
 		return
 	if not run_state.is_quest_active(story_id):
 		return
@@ -212,9 +322,6 @@ func _interior_dialogue_entry(story_id: String) -> String:
 		if backpack != null and backpack.has("data_chip_echo_operation", 1):
 			return _normalize_dialogue_entry(story_id, "choice")
 	if run_state.is_quest_active(story_id):
-		var need := int(StoryData.quest_def(story_id).get("collect_count", 0))
-		if run_state.get_collect_count(story_id) >= need:
-			return _normalize_dialogue_entry(story_id, "return_start")
 		return ""
 	if run_state.is_completed(story_id):
 		return ""
@@ -244,7 +351,7 @@ func _begin_interior_encounter(story_id: String) -> void:
 	ui_refresh_requested.emit()
 
 
-func try_interior_story_interact(district_index: int) -> bool:
+func try_interior_story_interact(district_index: int, player_local: Vector2 = Vector2.ZERO) -> bool:
 	var story_id := _story_id_of_district(district_index)
 	if story_id == "" or not StoryData.is_interior_encounter(story_id):
 		return false
@@ -252,6 +359,8 @@ func try_interior_story_interact(district_index: int) -> bool:
 		return false
 	var need := int(StoryData.quest_def(story_id).get("collect_count", 0))
 	if run_state.get_collect_count(story_id) < need:
+		return false
+	if not is_near_interior_npc(story_id, district_index, player_local):
 		return false
 	if not is_instance_valid(npc_dialogue) or npc_dialogue.is_active():
 		return false
@@ -309,7 +418,11 @@ func fix_foot_loot_positions(district_index: int) -> void:
 		spot_idx += 1
 
 
-func try_collect_foot_loot(district_index: int, player_local: Vector2, radius: float = 80.0) -> void:
+func try_collect_foot_loot(
+	district_index: int,
+	player_local: Vector2,
+	radius: float = FOOT_WALK_LOOT_RADIUS,
+) -> void:
 	_prune_invalid_quest_nodes()
 	_prune_invalid_unlocked_loot_nodes()
 	for node in _quest_nodes.duplicate():
@@ -320,23 +433,90 @@ func try_collect_foot_loot(district_index: int, player_local: Vector2, radius: f
 		_try_collect_node(node, district_index, player_local, radius)
 
 
-func try_interact_foot_loot(district_index: int, player_local: Vector2, radius: float = 80.0) -> bool:
-	_prune_invalid_quest_nodes()
+func try_interact_foot_loot(
+	district_index: int,
+	player_local: Vector2,
+	radius: float = FOOT_INTERACT_LOOT_RADIUS,
+) -> bool:
+	var story_id := _story_id_of_district(district_index)
+	if story_id == "" or not run_state.is_quest_active(story_id):
+		return false
+	if _prop_dig_fx.has(district_index):
+		return false
+	var prop := interior_quest_prop_display(story_id, district_index)
+	if prop.is_empty():
+		return false
+	var prop_local: Vector2 = prop.get("local", Vector2.ZERO)
+	if player_local.distance_to(prop_local) > radius:
+		return false
+	var item_id := str(prop.get("item_id", ""))
+	if item_id == "":
+		return false
+	_start_prop_dig(district_index, story_id, prop_local, item_id)
+	_clear_quest_nodes_for_story(story_id)
+	return true
+
+
+func tick_prop_dig_fx(delta: float) -> void:
+	if _prop_dig_fx.is_empty():
+		return
+	var finished: Array[int] = []
+	for key in _prop_dig_fx.keys():
+		var district_index := int(key)
+		var fx: Dictionary = _prop_dig_fx[district_index]
+		var time_left := float(fx.get("time_left", 0.0)) - delta
+		fx["time_left"] = time_left
+		_prop_dig_fx[district_index] = fx
+		if time_left <= 0.0:
+			finished.append(district_index)
+		elif _host != null:
+			_host.queue_redraw()
+	for district_index in finished:
+		_finish_prop_dig(district_index)
+
+
+func get_prop_dig_fx(district_index: int) -> Dictionary:
+	if not _prop_dig_fx.has(district_index):
+		return {}
+	var fx: Dictionary = _prop_dig_fx[district_index]
+	return {
+		"local": fx.get("local", Vector2.ZERO),
+		"item_id": str(fx.get("item_id", "scrap")),
+		"time_left": float(fx.get("time_left", 0.0)),
+	}
+
+
+func _start_prop_dig(district_index: int, story_id: String, local: Vector2, item_id: String) -> void:
+	_prop_dig_fx[district_index] = {
+		"story_id": story_id,
+		"local": local,
+		"item_id": item_id,
+		"time_left": PROP_DIG_DURATION,
+	}
+	if _host != null:
+		_host.queue_redraw()
+
+
+func _finish_prop_dig(district_index: int) -> void:
+	if not _prop_dig_fx.has(district_index):
+		return
+	var fx: Dictionary = _prop_dig_fx[district_index]
+	_prop_dig_fx.erase(district_index)
+	var item_id := str(fx.get("item_id", "scrap"))
+	if _host != null and _host.has_method("_on_resource_collected"):
+		_host.call("_on_resource_collected", district_index, item_id, null)
+	if _host != null:
+		_host.queue_redraw()
+
+
+func _clear_quest_nodes_for_story(story_id: String) -> void:
 	for node in _quest_nodes.duplicate():
 		if not is_instance_valid(node):
 			continue
-		if not bool(node.get_meta("interact_only", false)):
+		if str(node.get_meta("story_id", "")) != story_id:
 			continue
-		if int(node.get_meta("district_index", -1)) != district_index:
-			continue
-		if not is_foot_loot_visible(node, district_index):
-			continue
-		var loot_local := _foot_local_of_pickup(node, district_index)
-		if loot_local.distance_to(player_local) > radius:
-			continue
-		_try_collect_node(node, district_index, player_local, radius)
-		return true
-	return false
+		_quest_nodes.erase(node)
+		node.queue_free()
 
 
 func foot_loot_prop_id(node: Area2D) -> String:
@@ -345,7 +525,11 @@ func foot_loot_prop_id(node: Area2D) -> String:
 	return str(node.get_meta("pickup_prop", ""))
 
 
-func quest_interact_hint(district_index: int, player_local: Vector2, radius: float = 88.0) -> Dictionary:
+func quest_interact_hint(
+	district_index: int,
+	player_local: Vector2,
+	radius: float = FOOT_INTERACT_HINT_RADIUS,
+) -> Dictionary:
 	var story_id := _story_id_of_district(district_index)
 	if story_id == "" or not run_state.is_quest_active(story_id):
 		return {}
@@ -354,22 +538,100 @@ func quest_interact_hint(district_index: int, player_local: Vector2, radius: flo
 	var need := int(StoryData.quest_def(story_id).get("collect_count", 0))
 	if run_state.get_collect_count(story_id) >= need:
 		return {}
-	for node in _quest_nodes:
-		if not is_instance_valid(node):
-			continue
-		if not bool(node.get_meta("interact_only", false)):
-			continue
-		if int(node.get_meta("district_index", -1)) != district_index:
-			continue
-		var loot_local := _foot_local_of_pickup(node, district_index)
-		if loot_local.distance_to(player_local) > radius:
-			continue
-		var hint := str(StoryData.quest_def(story_id).get("interact_hint", "E 交互"))
-		return {
-			"text": hint,
-			"local": loot_local,
-		}
-	return {}
+	if _prop_dig_fx.has(district_index):
+		return {}
+	var prop := interior_quest_prop_display(story_id, district_index)
+	if prop.is_empty():
+		return {}
+	var prop_local: Vector2 = prop.get("local", Vector2.ZERO)
+	if player_local.distance_to(prop_local) > radius:
+		return {}
+	var hint := str(StoryData.quest_def(story_id).get("interact_hint", "E 交互"))
+	return {
+		"text": hint,
+		"local": prop_local,
+	}
+
+
+func is_near_interior_npc(story_id: String, district_index: int, player_local: Vector2) -> bool:
+	if story_id == "" or district_index < 0:
+		return false
+	if not StoryData.is_interior_encounter(story_id):
+		return true
+	var map: WorldMapData = _map()
+	if map == null:
+		return false
+	var area := map.get_foot_area_rect(district_index)
+	if area.size == Vector2.ZERO:
+		return false
+	var anchor := _interior_npc_foot_local(story_id, area.size)
+	var radius := maxf(area.size.x, area.size.y) * 0.20
+	return player_local.distance_to(anchor) <= radius
+
+
+func interior_npc_interact_hint(story_id: String, district_index: int, player_local: Vector2) -> Dictionary:
+	if story_id == "" or not StoryData.is_interior_encounter(story_id):
+		return {}
+	if not run_state.is_quest_active(story_id):
+		return {}
+	var need := int(StoryData.quest_def(story_id).get("collect_count", 0))
+	if run_state.get_collect_count(story_id) < need:
+		return {}
+	if not is_near_interior_npc(story_id, district_index, player_local):
+		return {}
+	var hint := StoryData.prompt_return(story_id)
+	if hint.strip_edges() == "":
+		hint = "E 交谈"
+	return {"text": hint}
+
+
+func _interior_npc_foot_local(story_id: String, area_size: Vector2) -> Vector2:
+	match story_id:
+		"ad_1_radar":
+			return area_size * Vector2(0.5, 0.46)
+		"marian_k142":
+			return area_size * Vector2(0.52, 0.36)
+		"chronicler_04":
+			return area_size * Vector2(0.5, 0.42)
+		"furnace_qc":
+			return area_size * Vector2(0.5, 0.42)
+		"staff_officer_07":
+			return area_size * Vector2(0.5, 0.48)
+		_:
+			return area_size * 0.5
+
+
+func interior_quest_prop_display(story_id: String, district_index: int) -> Dictionary:
+	if story_id == "" or district_index < 0 or run_state.is_completed(story_id):
+		return {}
+	if _prop_dig_fx.has(district_index):
+		return {}
+	var quest: Dictionary = StoryData.quest_def(story_id)
+	var prop_id := str(quest.get("pickup_prop", ""))
+	if prop_id == "":
+		return {}
+	var need := int(quest.get("collect_count", 1))
+	if run_state.get_collect_count(story_id) >= need:
+		return {}
+	var local := _quest_prop_local(quest)
+	if local == Vector2.ZERO:
+		return {}
+	return {
+		"local": local,
+		"prop": prop_id,
+		"item_id": str(quest.get("collect_item_id", "")),
+	}
+
+
+func _quest_prop_local(quest: Dictionary) -> Vector2:
+	var offsets: Variant = quest.get("interior_offsets", [])
+	if typeof(offsets) != TYPE_ARRAY or (offsets as Array).is_empty():
+		return Vector2.ZERO
+	var first: Variant = (offsets as Array)[0]
+	if typeof(first) != TYPE_ARRAY or (first as Array).size() < 2:
+		return Vector2.ZERO
+	var arr: Array = first
+	return Vector2(float(arr[0]), float(arr[1]))
 
 
 func is_foot_loot_visible(node: Area2D, district_index: int) -> bool:
@@ -406,6 +668,12 @@ func _try_collect_node(node: Node, district_index: int, player_local: Vector2, r
 	var loot_local := _foot_local_of_pickup(pickup, district_index)
 	if loot_local.distance_to(player_local) > radius:
 		return
+	if pickup in _quest_nodes:
+		_quest_nodes.erase(pickup)
+	if pickup in _unlocked_loot_nodes:
+		_unlocked_loot_nodes.erase(pickup)
+	if _host != null:
+		_host.queue_redraw()
 	pickup.set_meta("picked_up", true)
 	var item_id := str(pickup.get_meta("item_id", "scrap"))
 	if _host != null and _host.has_method("_on_resource_collected"):
@@ -520,6 +788,31 @@ func refresh_unlocked_loot(_mode_foot: bool, _current_district: int) -> void:
 			node.visible = false
 
 
+func should_show_gate_npc(story_id: String) -> bool:
+	if story_id == "":
+		return false
+	if not DayTopdownRender.has_gate_npc_sprite(story_id):
+		return false
+	if story_id == WorldMapData.SENTINEL_STORY_ID:
+		return true
+	return not run_state.is_completed(story_id)
+
+
+func get_gate_npc_anchor(district_index: int) -> Vector2:
+	var map: WorldMapData = _map()
+	if map == null or district_index < 0:
+		return Vector2.ZERO
+	var story_id := _story_id_of_district(district_index)
+	var entrance := map.get_building_entrance_world_pos(district_index)
+	if entrance == Vector2.ZERO:
+		return Vector2.ZERO
+	return DayTopdownRender.gate_npc_anchor(
+		entrance,
+		story_id,
+		map.district_toward_road_vector(district_index),
+	)
+
+
 func draw_gate_bubbles(canvas: CanvasItem, vehicle_pos: Vector2, draw_bubble: Callable) -> void:
 	var npc_text := ""
 	var player_text := ""
@@ -531,15 +824,24 @@ func draw_gate_bubbles(canvas: CanvasItem, vehicle_pos: Vector2, draw_bubble: Ca
 		player_text = gate_dialogue.player_bubble
 	else:
 		return
+	var district := run_state.get_district(_active_story_id)
 	var gate := _gate_entrance_world
-	if gate == Vector2.ZERO:
-		var district := run_state.get_district(_active_story_id)
-		if district >= 0 and _map() != null:
-			gate = _map().get_building_entrance_world_pos(district)
-	canvas.draw_circle(gate, 14.0, Color("#6a8ca8", 0.35))
-	canvas.draw_circle(gate, 14.0, Color("#9ef0ff", 0.55), false, 2.0)
+	if gate == Vector2.ZERO and district >= 0 and _map() != null:
+		gate = _map().get_building_entrance_world_pos(district)
+	var toward_road := Vector2.ZERO
+	if district >= 0 and _map() != null:
+		toward_road = _map().district_toward_road_vector(district)
+	if _active_story_id == THUNDER_LEITING_STORY_ID and gate != Vector2.ZERO:
+		DayTopdownRender.draw_thunder_gate_boss(canvas, gate, 1.0, toward_road)
+	elif should_show_gate_npc(_active_story_id):
+		DayTopdownRender.draw_gate_npc(canvas, gate, _active_story_id, 1.0, toward_road)
 	if npc_text != "":
-		draw_bubble.call(gate + Vector2(0.0, -38.0), npc_text, Color("#dce8f4"), Color("#5a7a98"))
+		var bubble_anchor := gate
+		if should_show_gate_npc(_active_story_id):
+			bubble_anchor = get_gate_npc_anchor(run_state.get_district(_active_story_id))
+			if bubble_anchor == Vector2.ZERO:
+				bubble_anchor = gate
+		draw_bubble.call(bubble_anchor + Vector2(0.0, -52.0), npc_text, Color("#dce8f4"), Color("#5a7a98"))
 	if player_text != "":
 		draw_bubble.call(vehicle_pos + Vector2(0.0, -42.0), player_text, Color("#f0e8d0"), Color("#c8a060"))
 
@@ -739,6 +1041,9 @@ func _on_quest_accepted(story_id: String) -> void:
 			run_state.set_district(story_id, district)
 	if district >= 0:
 		_sync_quest_pickups(story_id, district)
+		fix_foot_loot_positions(district)
+	if _host != null:
+		_host.queue_redraw()
 	_ui_locked = false
 	ui_refresh_requested.emit()
 
@@ -771,6 +1076,10 @@ func _on_reward_chosen(story_id: String, choice: Dictionary) -> void:
 
 
 func _on_npc_story_completed(story_id: String, result: Dictionary) -> void:
+	if story_id == THUNDER_LEITING_STORY_ID:
+		_ui_locked = false
+		ui_refresh_requested.emit()
+		return
 	run_state.clear_dialogue_node(story_id)
 	var encounter_id := str(result.get("encounter_id", ""))
 	var layer := int(_host.get("_current_layer")) if _host else 1
@@ -926,6 +1235,8 @@ func _sync_quest_pickups(story_id: String, district_index: int) -> void:
 	var quest: Dictionary = StoryData.quest_def(story_id)
 	var item_id := str(quest.get("collect_item_id", ""))
 	if item_id == "":
+		return
+	if bool(quest.get("interact_to_collect", false)):
 		return
 	var need := int(quest.get("collect_count", 1))
 	var collected := run_state.get_collect_count(story_id)

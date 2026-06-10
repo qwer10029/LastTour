@@ -43,10 +43,17 @@ const PLAYER_WALK_FRAMES_DOWN := [3, 4, 3]
 const PLAYER_WALK_FRAMES_SIDE := [5, 6, 7]
 const VEHICLE_TOPDOWN_SPRITE := "res://assets/sprites/vehicle_topdown.png"
 const VEHICLE_SPRITE_FORWARD := Vector2.LEFT  ## 贴图默认车头朝左
+const NPC_SPRITE_DIR := "res://assets/sprites/npc/"
+const GATE_NPC_DISPLAY_HEIGHT := 76.0
+const GATE_NPC_FILES := {
+	"sentinel_s09": "npc_sentinel_s09.png",
+}
 static var _player_sprite_ready := false
 static var _tex_player_foot: Texture2D
 static var _vehicle_sprite_ready := false
 static var _tex_vehicle: Texture2D
+static var _gate_npc_ready := false
+static var _gate_npc_textures: Dictionary = {}
 
 static func hash_cell(seed: int, gx: int, gy: int) -> float:
 	return fmod(sin(float(seed * 1271 + gx * 3117 + gy * 7493)) * 43758.5453, 1.0)
@@ -361,24 +368,6 @@ static func draw_interior_floor(canvas: CanvasItem, panel_rect: Rect2) -> void:
 	canvas.draw_rect(panel_rect, Color("#052a42"), true)
 
 
-static func _interior_floor_stain_color(seed: int, gx: int, gy: int) -> Color:
-	var h := hash_cell(seed, gx, gy)
-	if h < 0.38:
-		return Color(0.0, 0.0, 0.0, 0.0)
-	var variant := int(floor(hash_cell(seed + 17, gx + 3, gy + 5) * 4.0)) % 4
-	var base := Color("#3a3834", 0.07 + h * 0.1)
-	match variant:
-		0:
-			base = base.lerp(Color("#4a4438"), 0.35)
-		1:
-			base = base.lerp(Color("#2e2c28"), 0.4)
-		2:
-			base = base.lerp(Color("#3a3428"), 0.28)
-		3:
-			base = base.lerp(Color("#34383a"), 0.22)
-	return base
-
-
 static func draw_interior_floor_grid(
 	canvas: CanvasItem,
 	panel_rect: Rect2,
@@ -388,20 +377,6 @@ static func draw_interior_floor_grid(
 	building_type: String = "",
 ) -> void:
 	draw_tiled_interior_floor(canvas, panel_rect, building_type)
-	if building_type in ["elevator", "kunlun_control"]:
-		return
-	var tile_w := panel_rect.size.x / float(maxi(cols, 1))
-	var tile_h := panel_rect.size.y / float(maxi(rows, 1))
-	for gy in range(rows):
-		for gx in range(cols):
-			var stain := _interior_floor_stain_color(floor_seed, gx, gy)
-			if stain.a <= 0.001:
-				continue
-			var tile_rect := Rect2(
-				panel_rect.position + Vector2(float(gx) * tile_w, float(gy) * tile_h),
-				Vector2(tile_w, tile_h),
-			)
-			canvas.draw_rect(tile_rect, stain, true)
 
 
 static func _segment_scale(texture: Texture2D, is_ns: bool) -> float:
@@ -888,6 +863,119 @@ static func draw_vehicle_marker(
 	draw_pixel_vehicle(canvas, center, travel_axis)
 
 
+static func has_gate_npc_sprite(story_id: String) -> bool:
+	return GATE_NPC_FILES.has(story_id)
+
+
+static func gate_npc_texture(story_id: String) -> Texture2D:
+	_ensure_gate_npc_textures()
+	return _gate_npc_textures.get(story_id, null)
+
+
+static func _ensure_gate_npc_textures() -> void:
+	if _gate_npc_ready:
+		return
+	_gate_npc_ready = true
+	for story_id in GATE_NPC_FILES.keys():
+		var path := NPC_SPRITE_DIR + str(GATE_NPC_FILES[story_id])
+		var tex := ArtAssetLoader.load_texture_sprite_alpha_key(path)
+		if tex != null and ArtAssetLoader.texture_has_visible_pixels(tex):
+			_gate_npc_textures[story_id] = tex
+
+
+static func gate_npc_anchor(
+	entrance: Vector2,
+	story_id: String,
+	toward_road: Vector2 = Vector2.ZERO,
+) -> Vector2:
+	if story_id == "sentinel_s09" and toward_road.length_squared() > 0.01:
+		return entrance - toward_road.normalized() * 18.0
+	return entrance
+
+
+static func draw_thunder_gate_boss(
+	canvas: CanvasItem,
+	center: Vector2,
+	unit_scale: float = 1.0,
+	toward_road: Vector2 = Vector2.ZERO,
+) -> void:
+	var s := clampf(unit_scale, 0.55, 1.25)
+	var anchor := center
+	if toward_road.length_squared() > 0.01:
+		anchor = center - toward_road.normalized() * 22.0
+	var body_w := 88.0 * s
+	var body_h := 52.0 * s
+	var body_rect := Rect2(anchor.x - body_w * 0.5, anchor.y - body_h * 0.5, body_w, body_h)
+	canvas.draw_circle(anchor + Vector2(0.0, 6.0 * s), body_w * 0.34, Color(0.0, 0.0, 0.0, 0.38))
+	canvas.draw_rect(body_rect, Color("#4a4a52"))
+	canvas.draw_rect(body_rect.grow(-3.0 * s), Color("#686870"))
+	var leg_offsets: Array[Vector2] = [
+		Vector2(-30.0, 18.0),
+		Vector2(-10.0, 24.0),
+		Vector2(10.0, 24.0),
+		Vector2(30.0, 18.0),
+		Vector2(-20.0, -16.0),
+		Vector2(20.0, -16.0),
+	]
+	for offset in leg_offsets:
+		var leg_start: Vector2 = anchor + offset * s
+		var leg_end: Vector2 = leg_start + Vector2(offset.x * 0.15, 20.0) * s
+		canvas.draw_line(leg_start, leg_end, Color("#3a3a42"), 5.0 * s, true)
+		canvas.draw_circle(leg_end, 4.5 * s, Color("#2a2a30"))
+	var turret_center := anchor + Vector2(0.0, -8.0 * s)
+	canvas.draw_circle(turret_center, 14.0 * s, Color("#505058"))
+	canvas.draw_line(
+		turret_center,
+		turret_center + Vector2(24.0, -4.0) * s,
+		Color("#303038"),
+		4.0 * s,
+		true,
+	)
+	var eye_pos := turret_center + Vector2(-6.0, -2.0) * s
+	canvas.draw_circle(eye_pos, 5.0 * s, Color("#ff2030", 0.25))
+	canvas.draw_circle(eye_pos, 3.0 * s, Color("#ff3040"))
+	HudTheme.draw_string(
+		canvas,
+		anchor + Vector2(-52.0, -42.0 * s),
+		"不败之盾",
+		11,
+		Color("#ff6868"),
+	)
+
+
+static func draw_gate_npc(
+	canvas: CanvasItem,
+	center: Vector2,
+	story_id: String,
+	unit_scale: float = 1.0,
+	toward_road: Vector2 = Vector2.ZERO,
+) -> void:
+	var anchor := gate_npc_anchor(center, story_id, toward_road)
+	var tex := gate_npc_texture(story_id)
+	if tex == null:
+		return
+	var s := clampf(unit_scale, 0.55, 1.25)
+	var tex_size := tex.get_size()
+	if tex_size.x <= 0.0 or tex_size.y <= 0.0:
+		return
+	var display_h := GATE_NPC_DISPLAY_HEIGHT * s
+	var display_w := display_h * (float(tex_size.x) / float(tex_size.y))
+	canvas.draw_circle(anchor + Vector2(0.0, 4.0 * s), display_h * 0.22, Color(0.0, 0.0, 0.0, 0.35))
+	var dest := Rect2(
+		anchor.x - display_w * 0.5,
+		anchor.y - display_h * 0.5,
+		display_w,
+		display_h,
+	)
+	canvas.draw_texture_rect(tex, dest, false)
+
+
+static func reload_gate_npc_sprites() -> void:
+	_gate_npc_ready = false
+	_gate_npc_textures.clear()
+	ArtAssetLoader.clear_alpha_cache()
+
+
 static func draw_pixel_vehicle(canvas: CanvasItem, center: Vector2, travel_axis: String = "") -> void:
 	var px := 3.0
 	var body := Rect2(center - Vector2(7 * px, 5 * px), Vector2(14 * px, 10 * px))
@@ -1200,6 +1288,17 @@ static func draw_district_building(
 	roof.size.y = body_size * 0.22
 	roof.position.y = body.position.y + body_size * 0.06
 	canvas.draw_rect(roof, colors["roof"], true)
+	if building_type == "barracks" and toward_road.length_squared() > 0.01 and toward_road.y < -0.25:
+		var door_w := body.size.x * 0.24
+		var door_h := maxf(6.0, body.size.y * 0.14)
+		var door_rect := Rect2(
+			body.position.x + body.size.x * 0.5 - door_w * 0.5,
+			body.position.y - door_h * 0.25,
+			door_w,
+			door_h,
+		)
+		canvas.draw_rect(door_rect, Color("#1a1410"), true)
+		canvas.draw_rect(door_rect.grow(-1.5), Color("#4a9ed8"), true)
 	if highlight_entrance:
 		canvas.draw_rect(body.grow(4.0), Color("#f0c168", 0.35), false, 2.0)
 	if not show_label or label.is_empty():
@@ -1545,6 +1644,54 @@ static func draw_radar_ad1(canvas: CanvasItem, panel_rect: Rect2, highlighted: b
 		-1,
 		11,
 		Color("#88ffb0"),
+	)
+
+
+static func draw_marian_room(canvas: CanvasItem, panel_rect: Rect2, highlighted: bool = true) -> void:
+	var center := panel_rect.position + panel_rect.size * Vector2(0.52, 0.36)
+	var room_w := minf(panel_rect.size.x, panel_rect.size.y) * 0.52
+	var room_h := room_w * 0.62
+	var room := Rect2(center - Vector2(room_w * 0.46, room_h * 0.42), Vector2(room_w, room_h))
+	var carpet := Rect2(
+		panel_rect.position + panel_rect.size * Vector2(0.18, 0.72),
+		panel_rect.size * Vector2(0.64, 0.16),
+	)
+	canvas.draw_rect(carpet, Color("#5a2830", 0.55), true)
+	canvas.draw_rect(carpet.grow_individual(-4.0, -2.0, -4.0, -2.0), Color("#7a3840", 0.45), true)
+	if highlighted:
+		canvas.draw_rect(room.grow(10.0), Color("#f0c878", 0.10), true)
+	canvas.draw_rect(room, Color("#2a2018", 0.92), true)
+	canvas.draw_rect(room, Color("#6a5040"), false, 2.0)
+	var lamp := room.position + Vector2(room.size.x * 0.78, room.size.y * 0.12)
+	canvas.draw_circle(lamp, 10.0, Color("#f0d890", 0.18), true)
+	canvas.draw_circle(lamp, 4.0, Color("#ffe8a8", 0.85))
+	var npc_x := center.x
+	var npc_y := center.y - room_h * 0.04
+	var body_w := room_w * 0.14
+	var body_h := body_w * 1.35
+	var body := Rect2(npc_x - body_w * 0.5, npc_y - body_h * 0.42, body_w, body_h)
+	canvas.draw_rect(body, Color("#6a5850"), true)
+	canvas.draw_rect(Rect2(body.position.x, body.position.y, body.size.x * 0.5, body.size.y * 0.55), Color("#c8b0a0"), true)
+	canvas.draw_rect(Rect2(body.end.x - body.size.x * 0.5, body.position.y, body.size.x * 0.5, body.size.y * 0.55), Color("#8a9098"), true)
+	canvas.draw_circle(Vector2(body.position.x + body.size.x * 0.25, body.position.y - 6.0), 5.0, Color("#c8b0a0"))
+	canvas.draw_circle(Vector2(body.end.x - body.size.x * 0.25, body.position.y - 6.0), 4.0, Color("#68c8ff", 0.9))
+	var cradle_w := body_w * 1.05
+	var cradle := Rect2(npc_x - cradle_w * 0.5, npc_y + body_h * 0.28, cradle_w, body_h * 0.38)
+	canvas.draw_arc(cradle.get_center() + Vector2(0.0, -cradle.size.y * 0.15), cradle_w * 0.48, PI * 0.15, PI * 0.85, 20, Color("#5a4038"), 2.0, true)
+	canvas.draw_line(cradle.position + Vector2(cradle.size.x * 0.12, cradle.size.y * 0.55), cradle.position + Vector2(cradle.size.x * 0.88, cradle.size.y * 0.55), Color("#4a3028"), 2.0, true)
+	canvas.draw_circle(cradle.get_center() + Vector2(0.0, cradle.size.y * 0.35), 4.0, Color("#6a5048"))
+	var label := "玛丽安"
+	var label_w := float(label.length()) * 11.0 + 12.0
+	var label_rect := Rect2(npc_x - label_w * 0.5, body.position.y - 20.0, label_w, 14.0)
+	canvas.draw_rect(label_rect, Color(0.08, 0.06, 0.05, 0.82), true)
+	canvas.draw_string(
+		ThemeDB.fallback_font,
+		label_rect.position + Vector2(6.0, 11.0),
+		label,
+		HORIZONTAL_ALIGNMENT_LEFT,
+		-1,
+		11,
+		Color("#f0d8c0"),
 	)
 
 

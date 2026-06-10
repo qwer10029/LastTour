@@ -12,7 +12,11 @@
     "staff_officer_07_calibrate",
     "ad_1_radar_fuel",
     "ad_1_radar_coords",
-    "ad_1_radar_tower"
+    "ad_1_radar_tower",
+    "marian_obey",
+    "marian_truth",
+    "thunder_leiting_victory_ally",
+    "thunder_leiting_victory_enemy"
   ],
   "stories": [
     {
@@ -115,7 +119,7 @@
       "district_tag": "staff_officer_07",
       "building_type": "command",
       "building_label": "废弃指挥部",
-      "spawn_layer": 1,
+      "spawn_layer": 3,
       "spawn_near_start": false,
       "interior_encounter": true,
       "lock_exit_until_resolved": true,
@@ -146,7 +150,7 @@
       "building_type": "radar",
       "building_label": "防空雷达站",
       "spawn_layer": 1,
-      "spawn_near_start": true,
+      "spawn_near_start": false,
       "interior_encounter": true,
       "prompt_disembark": "进入雷达站",
       "prompt_return": "E 与 AD-1 交还电机组件",
@@ -168,6 +172,27 @@
         { "building_type": "garage", "building_label": "半埋车库" },
         { "building_type": "archive", "building_label": "未标记档案站" }
       ]
+    },
+    {
+      "story_id": "marian_k142",
+      "title": "玛丽安公寓 · K-142",
+      "npc_id": "marian",
+      "district_tag": "marian_k142",
+      "building_type": "market",
+      "building_label": "玛丽安公寓",
+      "spawn_layer": 1,
+      "spawn_near_start": true,
+      "interior_encounter": true,
+      "lock_exit_until_resolved": true,
+      "prompt_disembark": "进入公寓",
+      "dialogue_path": "res://data/dialogues/marian_k142.json"
+    },
+    {
+      "story_id": "thunder_leiting",
+      "title": "不败之盾-雷霆",
+      "npc_id": "thunder_leiting",
+      "spawn_layer": 3,
+      "dialogue_path": "res://data/dialogues/thunder_leiting.json"
     }
   ]
 }

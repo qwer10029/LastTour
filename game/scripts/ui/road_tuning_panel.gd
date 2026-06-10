@@ -163,5 +163,15 @@ func _sync_sliders_from_settings() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F9:
+		if _night_td_blocks_f9():
+			return
 		visible = not visible
 		get_viewport().set_input_as_handled()
+
+
+func _night_td_blocks_f9() -> bool:
+	var root := get_tree().current_scene
+	if root == null:
+		return false
+	var td := root.get_node_or_null("NightTd")
+	return td != null and td.visible

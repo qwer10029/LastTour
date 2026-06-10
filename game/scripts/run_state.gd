@@ -27,6 +27,7 @@ var total_layers: int = 3
 var elevator_repair_progress: int = 0
 var base_elevator_repair_cost: int = 3
 var final_defense_cleared: bool = false
+var thunder_leiting_defeated: bool = false
 
 # -- 运行配置 --
 var difficulty: int = 1
@@ -111,6 +112,7 @@ func capture_from(node: Node) -> void:
 	elevator_repair_progress = int(node.get("_elevator_repair_progress")) if node.get("_elevator_repair_progress") != null else 0
 	base_elevator_repair_cost = int(node.get("_base_elevator_repair_cost")) if node.get("_base_elevator_repair_cost") != null else 3
 	final_defense_cleared = bool(node.get("_final_defense_cleared")) if node.get("_final_defense_cleared") != null else false
+	thunder_leiting_defeated = bool(node.get("_thunder_leiting_defeated")) if node.get("_thunder_leiting_defeated") != null else false
 
 	var gm: Node = Engine.get_main_loop().root.get_node_or_null("GameManager") if Engine.get_main_loop() is SceneTree else null
 	difficulty = gm.difficulty if gm != null else 1
@@ -192,6 +194,7 @@ func _load_from_save_dict(data: Dictionary) -> void:
 	elevator_repair_progress = int(layer_raw.get("elevator_repair_progress", 0))
 	base_elevator_repair_cost = int(data.get("base_elevator_repair_cost", 3))
 	final_defense_cleared = bool(layer_raw.get("final_defense_cleared", false))
+	thunder_leiting_defeated = bool(layer_raw.get("thunder_leiting_defeated", false))
 
 	difficulty = int(data.get("difficulty", 1))
 	squad_id = str(data.get("squad_id", "scavenger"))
@@ -257,6 +260,7 @@ func restore_to(node: Node) -> void:
 	node.set("_elevator_repair_progress", elevator_repair_progress)
 	node.set("_base_elevator_repair_cost", base_elevator_repair_cost)
 	node.set("_final_defense_cleared", final_defense_cleared)
+	node.set("_thunder_leiting_defeated", thunder_leiting_defeated)
 
 	node.set("_run_difficulty_name", run_difficulty_name)
 	node.set("_run_squad_name", run_squad_name)
@@ -378,6 +382,7 @@ func to_full_dict() -> Dictionary:
 			"current_layer": current_layer,
 			"elevator_repair_progress": elevator_repair_progress,
 			"final_defense_cleared": final_defense_cleared,
+			"thunder_leiting_defeated": thunder_leiting_defeated,
 			"run_ended": run_ended,
 			"run_end_reason": run_end_reason,
 			"final_choice_id": final_choice_id,
@@ -413,6 +418,7 @@ func duplicate_state():  # -> RunState
 	rs.elevator_repair_progress = elevator_repair_progress
 	rs.base_elevator_repair_cost = base_elevator_repair_cost
 	rs.final_defense_cleared = final_defense_cleared
+	rs.thunder_leiting_defeated = thunder_leiting_defeated
 	rs.difficulty = difficulty
 	rs.squad_id = squad_id
 	rs.day_index = day_index
