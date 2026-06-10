@@ -15,23 +15,21 @@ const BUTTON_SELECTED := Color("#2d4a3a")
 const MENU_BUTTON_SIZE := Vector2(380, 58)
 
 
-## 从磁盘直接读取 PNG，绕过损坏的 .import 缓存。
+## 从磁盘直接读取图片，绕过损坏/错后缀的 .import 缓存。
 static func load_menu_texture(resource_path: String) -> Texture2D:
 	if resource_path.is_empty():
 		return null
-	var abs_path := ProjectSettings.globalize_path(resource_path)
-	if not abs_path.is_empty():
-		var image := Image.new()
-		if image.load(abs_path) == OK and not image.is_empty():
-			return ImageTexture.create_from_image(image)
+	var tex := ArtAssetLoader.load_texture_from_disk(resource_path)
+	if tex != null and tex.get_width() > 16:
+		return tex
 	if ResourceLoader.exists(resource_path):
 		var resource: Resource = ResourceLoader.load(
 			resource_path, "", ResourceLoader.CACHE_MODE_IGNORE
 		)
 		if resource is Texture2D:
-			var tex := resource as Texture2D
-			if tex.get_width() > 16:
-				return tex
+			var fallback := resource as Texture2D
+			if fallback.get_width() > 16:
+				return fallback
 	return null
 
 

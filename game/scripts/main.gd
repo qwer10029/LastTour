@@ -6,6 +6,7 @@ const EndingOutcomeOverlayScript = preload("res://scripts/ui/ending_outcome_over
 const DayTopdownRender = preload("res://scripts/day_topdown_render.gd")
 const RunStateClass = preload("res://scripts/run_state.gd")
 const NpcDialogueRunnerScript = preload("res://scripts/story/npc_dialogue_runner.gd")
+const StoryDialogueUIScene = preload("res://scenes/ui/story_dialogue_ui.tscn")
 const FINAL_TERMINAL_WAVE_PATH := "res://data/night_td/waves/night_wave_final_terminal.json"
 const THUNDER_LEITING_WAVE_PATH := "res://data/night_td/waves/night_wave_thunder_leiting.json"
 var _building_pick_index: int = 0
@@ -145,13 +146,7 @@ var _night_result_applied := false
 @onready var action_buttons_row: HBoxContainer = $HUD/ActionPanel/MarginContainer/VBoxContainer/ActionButtons
 
 var _last_dialogue_options_key: String = ""
-var _story_choice_overlay: CanvasLayer
-var _story_choice_panel: PanelContainer
-var _story_choice_title: Label
-var _story_choice_title_scroll: ScrollContainer
-var _story_choice_hint: Label
-var _story_choice_box_scroll: ScrollContainer
-var _story_choice_box: VBoxContainer
+var _story_dialogue_ui: StoryDialogueUI
 var _story_choice_overlay_key: String = ""
 var _clone_restart_overlay: CanvasLayer
 
@@ -215,65 +210,68 @@ func _setup_hud_theme() -> void:
 
 
 func _setup_story_choice_overlay() -> void:
-	if is_instance_valid(_story_choice_overlay) and is_instance_valid(_story_choice_box_scroll):
+	if is_instance_valid(_story_dialogue_ui):
 		return
-	if is_instance_valid(_story_choice_overlay):
-		_story_choice_overlay.queue_free()
-		_story_choice_overlay = null
-		_story_choice_panel = null
-		_story_choice_box = null
-	_story_choice_overlay = CanvasLayer.new()
-	_story_choice_overlay.name = "StoryChoiceOverlay"
-	_story_choice_overlay.layer = 120
-	add_child(_story_choice_overlay)
-	_story_choice_panel = PanelContainer.new()
-	_story_choice_panel.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	_story_choice_panel.offset_left = 72.0
-	_story_choice_panel.offset_top = -420.0
-	_story_choice_panel.offset_right = -72.0
-	_story_choice_panel.offset_bottom = -HudTheme.SAFE_MARGIN
-	HudTheme.apply_panel_container(_story_choice_panel)
-	_story_choice_overlay.add_child(_story_choice_panel)
-	var margin := MarginContainer.new()
-	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override("margin_left", 16)
-	margin.add_theme_constant_override("margin_top", 14)
-	margin.add_theme_constant_override("margin_right", 16)
-	margin.add_theme_constant_override("margin_bottom", 14)
-	_story_choice_panel.add_child(margin)
-	var root := VBoxContainer.new()
-	root.add_theme_constant_override("separation", 10)
-	margin.add_child(root)
-	_story_choice_title_scroll = ScrollContainer.new()
-	_story_choice_title_scroll.custom_minimum_size = Vector2(0, 88)
-	_story_choice_title_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_story_choice_title_scroll.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	_story_choice_title_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_story_choice_title_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-	root.add_child(_story_choice_title_scroll)
-	_story_choice_title = Label.new()
-	_story_choice_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_story_choice_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	HudTheme.apply_label(_story_choice_title)
-	_story_choice_title_scroll.add_child(_story_choice_title)
-	_story_choice_hint = Label.new()
-	_story_choice_hint.text = "点下方按钮选择"
-	_story_choice_hint.add_theme_color_override("font_color", Color("#9eb4c8"))
-	HudTheme.apply_compact_label(_story_choice_hint)
-	_story_choice_hint.set_meta("hud_compact", true)
-	root.add_child(_story_choice_hint)
-	_story_choice_box_scroll = ScrollContainer.new()
-	_story_choice_box_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_story_choice_box_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_story_choice_box_scroll.custom_minimum_size = Vector2(0, 140)
-	_story_choice_box_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_story_choice_box_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-	root.add_child(_story_choice_box_scroll)
-	_story_choice_box = VBoxContainer.new()
-	_story_choice_box.add_theme_constant_override("separation", 8)
-	_story_choice_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_story_choice_box_scroll.add_child(_story_choice_box)
-	_story_choice_overlay.visible = false
+	_story_dialogue_ui = StoryDialogueUIScene.instantiate() as StoryDialogueUI
+	_story_dialogue_ui.name = "StoryDialogueUI"
+	add_child(_story_dialogue_ui)
+	_story_dialogue_ui.choice_pressed.connect(_on_story_dialogue_choice_pressed)
+	_story_dialogue_ui.advance_requested.connect(_on_story_dialogue_advance_requested)
+	_story_dialogue_ui.hide_dialogue()
+
+
+func _on_story_dialogue_advance_requested() -> void:
+	_try_advance_story_dialogue()
+
+
+func _try_advance_story_dialogue() -> bool:
+	if not _is_story_dialogue_visible() or not is_instance_valid(_story_dialogue_ui):
+		return false
+	if _story_dialogue_ui.is_choice_mode():
+		return false
+	if _story_dialogue_ui.try_advance_page():
+		return true
+	if _mode == TravelMode.FOOT and is_instance_valid(_story_controller):
+		var npc := _story_controller.npc_dialogue
+		if npc != null and npc.is_active() and npc.phase == NpcDialogueRunnerScript.Phase.LINE:
+			npc.advance_line()
+			_refresh_ui()
+			return true
+	if _mode == TravelMode.DRIVE and is_instance_valid(_story_controller):
+		if _story_controller.advance_active_drive_dialogue():
+			_refresh_ui()
+			return true
+	return false
+
+
+func _on_story_dialogue_choice_pressed(index: int) -> void:
+	if not is_instance_valid(_story_controller):
+		return
+	if _story_choice_overlay_key.begins_with("gate|"):
+		if index == 0:
+			_on_story_accept_pressed()
+		else:
+			_on_story_decline_pressed()
+	else:
+		_story_controller.choose_dialogue_option(index)
+	_hide_story_choice_overlay()
+	_refresh_ui()
+
+
+func _current_dialogue_speaker() -> String:
+	if not is_instance_valid(_story_controller):
+		return ""
+	var npc := _story_controller.npc_dialogue
+	if npc != null and npc.is_active() and npc.current_speaker.strip_edges() != "":
+		return npc.current_speaker
+	var story_id := _story_controller.story_id_at_node(_current_node_index)
+	if story_id != "":
+		return StoryData.title_of(story_id)
+	return ""
+
+
+func _is_story_dialogue_visible() -> bool:
+	return is_instance_valid(_story_dialogue_ui) and _story_dialogue_ui.visible
 
 
 func _setup_pda_hud() -> void:
@@ -733,7 +731,10 @@ func _process(_delta: float) -> void:
 	if _run_ended or _game_paused or _backpack_open:
 		return
 	if Input.is_action_just_pressed("enter_defense_mode"):
-		_try_enter_defense_mode()
+		if _mode == TravelMode.FOOT:
+			_try_foot_return_to_vehicle()
+		else:
+			_try_enter_defense_mode()
 
 
 func _physics_process(delta: float) -> void:
@@ -771,7 +772,9 @@ func _physics_process(delta: float) -> void:
 		if _mode == TravelMode.FOOT:
 			_handle_foot_interact()
 		elif _mode == TravelMode.DRIVE and _segment_target_index < 0:
-			if (
+			if _try_advance_story_dialogue():
+				pass
+			elif (
 				is_instance_valid(_story_controller)
 				and _story_controller.advance_active_drive_dialogue()
 			):
@@ -2153,6 +2156,7 @@ func _thunder_leiting_session_options() -> Dictionary:
 
 
 func _start_thunder_leiting_boss() -> void:
+	DayTopdownRender.reload_thunder_boss_sprites()
 	_hide_exploration_story_ui()
 	_force_return_to_vehicle_for_night()
 	if is_instance_valid(time_system):
@@ -3250,7 +3254,7 @@ func _update_foot_prompts() -> void:
 		return
 	if is_instance_valid(_story_controller) and _story_controller._any_dialogue_active():
 		return
-	if is_instance_valid(_story_choice_overlay) and _story_choice_overlay.visible:
+	if is_instance_valid(_story_dialogue_ui) and _story_dialogue_ui.visible:
 		return
 	if (_can_repair_elevator() and _is_near_elevator_console()) or (_can_use_kunlun_control() and _is_near_kunlun_console()):
 		return
@@ -3294,25 +3298,19 @@ func _update_foot_story_prompts() -> bool:
 
 
 func _show_story_narrative_overlay(body: String, hint: String) -> bool:
-	if not is_instance_valid(_story_choice_overlay):
+	if not is_instance_valid(_story_dialogue_ui):
 		_setup_story_choice_overlay()
-	if not is_instance_valid(_story_choice_box):
+	if not is_instance_valid(_story_dialogue_ui):
 		return false
 	var overlay_key := "narrative|%s|%s" % [body, hint]
-	if overlay_key == _story_choice_overlay_key and _story_choice_overlay.visible:
+	if overlay_key == _story_choice_overlay_key and _story_dialogue_ui.visible:
 		return true
 	_story_choice_overlay_key = overlay_key
-	for child in _story_choice_box.get_children():
-		child.queue_free()
-	_story_choice_title.text = body.strip_edges()
-	call_deferred("_sync_story_choice_title_size")
-	if is_instance_valid(_story_choice_hint):
-		_story_choice_hint.text = hint
-	if is_instance_valid(_story_choice_title_scroll):
-		_story_choice_title_scroll.custom_minimum_size.y = 160.0
+	var speaker := _current_dialogue_speaker()
+	var show_triangle := hint.contains("E") or hint.contains("继续")
+	_story_dialogue_ui.show_narrative(body, speaker, show_triangle)
 	if has_node("HUD/ActionPanel"):
 		$HUD/ActionPanel.visible = false
-	_story_choice_overlay.visible = true
 	return true
 
 
@@ -3399,11 +3397,10 @@ func _update_story_gate_prompts() -> bool:
 		_show_story_reward_choices(story_id)
 		return false
 	if str(prompt.get("continue_hint", "")) != "":
-		$HUD/ActionPanel.visible = true
-		var body := str(prompt.get("text", "")).strip_edges()
-		prompt_label.text = "%s\n\n[%s]" % [body, str(prompt.get("continue_hint", ""))]
-		prompt_label.visible = true
-		return false
+		return _show_story_narrative_overlay(
+			str(prompt.get("text", "")),
+			str(prompt.get("continue_hint", "")),
+		)
 	$HUD/ActionPanel.visible = true
 	prompt_label.text = str(prompt.get("text", ""))
 	prompt_label.visible = true
@@ -3427,9 +3424,9 @@ func _hide_action_button_row() -> void:
 
 
 func _show_story_choice_overlay(title: String, options: Array, mode: String = "dialogue") -> bool:
-	if not is_instance_valid(_story_choice_overlay):
+	if not is_instance_valid(_story_dialogue_ui):
 		_setup_story_choice_overlay()
-	if not is_instance_valid(_story_choice_box):
+	if not is_instance_valid(_story_dialogue_ui):
 		return false
 	var labels: Array[String] = []
 	for opt_var in options:
@@ -3439,95 +3436,31 @@ func _show_story_choice_overlay(title: String, options: Array, mode: String = "d
 	if labels.is_empty():
 		return false
 	var overlay_key := "%s|%s|%s" % [mode, title, "|".join(labels)]
-	if overlay_key == _story_choice_overlay_key and _story_choice_overlay.visible:
+	if overlay_key == _story_choice_overlay_key and _story_dialogue_ui.visible:
 		return true
 	_story_choice_overlay_key = overlay_key
-	for child in _story_choice_box.get_children():
-		child.queue_free()
-	_story_choice_title.text = title.strip_edges()
-	call_deferred("_sync_story_choice_title_size")
-	if is_instance_valid(_story_choice_hint):
-		if labels.size() <= 1:
-			_story_choice_hint.text = "按 1 选择，或点下方按钮"
-		elif labels.size() == 2:
-			_story_choice_hint.text = "按 1 / 2 选择，或点下方按钮"
-		else:
-			_story_choice_hint.text = "按 1～%d 选择，或点下方按钮" % labels.size()
-	if is_instance_valid(_story_choice_title_scroll):
-		_story_choice_title_scroll.custom_minimum_size.y = 72.0 if labels.size() >= 3 else 96.0
-	var accents: Array[Color] = [
-		Color("#7ec8a0"),
-		Color("#c8a080"),
-		Color("#8ec8e8"),
-		Color("#bb8fce"),
-	]
-	for i in range(labels.size()):
-		var btn := Button.new()
-		btn.custom_minimum_size = Vector2(0, 56)
-		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		btn.text = "%d · %s" % [i + 1, labels[i]]
-		btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		btn.disabled = false
-		btn.mouse_filter = Control.MOUSE_FILTER_STOP
-		HudTheme.apply_choice_button(btn, accents[i % accents.size()])
-		if mode == "gate":
-			btn.pressed.connect(_on_story_overlay_gate_pressed.bind(i))
-		else:
-			btn.pressed.connect(_on_story_overlay_dialogue_pressed.bind(i))
-		_story_choice_box.add_child(btn)
-	call_deferred("_sync_story_choice_box_size")
+	var hint := ""
+	if labels.size() <= 1:
+		hint = "按 1 选择，或点下方按钮"
+	elif labels.size() == 2:
+		hint = "按 1 / 2 选择，或点下方按钮"
+	else:
+		hint = "按 1～%d 选择，或点下方按钮" % labels.size()
+	_story_dialogue_ui.show_choices(
+		title.strip_edges(),
+		labels,
+		_current_dialogue_speaker(),
+		hint,
+	)
 	if has_node("HUD/ActionPanel"):
 		$HUD/ActionPanel.visible = false
-	_story_choice_overlay.visible = true
 	return true
-
-
-func _sync_story_choice_title_size() -> void:
-	if not is_instance_valid(_story_choice_title) or not is_instance_valid(_story_choice_title_scroll):
-		return
-	var scroll_width := maxf(_story_choice_title_scroll.size.x - 8.0, 320.0)
-	_story_choice_title.custom_minimum_size = Vector2(
-		scroll_width,
-		maxf(_story_choice_title.get_minimum_size().y, 1.0),
-	)
-
-
-func _sync_story_choice_box_size() -> void:
-	if not is_instance_valid(_story_choice_box) or not is_instance_valid(_story_choice_box_scroll):
-		return
-	var scroll_width := maxf(_story_choice_box_scroll.size.x - 8.0, 320.0)
-	_story_choice_box.custom_minimum_size = Vector2(
-		scroll_width,
-		_story_choice_box.get_minimum_size().y,
-	)
 
 
 func _hide_story_choice_overlay() -> void:
 	_story_choice_overlay_key = ""
-	if is_instance_valid(_story_choice_box):
-		for child in _story_choice_box.get_children():
-			child.queue_free()
-	if is_instance_valid(_story_choice_overlay):
-		_story_choice_overlay.visible = false
-
-
-func _on_story_overlay_dialogue_pressed(index: int) -> void:
-	if not is_instance_valid(_story_controller):
-		return
-	_story_controller.choose_dialogue_option(index)
-	_hide_story_choice_overlay()
-	_refresh_ui()
-
-
-func _on_story_overlay_gate_pressed(index: int) -> void:
-	if not is_instance_valid(_story_controller):
-		return
-	if index == 0:
-		_on_story_accept_pressed()
-	else:
-		_on_story_decline_pressed()
-	_hide_story_choice_overlay()
-	_refresh_ui()
+	if is_instance_valid(_story_dialogue_ui):
+		_story_dialogue_ui.hide_dialogue()
 
 
 func _on_journal_entry_added(encounter_id: String) -> void:
@@ -3701,24 +3634,7 @@ func _sync_action_panel_visibility() -> void:
 		return
 	var panel: Panel = $HUD/ActionPanel
 	if _mode == TravelMode.FOOT:
-		if is_instance_valid(_story_choice_overlay) and _story_choice_overlay.visible:
-			panel.visible = false
-			return
-		var show_foot_dialogue := false
-		if (
-			is_instance_valid(_story_controller)
-			and _current_district_index >= 0
-			and _story_controller._any_dialogue_active()
-		):
-			var foot_story_id := _story_controller.story_id_of_district(_current_district_index)
-			if foot_story_id != "":
-				var foot_prompt: Dictionary = _story_controller.build_prompt(foot_story_id)
-				if (
-					str(foot_prompt.get("continue_hint", "")) != ""
-					and not (is_instance_valid(_story_choice_overlay) and _story_choice_overlay.visible)
-				):
-					show_foot_dialogue = true
-		panel.visible = show_foot_dialogue
+		panel.visible = false
 		return
 	if _is_night_phase():
 		panel.visible = false
@@ -3734,9 +3650,9 @@ func _sync_action_panel_visibility() -> void:
 		has_content = true
 	if is_instance_valid(story_reward_buttons) and story_reward_buttons.visible:
 		has_content = true
-	if is_instance_valid(_story_choice_overlay) and _story_choice_overlay.visible:
+	if is_instance_valid(_story_dialogue_ui) and _story_dialogue_ui.visible:
 		has_content = true
-	panel.visible = has_content and not (is_instance_valid(_story_choice_overlay) and _story_choice_overlay.visible)
+	panel.visible = has_content and not _is_story_dialogue_visible()
 
 
 func _enterable_hotkey_map() -> Dictionary:
@@ -4190,9 +4106,11 @@ func _draw_world_speech_bubble(anchor: Vector2, text: String, fill: Color, borde
 func _draw_door_exit_hint(door_rect: Rect2) -> void:
 	if _current_district_index < 0 or _mode != TravelMode.FOOT:
 		return
+	if _is_story_dialogue_visible():
+		return
 	if door_rect.size.x <= 0.0 or door_rect.size.y <= 0.0:
 		return
-	var text := _story_controller.foot_door_hint(_current_district_index) if is_instance_valid(_story_controller) else "E 返回车辆"
+	var text := _story_controller.foot_door_hint(_current_district_index) if is_instance_valid(_story_controller) else "F 返回车辆"
 	var bubble_w := clampf(float(text.length()) * 10.0 + 24.0, 72.0, 140.0)
 	var bubble_h := 16.0
 	var door_center_x := door_rect.position.x + door_rect.size.x * 0.5
@@ -4203,15 +4121,8 @@ func _draw_door_exit_hint(door_rect: Rect2) -> void:
 
 
 func _handle_foot_interact() -> void:
-	if is_instance_valid(_story_controller):
-		var npc := _story_controller.npc_dialogue
-		if npc != null and npc.is_active():
-			if npc.phase == NpcDialogueRunnerScript.Phase.OPTIONS:
-				return
-			if npc.phase == NpcDialogueRunnerScript.Phase.LINE:
-				npc.advance_line()
-				_refresh_ui()
-				return
+	if _try_advance_story_dialogue():
+		return
 	if is_instance_valid(_story_controller):
 		if _story_controller.try_interact_foot_loot(_current_district_index, _foot_local_pos):
 			queue_redraw()
@@ -4233,8 +4144,24 @@ func _handle_foot_interact() -> void:
 		_attempt_kunlun_terminal()
 	elif _is_near_elevator_console():
 		_attempt_repair_elevator()
-	else:
-		_return_to_vehicle()
+
+
+func _try_foot_return_to_vehicle() -> bool:
+	if _mode != TravelMode.FOOT:
+		return false
+	if not _is_near_foot_door():
+		return false
+	if is_instance_valid(_story_controller) and _story_controller.blocks_foot_exit(_current_district_index):
+		var npc_retry := _story_controller.npc_dialogue
+		if npc_retry == null or not npc_retry.is_active():
+			_story_controller.ensure_interior_encounter_at(_current_district_index)
+			_refresh_ui()
+			return true
+		if is_instance_valid(evening_notice) and evening_notice.has_method("show_message"):
+			evening_notice.show_message("先完成抉择，才能离开。")
+		return true
+	_return_to_vehicle()
+	return true
 
 
 func _foot_tile_panel_rect(district_index: int, tile: Vector2i) -> Rect2:

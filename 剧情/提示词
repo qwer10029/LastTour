@@ -1,61 +1,107 @@
-【全局风格 · 每条英文提示末尾已内置，生成时勿再加精细/写实词】
-对标现有素材：player_foot（Q 版像素、粗轮廓、2～3 阶平涂）、quest_battery / scrap（大块造型、低细节、末世灰绿灰蓝）。
-禁止：写实、3D 渲染、金属光泽、复杂纹理、精细机械、渐变光晕、高分辨率插画感。
+全局规范（每条英文提示词末尾已内置，勿再加「精细/写实/8K」等词）
+对标素材：player_foot（Q 版像素、粗轮廓）、quest_battery / scrap（大块造型、低饱和末世色）
 
----
-1. 哨兵 S-09 · sentinel_s09
-门口俯视角 npc_sentinel_s09.png（已采用用户提供的贴图，勿重新生成）
-路径 game/assets/sprites/npc/npc_sentinel_s09.png · 军营门口站立展示，含头部传感器 + 躯干两部分
+禁止词（Negative / 不要）：
 
-能量电池 quest_sentinel_battery.png（替换通用电池）
-64x64 simple flat inventory icon like quest_battery, chunky battery block, one green stripe, small plus/minus marks, cyan accent #9ef0ff, dark outline, 2-tone shading, transparent background, no labels no text
+realistic, 3D render, metal gloss, complex texture, fine mechanical detail, gradient glow, high resolution illustration, anime cel shading, readable text, labels, watermark, logo, background scene clutter, photorealistic
+Lumina 建议参数（可按你习惯微调）：
 
-强化防御塔蓝图 blueprint_pulse_tower.png
-64x64 simple flat icon, rolled paper scroll as rectangle blocks, one simple tower stick figure and circle ring drawn with thick lines, blue-cyan ink #8ec8e8, worn paper as darker edge only, no readable text no fine diagram
+头像 / 图标：96×96 或 1:1
+门口立绘 / Boss：128×128 或 96×128（竖构图）
+背景：透明（Transparent background）
+1. 高级哨兵 S-09 · sentinel_s09
+状态：已有 game/assets/sprites/npc/npc_sentinel_s09.png，勿重新生成。
 
----
+若以后要统一尺寸重出门口图，可用：
+
+128x128 top-down 2D game sprite, blocky military sentry robot standing at camp gate, head sensor dome plus torso two parts, dull olive-gray body #7a8a78, one dim cyan eye dot #9ef0ff, small potted mutant plant blob beside feet as simple green lump, dark thick outline, 2-tone flat shading, transparent background, post-apocalyptic wasteland mood, no text no labels
 2. 编史者 04 · chronicler_04
-NPC 头像 npc_chronicler_04.png
-96x96 simple pixel portrait, small boxy tracked robot in dusty room, cracked pale screen as one light rectangle, tiny candle blob on screen, broken treads as two dark blocks, purple-gray #b8a0e8, dark outline, 2-tone flat shading, sad mood, no room detail
+剧情锚点：履带档案机、碎裂淡蓝屏幕、循环生日歌、底层档案室、紫色灰调、悲伤
 
-存储模块 quest_chronicler_memory.png
-64x64 simple flat icon, chunky memory cartridge rectangle, purple face #b8a0e8, few gold pin dots at bottom, dark outline, 2-tone shading, transparent background, no circuit detail
+路径建议：game/assets/sprites/npc/npc_chronicler_04.png
 
-物资登记数据片 data_chip_supply_registry.png
-64x64 simple flat icon, slim chip rectangle with one notch, pale blue stripe #9ec8f0, tiny warehouse box symbol as simple squares, dark outline, 2-tone shading, transparent background, no hologram no text
+对话头像（96×96）：
 
----
+96x96 simple pixel portrait, small boxy tracked robot in dusty room mood, cracked pale screen as one light rectangle, tiny candle blob on screen, broken treads as two dark blocks, purple-gray body #b8a0e8, dark outline, 2-tone flat shading, sad lonely mood, transparent background, no room detail no readable text
+室内俯视角（可选，128×128）：
+
+128x128 top-down 2D game sprite, low flat tracked archive robot, three stacked hard drives as chunky rectangles with yellow tape strips, cracked blue screen glow #a8c8f0, broken treads, purple-gray chassis #b8a0e8, dark outline, 2-tone flat pixel, transparent background, no text no fine circuits
 3. 熔炉 · furnace_qc
-NPC 头像 npc_furnace.png
-96x96 simple pixel portrait, big blocky furnace machine, rust-red body #a85848, four thick arm rectangles, one green dot eye on top, dark outline, 2-tone flat shading, factory mood, no hydraulic detail no background clutter
+剧情锚点：弹药库巨型质检机、暗红铁锈、四条液压臂、中央绿色扫描探头、「有机耗材」
 
-昆仑基因备份数据片 data_chip_kunlun_k142.png
-64x64 simple flat icon, chunky chip rectangle, cracked corner as jagged edge, red warning dot #e8a0a0, simple DNA zigzag as thick line, dark outline, 2-tone shading, transparent background, no readable text
+路径建议：game/assets/sprites/npc/npc_furnace.png
 
----
+对话头像（96×96）：
+
+96x96 simple pixel portrait, big blocky furnace QC machine, rust-red body #a85848, four thick arm rectangles, one green scanner eye dot on top #78d878, dark outline, 2-tone flat shading, factory oppressive mood, transparent background, no hydraulic detail no background clutter
+室内遭遇图（可选，128×128，偏大）：
+
+128x128 top-down 2D game sprite, huge blocky industrial furnace robot, four hydraulic arms as thick L-shapes, central green scanning eye #78d878, rust-red plates #a85848, conveyor belt hint as one dark stripe, dark outline, 2-tone flat pixel, transparent background, no fire glow no molten detail no text
 4. 参谋-07 · staff_officer_07
-NPC 头像 npc_staff_officer_07.png
-96x96 simple pixel portrait, blocky hologram officer torso, smooth blue light head as oval blob #a8d8ff, one arm raised as thick rectangle, faint circle under feet as sand table hint, dark outline, 2-tone flat shading, bunker mood, no face detail
+剧情锚点：战术室全息参谋、淡蓝无脸光体、残缺躯干、一条抬起的手臂、沙盘推演
 
-回响行动附件数据片 data_chip_echo_operation.png
-64x64 simple flat icon, chip rectangle, blue file tab #88c8f0, abstract classified mark as thick X or seal blob, dark outline, 2-tone shading, transparent background, no readable text
+路径建议：game/assets/sprites/npc/npc_staff_officer_07.png
 
-全息发生器电池 quest_hologram_battery.png
-64x64 simple flat icon like quest_battery, compact power cell block, pale blue cap #a8d8f0, one small port rectangle on top, dark outline, 2-tone shading, transparent background, no sleek metal
+对话头像（96×96）：
 
-战术坐标数据片 data_chip_tactical_map.png
-64x64 simple flat icon, chip rectangle, tiny grid as 4x4 dots, few cyan marker dots #88c8f0, dark outline, 2-tone shading, transparent background, no projected map glow
+96x96 simple pixel portrait, blocky hologram officer torso, smooth blue light head as oval blob #a8d8ff, no facial features, one arm raised as thick rectangle, faint circle under feet as sand table hint, dark outline, 2-tone flat shading, bunker command mood, transparent background, no face detail no map text
+战术室立绘（可选，96×128）：
 
----
+96x128 simple pixel sprite, translucent blue hologram military staff figure #a8d8ff, headless smooth light face panel, broken lower body as fading blocks, one pointing arm, tiny circular sand table glow at bottom, dark outline, 2-tone flat shading, transparent background, no readable tactical labels
 5. 防空雷达 AD-1 · ad_1_radar
-NPC 头像 npc_ad_1_radar.png
-96x96 simple pixel portrait, blocky radar console, green CRT screen rectangle with one sweep line #88ffb0, simple dish antenna shape behind, concrete bunker as gray blocks, dark outline, 2-tone flat shading, lonely mood, no CRT scan detail
+剧情锚点：第 3 层山顶掩体、绿色 CRT、旋转雷达天线、孤独监视、轴承磨损
 
-电机组件 quest_radar_motor.png
-64x64 simple flat icon, chunky motor block, olive-green body #8a9868, copper coil as orange-brown ring, short shaft stub, dark outline, 2-tone shading, transparent background, no brass screws no mechanical cutaway
+路径建议：game/assets/sprites/npc/npc_ad_1_radar.png
 
-雷达回波坐标数据片 data_chip_radar_coords.png
-64x64 simple flat icon, chip rectangle, two concentric arc lines and few green blip dots #78d8a0, dark outline, 2-tone shading, transparent background, no radar glow
+对话头像（96×96）：
 
-雷达防御加固模块 data_chip_radar_tower_mod.png
-64x64 simple flat icon, rugged chip rectangle, shield arc as thick curved line, mint-green accent #88e8b0, dark outline, 2-tone shading, transparent background, no etched schematic detail
+96x96 simple pixel portrait, blocky radar console robot, green CRT screen rectangle with one sweep line #88ffb0, simple dish antenna shape behind as gray arc, concrete bunker gray blocks at base, dark outline, 2-tone flat shading, lonely military mood, transparent background, no CRT scan detail no text
+掩体外观（可选，128×128）：
+
+128x128 top-down 2D game sprite, radar bunker terminal as chunky gray box, green glowing screen #88ffb0, rotating dish antenna on top as simple semicircle, olive military paint #6a7068, dark outline, 2-tone flat pixel, transparent background, no coordinate numbers no labels
+6. 玛丽安 M-142 · marian_k142
+剧情锚点：半边仿生皮半边银骨、淡蓝光学眼、锈蚀婴儿摇篮、暖黄灯光、母本 K-142 与克隆体情感线（唯一偏人形的 NPC）
+
+路径建议：game/assets/sprites/npc/npc_marian_k142.png
+
+对话头像（96×96）：
+
+96x96 simple pixel portrait, middle-aged cyborg woman bust, left half soft pale skin block, right half silver metal skull plates, one pale blue optical eye #a8d8ff, holding rusted baby cradle as simple brown rectangle, warm muted yellow accent #d8c878 on skin side only, dark outline, 2-tone flat shading, melancholic maternal mood, transparent background, no baby no gore no realistic face no text
+室内全身（可选，96×128）：
+
+96x128 simple pixel sprite, cyborg woman standing, half flesh half silver skeleton face as chunky blocks, faded housecoat as simple gray-brown shape, cradling empty rusted crib, warm yellow rim light hint #d8c878, dark outline, 2-tone flat pixel, transparent background, no corridor carpet no readable diary text
+若 Lumina 把人画得太写实，可在 Negative 里加强：human skin pores, detailed hair, anime face, beautiful woman。
+
+7. 不败之盾-雷霆 · thunder_leiting
+剧情锚点：六足重型战车堵门、猩红光学镜头、弹痕锈穿、近防机枪、最后一梯队、跪姿纪念碑
+
+路径建议：game/assets/sprites/npc/npc_thunder_leiting.png（驾驶模式门口 Boss）
+
+门口 Boss 图（128×128 或 160×128，竖构图）：
+
+160x128 simple pixel sprite, massive six-legged heavy tank blocking gate, steel mammoth silhouette, six thick hydraulic legs, scarlet main optical lens #ff3040 as one bright dot, bent turret as crooked block, bullet hole patches as dark squares, dark olive-gray armor #4a4a52, dark outline, 2-tone flat shading, transparent background, no explosion no fine gun barrels no text no labels
+对话 / 战前头像（96×96，裁切炮塔）：
+
+96x96 simple pixel portrait, heavy tank turret close-up as blocky shapes, one scarlet scanning eye #ff3040, dented armor plates, broken gun barrel stub, dark outline, 2-tone flat shading, grim last-stand mood, transparent background, no army insignia text no realistic metal
+战败跪姿（可选第二状态，128×128）：
+
+128x128 simple pixel sprite, same six-legged tank kneeling on broken concrete, one leg folded wrong, optical eye dim gray not red, hydraulic oil as one black puddle blob, dark outline, 2-tone flat shading, transparent background, no text no dramatic lighting
+配套任务图标（与 NPC 报酬一致，64×64）
+若一并生成背包 / 任务图标，可复用你原先规范：
+
+物品	提示词摘要
+哨兵电池
+64x64 … chunky battery … green stripe … cyan #9ef0ff
+编史者存储模块
+64x64 … purple cartridge #b8a0e8 … gold pin dots
+熔炉昆仑基因片
+64x64 … cracked chip … red warning dot … DNA zigzag thick line
+参谋回响附件
+64x64 … blue file tab #88c8f0 … thick X seal blob
+雷达电机组件
+64x64 … olive motor #8a9868 … copper ring stub
+玛丽安基因情报
+64x64 … slim data chip … pale pink-gray #d8b8c8 … simple clone ID bars not readable text
+雷霆装甲板
+64x64 … three stacked armor plate rectangles … scarlet scratch mark … dark outline
+完整 64×64 英文句若需要，我可以按 game/data/dialogues 里每个 reward 节点再补一版表格。

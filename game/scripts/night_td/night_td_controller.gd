@@ -493,6 +493,8 @@ func _spawn_from_spec(spec: Dictionary) -> void:
 		"color": def.get("color", Color.WHITE),
 		"radius": float(def.get("radius", 10)),
 		"move_dir": Vector2.LEFT,
+		"walk_phase": 0.0,
+		"is_walking": false,
 		"faction": "enemy",
 		"hacked_by": -1,
 		"is_shepherd": bool(def.get("is_shepherd", false)),
@@ -690,12 +692,23 @@ func _update_enemies(delta: float) -> void:
 			flow_dir = _flow_dir_at(pos, base_pos)
 		var sep_dir := _separation_dir(i, pos, float(enemy["radius"]) * 2.2)
 		var move_dir := flow_dir + sep_dir * SEPARATION_WEIGHT
+		var prev_pos := pos
 		if move_dir.length_squared() > 0.0001:
 			move_dir = move_dir.normalized()
 			pos += move_dir * float(enemy["speed"]) * slow * delta
 			enemy["pos"] = pos
 			enemy["move_dir"] = move_dir
 			cell = field.world_to_cell(pos)
+		if str(enemy.get("type", "")) == "thunder_leiting":
+			var moved := pos.distance_squared_to(prev_pos) > 0.04
+			var wants_move := move_dir.length_squared() > 0.0001 and slow > 0.05
+			var walking := moved or wants_move
+			enemy["is_walking"] = walking
+			if walking:
+				var rate := DayTopdownRender.THUNDER_WALK_ANIM_FPS if moved else DayTopdownRender.THUNDER_WALK_BLOCKED_FPS
+				enemy["walk_phase"] = float(enemy.get("walk_phase", 0.0)) + delta * rate
+			else:
+				enemy["is_walking"] = false
 		# 攻坚组贴到目标塔格/邻格时，对该塔施加近战伤害（P3.2：敌人能打塔）。
 		if _commander != null:
 			var atk_cell := _commander.attack_target_cell(enemy)

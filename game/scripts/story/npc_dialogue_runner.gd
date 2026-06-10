@@ -14,6 +14,7 @@ var story_id: String = ""
 var npc_bubble: String = ""
 var player_bubble: String = ""
 var panel_text: String = ""
+var current_speaker: String = ""
 
 var _data: Dictionary = {}
 var _nodes: Dictionary = {}
@@ -137,6 +138,11 @@ func _enter_node(node_id: String) -> void:
 	var bubble := str(node.get("bubble", node.get("text", "")))
 	var full_text := str(node.get("text", bubble))
 	panel_text = full_text
+	current_speaker = ""
+	if speaker.to_lower() in ["player", "我"]:
+		current_speaker = "我"
+	elif speaker != "" and speaker != "System":
+		current_speaker = speaker
 	if speaker.to_lower() in ["player", "我"]:
 		player_bubble = bubble
 		npc_bubble = ""
@@ -328,6 +334,7 @@ func _close_session() -> void:
 	npc_bubble = ""
 	player_bubble = ""
 	panel_text = ""
+	current_speaker = ""
 	dialogue_updated.emit()
 
 

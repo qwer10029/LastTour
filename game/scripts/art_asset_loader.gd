@@ -22,13 +22,37 @@ static func _try_load_texture_path(path: String) -> Texture2D:
 
 
 static func load_texture_from_disk(path: String) -> Texture2D:
+	var img := load_image_from_disk(path)
+	if img == null:
+		return null
+	return ImageTexture.create_from_image(img)
+
+
+## 按文件头读取 PNG/JPEG/WebP，不依赖扩展名（避免 .png 实为 JPG 导致加载失败）。
+static func load_image_from_disk(path: String) -> Image:
 	var global_path := ProjectSettings.globalize_path(path)
 	if global_path == "" or not FileAccess.file_exists(global_path):
 		return null
-	var img := Image.load_from_file(global_path)
-	if img == null or img.is_empty():
+	var bytes := FileAccess.get_file_as_bytes(global_path)
+	if bytes.is_empty():
 		return null
-	return ImageTexture.create_from_image(img)
+	var img := Image.new()
+	if bytes.size() >= 8 and bytes[0] == 0x89 and bytes[1] == 0x50:
+		if img.load_png_from_buffer(bytes) == OK and not img.is_empty():
+			return img
+	if bytes.size() >= 2 and bytes[0] == 0xFF and bytes[1] == 0xD8:
+		if img.load_jpg_from_buffer(bytes) == OK and not img.is_empty():
+			return img
+	if bytes.size() >= 12:
+		var header_riff := bytes.slice(0, 4).get_string_from_ascii()
+		var header_webp := bytes.slice(8, 12).get_string_from_ascii()
+		if header_riff == "RIFF" and header_webp == "WEBP":
+			if img.load_webp_from_buffer(bytes) == OK and not img.is_empty():
+				return img
+	var fallback: Image = Image.load_from_file(global_path)
+	if fallback != null and not fallback.is_empty():
+		return fallback
+	return null
 
 
 static func _image_has_visible_pixels(img: Image, min_alpha: float = 0.02) -> bool:
@@ -220,13 +244,13 @@ static func load_texture_icon_alpha_key(
 	return tex
 
 
-## 角色精灵：仅从边缘洪泛去除采样背景色，不抠深色像素。
+## 角色精灵：边缘洪泛 + 棋盘格/灰底去除（AI 导出图常见假透明）。
 static func load_texture_sprite_alpha_key(
 	preferred_path: String,
 	_threshold: float = 0.12,
 	fallback_path: String = "",
 ) -> Texture2D:
-	var cache_key := "sprite_v2|%s|%s" % [preferred_path, fallback_path]
+	var cache_key := "sprite_v3|%s|%s" % [preferred_path, fallback_path]
 	if _alpha_key_cache.has(cache_key):
 		return _alpha_key_cache[cache_key]
 	var tex := load_texture(preferred_path, fallback_path)
@@ -234,6 +258,9 @@ static func load_texture_sprite_alpha_key(
 		_alpha_key_cache[cache_key] = null
 		return null
 	var keyed := apply_flood_background_key(tex)
+	keyed = apply_road_background_key(keyed)
+	if not texture_has_visible_pixels(keyed):
+		keyed = apply_road_background_key(tex)
 	if not texture_has_visible_pixels(keyed):
 		keyed = apply_sampled_background_key(tex)
 	if not texture_has_visible_pixels(keyed):

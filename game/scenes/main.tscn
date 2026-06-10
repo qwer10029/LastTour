@@ -255,7 +255,7 @@ offset_bottom = 36.0
 text = "下车探索(E)"
 
 [node name="ReturnButton" type="Button" parent="HUD/ActionPanel/MarginContainer/VBoxContainer/ActionButtons"]
-text = "返回车辆(E)"
+text = "返回车辆(F)"
 
 [node name="RepairButton" type="Button" parent="HUD/ActionPanel/MarginContainer/VBoxContainer/ActionButtons"]
 text = "修复电梯(R)"

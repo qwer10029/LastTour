@@ -135,7 +135,7 @@
 			"speed": 14.0,
 			"base_damage": 34.0,
 			"color": "#c83828",
-			"radius": 30.0,
+			"radius": 34.0,
 			"armor": 0.42,
 			"hack_resist": 999.0,
 			"hack_immune": true,

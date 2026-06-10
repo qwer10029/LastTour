@@ -48,12 +48,23 @@ const GATE_NPC_DISPLAY_HEIGHT := 76.0
 const GATE_NPC_FILES := {
 	"sentinel_s09": "npc_sentinel_s09.png",
 }
+const THUNDER_BOSS_IDLE := "npc_thunder_leiting.png"
+const THUNDER_BOSS_WALK := "npc_thunder_leiting_walk.png"
+const THUNDER_WALK_FRAME_COUNT := 4
+const THUNDER_GATE_DISPLAY_HEIGHT := 92.0
+const THUNDER_TD_DISPLAY_HEIGHT := 88.0
+## 四帧行走图切换速率（帧/秒），与 walk_phase 取整配合：frame = int(walk_phase) % 4
+const THUNDER_WALK_ANIM_FPS := 8.0
+const THUNDER_WALK_BLOCKED_FPS := 5.0
 static var _player_sprite_ready := false
 static var _tex_player_foot: Texture2D
 static var _vehicle_sprite_ready := false
 static var _tex_vehicle: Texture2D
 static var _gate_npc_ready := false
 static var _gate_npc_textures: Dictionary = {}
+static var _thunder_boss_ready := false
+static var _tex_thunder_idle: Texture2D
+static var _tex_thunder_walk: Texture2D
 
 static func hash_cell(seed: int, gx: int, gy: int) -> float:
 	return fmod(sin(float(seed * 1271 + gx * 3117 + gy * 7493)) * 43758.5453, 1.0)
@@ -893,16 +904,170 @@ static func gate_npc_anchor(
 	return entrance
 
 
+static func reload_gate_npc_sprites() -> void:
+	_gate_npc_ready = false
+	_gate_npc_textures.clear()
+	reload_thunder_boss_sprites()
+	ArtAssetLoader.clear_alpha_cache()
+
+
+static func reload_thunder_boss_sprites() -> void:
+	_thunder_boss_ready = false
+	_tex_thunder_idle = null
+	_tex_thunder_walk = null
+
+
+static func _ensure_thunder_boss_textures() -> void:
+	if _thunder_boss_ready:
+		return
+	_thunder_boss_ready = true
+	_tex_thunder_idle = _load_thunder_boss_texture(THUNDER_BOSS_IDLE)
+	_tex_thunder_walk = _load_thunder_boss_texture(THUNDER_BOSS_WALK)
+
+
+static func _load_thunder_boss_texture(filename: String) -> Texture2D:
+	var path := NPC_SPRITE_DIR + filename
+	var raw := ArtAssetLoader.load_texture_from_disk(path)
+	if raw == null:
+		push_warning("雷霆 Boss 贴图加载失败: %s" % path)
+		return null
+	if _texture_has_premultiplied_alpha(raw):
+		return raw
+	var keyed := ArtAssetLoader.apply_road_background_key(raw)
+	if ArtAssetLoader.texture_has_visible_pixels(keyed):
+		return keyed
+	if ArtAssetLoader.texture_has_visible_pixels(raw):
+		return raw
+	return null
+
+
+static func _thunder_walk_frame_index(walk_phase: float, is_walking: bool) -> int:
+	if not is_walking:
+		return 0
+	return int(walk_phase) % THUNDER_WALK_FRAME_COUNT
+
+
+static func _texture_has_premultiplied_alpha(tex: Texture2D) -> bool:
+	var img := tex.get_image()
+	if img == null or img.is_empty():
+		return false
+	var w := img.get_width()
+	var h := img.get_height()
+	if w <= 0 or h <= 0:
+		return false
+	var step_x := maxi(1, w / 12)
+	var step_y := maxi(1, h / 12)
+	for y in range(0, h, step_y):
+		for x in range(0, w, step_x):
+			if img.get_pixel(x, y).a < 0.92:
+				return true
+	return false
+
+
 static func draw_thunder_gate_boss(
 	canvas: CanvasItem,
 	center: Vector2,
 	unit_scale: float = 1.0,
 	toward_road: Vector2 = Vector2.ZERO,
 ) -> void:
+	_ensure_thunder_boss_textures()
 	var s := clampf(unit_scale, 0.55, 1.25)
 	var anchor := center
 	if toward_road.length_squared() > 0.01:
 		anchor = center - toward_road.normalized() * 22.0
+	if _tex_thunder_idle != null:
+		_draw_thunder_boss_texture(
+			canvas,
+			anchor,
+			_tex_thunder_idle,
+			THUNDER_GATE_DISPLAY_HEIGHT * s,
+			0,
+			toward_road.x > 0.05,
+			false,
+		)
+		return
+	_draw_thunder_gate_boss_fallback(canvas, anchor, s)
+
+
+static func draw_thunder_boss_enemy(
+	canvas: CanvasItem,
+	center: Vector2,
+	move_dir: Vector2,
+	walk_phase: float,
+	unit_scale: float = 1.0,
+	is_walking: bool = false,
+) -> bool:
+	_ensure_thunder_boss_textures()
+	if _tex_thunder_walk == null and _tex_thunder_idle == null:
+		return false
+	var tex := _tex_thunder_idle
+	var frame := 0
+	var use_sheet := false
+	if is_walking and _tex_thunder_walk != null:
+		tex = _tex_thunder_walk
+		use_sheet = true
+		frame = _thunder_walk_frame_index(walk_phase, true)
+	elif _tex_thunder_idle != null:
+		tex = _tex_thunder_idle
+	elif _tex_thunder_walk != null:
+		tex = _tex_thunder_walk
+		use_sheet = true
+		frame = _thunder_walk_frame_index(walk_phase, is_walking)
+	elif is_walking:
+		push_warning("雷霆行走图未加载，无法播放四帧动画: %s" % (NPC_SPRITE_DIR + THUNDER_BOSS_WALK))
+	if tex == null:
+		return false
+	var flip_h := move_dir.x > 0.05 if move_dir.length_squared() > 0.0004 else false
+	_draw_thunder_boss_texture(
+		canvas,
+		center,
+		tex,
+		THUNDER_TD_DISPLAY_HEIGHT * unit_scale,
+		frame,
+		flip_h,
+		use_sheet,
+	)
+	return true
+
+
+static func _draw_thunder_boss_texture(
+	canvas: CanvasItem,
+	center: Vector2,
+	tex: Texture2D,
+	display_h: float,
+	frame_index: int,
+	flip_h: bool,
+	use_walk_sheet: bool,
+) -> void:
+	var tex_size := tex.get_size()
+	if tex_size.x <= 0.0 or tex_size.y <= 0.0:
+		return
+	var frame_count := THUNDER_WALK_FRAME_COUNT if use_walk_sheet else 1
+	var frame_w := tex_size.x / float(frame_count)
+	var frame_h := tex_size.y
+	var frame_idx := clampi(frame_index, 0, frame_count - 1)
+	var src := Rect2(frame_w * float(frame_idx), 0.0, frame_w, frame_h)
+	var display_w := display_h * (frame_w / frame_h)
+	canvas.draw_circle(center + Vector2(0.0, 4.0), display_w * 0.22, Color(0.0, 0.0, 0.0, 0.34))
+	var dest := Rect2(
+		center.x - display_w * 0.5,
+		center.y - display_h * 0.5,
+		display_w,
+		display_h,
+	)
+	if flip_h:
+		canvas.draw_set_transform(center, 0.0, Vector2(-1.0, 1.0))
+		canvas.draw_texture_rect_region(
+			tex,
+			Rect2(-display_w * 0.5, -display_h * 0.5, display_w, display_h),
+			src,
+		)
+		canvas.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	else:
+		canvas.draw_texture_rect_region(tex, dest, src)
+
+
+static func _draw_thunder_gate_boss_fallback(canvas: CanvasItem, anchor: Vector2, s: float) -> void:
 	var body_w := 88.0 * s
 	var body_h := 52.0 * s
 	var body_rect := Rect2(anchor.x - body_w * 0.5, anchor.y - body_h * 0.5, body_w, body_h)
@@ -968,12 +1133,6 @@ static func draw_gate_npc(
 		display_h,
 	)
 	canvas.draw_texture_rect(tex, dest, false)
-
-
-static func reload_gate_npc_sprites() -> void:
-	_gate_npc_ready = false
-	_gate_npc_textures.clear()
-	ArtAssetLoader.clear_alpha_cache()
 
 
 static func draw_pixel_vehicle(canvas: CanvasItem, center: Vector2, travel_axis: String = "") -> void:

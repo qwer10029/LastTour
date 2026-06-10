@@ -1,0 +1,78 @@
+[gd_scene load_steps=3 format=3 uid="uid://story_dialogue_ui"]
+
+[ext_resource type="Script" path="res://scripts/ui/story_dialogue_ui.gd" id="1_ui"]
+[ext_resource type="Script" path="res://scripts/ui/continue_prompt.gd" id="2_continue"]
+
+[node name="StoryDialogueUI" type="CanvasLayer"]
+layer = 120
+script = ExtResource("1_ui")
+
+[node name="Root" type="Control" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="BottomAnchor" type="VBoxContainer" parent="Root"]
+anchors_preset = 7
+anchor_left = 0.15
+anchor_top = 1.0
+anchor_right = 0.85
+anchor_bottom = 1.0
+offset_top = -360.0
+offset_bottom = -28.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_constants/separation = 10
+
+[node name="NameTagRow" type="HBoxContainer" parent="Root/BottomAnchor"]
+layout_mode = 2
+
+[node name="NameTagPanel" type="PanelContainer" parent="Root/BottomAnchor/NameTagRow"]
+layout_mode = 2
+size_flags_horizontal = 0
+
+[node name="NameLabel" type="Label" parent="Root/BottomAnchor/NameTagRow/NameTagPanel"]
+layout_mode = 2
+text = "S-09"
+
+[node name="DialogPanel" type="PanelContainer" parent="Root/BottomAnchor"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 120)
+
+[node name="DialogMargin" type="MarginContainer" parent="Root/BottomAnchor/DialogPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 14
+
+[node name="DialogVBox" type="VBoxContainer" parent="Root/BottomAnchor/DialogPanel/DialogMargin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="BodyLabel" type="Label" parent="Root/BottomAnchor/DialogPanel/DialogMargin/DialogVBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+autowrap_mode = 3
+text = "对话正文"
+
+[node name="ChoiceHint" type="Label" parent="Root/BottomAnchor/DialogPanel/DialogMargin/DialogVBox"]
+layout_mode = 2
+text = "按 1 / 2 选择，或点下方按钮"
+
+[node name="FooterRow" type="HBoxContainer" parent="Root/BottomAnchor/DialogPanel/DialogMargin/DialogVBox"]
+layout_mode = 2
+alignment = 2
+
+[node name="ContinuePrompt" type="Control" parent="Root/BottomAnchor/DialogPanel/DialogMargin/DialogVBox/FooterRow"]
+custom_minimum_size = Vector2(36, 16)
+layout_mode = 2
+script = ExtResource("2_continue")
+
+[node name="ChoiceColumn" type="VBoxContainer" parent="Root/BottomAnchor"]
+layout_mode = 2
+theme_override_constants/separation = 10
+alignment = 1

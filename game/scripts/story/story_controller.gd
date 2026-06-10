@@ -872,10 +872,12 @@ func build_prompt(story_id: String) -> Dictionary:
 			out["text"] = npc_dialogue.panel_text
 			out["show_dialogue_options"] = true
 			out["dialogue_options"] = npc_dialogue.get_option_labels()
+			out["speaker"] = npc_dialogue.current_speaker
 		elif npc_dialogue.phase == _NpcDialogueRunner.Phase.LINE:
 			var body := npc_dialogue.panel_text.strip_edges()
 			out["text"] = body if body != "" else "……"
 			out["continue_hint"] = "按 E 继续"
+			out["speaker"] = npc_dialogue.current_speaker
 		return out
 	if StoryData.is_interior_encounter(story_id):
 		if run_state.is_quest_active(story_id):
@@ -943,7 +945,7 @@ func foot_door_hint(district_index: int) -> String:
 			return StoryData.prompt_return(story_id)
 	if story_id != "" and run_state.is_reward_pending(story_id):
 		return StoryData.prompt_reward(story_id)
-	return "E 返回车辆"
+	return "F 返回车辆"
 
 
 func get_foot_loot_nodes() -> Array[Area2D]:

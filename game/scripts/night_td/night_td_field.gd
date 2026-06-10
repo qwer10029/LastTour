@@ -480,9 +480,10 @@ func _draw_combat_entities() -> void:
 		return
 	for enemy in _controller._enemies:
 		var local_pos := to_local(enemy["pos"])
+		var enemy_type := str(enemy.get("type", ""))
 		var radius: float = maxf(float(enemy.get("radius", 10.0)), 12.0)
 		var color: Color = enemy.get("color", Color.WHITE)
-		var edef: Dictionary = NightTdDefs.get_enemy_def(str(enemy.get("type", "")))
+		var edef: Dictionary = NightTdDefs.get_enemy_def(enemy_type)
 		var label: String = str(edef.get("name", "敌")).left(2)
 		var is_ally := str(enemy.get("faction", "enemy")) == "ally"
 		var is_hacked := int(enemy.get("hacked_by", -1)) >= 0
@@ -490,13 +491,24 @@ func _draw_combat_entities() -> void:
 		var ring := Color("#5ce0a8") if is_ally else Color("#ff8b7a")
 		if is_hacked and not is_ally:
 			ring = Color("#5ac8e0")
-		draw_circle(local_pos, radius + 6.0, halo)
-		draw_circle(local_pos, radius + 3.0, Color("#ffffff"))
-		draw_circle(local_pos, radius, color)
-		draw_arc(local_pos, radius + 5.0, 0.0, TAU, 32, ring, 2.5)
-		if is_ally:
-			label = "友" + label.left(1)
-		draw_string(_font, local_pos + Vector2(-14, -20), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#fff8f8"))
+		var used_boss_sprite := false
+		if enemy_type == "thunder_leiting" and not is_ally:
+			used_boss_sprite = DayTopdownRender.draw_thunder_boss_enemy(
+				self,
+				local_pos,
+				enemy.get("move_dir", Vector2.ZERO),
+				float(enemy.get("walk_phase", 0.0)),
+				1.0,
+				bool(enemy.get("is_walking", false)),
+			)
+		if not used_boss_sprite:
+			draw_circle(local_pos, radius + 6.0, halo)
+			draw_circle(local_pos, radius + 3.0, Color("#ffffff"))
+			draw_circle(local_pos, radius, color)
+			draw_arc(local_pos, radius + 5.0, 0.0, TAU, 32, ring, 2.5)
+			if is_ally:
+				label = "友" + label.left(1)
+			draw_string(_font, local_pos + Vector2(-14, -20), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#fff8f8"))
 		# 牧羊者：金色指挥光环
 		if bool(enemy.get("is_shepherd", false)) and not is_ally:
 			draw_arc(local_pos, radius + 10.0, 0.0, TAU, 40, Color(1.0, 0.82, 0.29, 0.7), 2.0)
@@ -504,8 +516,10 @@ func _draw_combat_entities() -> void:
 			draw_arc(local_pos, radius + 9.0, 0.0, TAU, 36, Color("#64dca0", 0.72), 2.0)
 			draw_string(_font, local_pos + Vector2(-10, 32), "修", HORIZONTAL_ALIGNMENT_CENTER, -1, 9, Color("#c8ffe0"))
 		if bool(enemy.get("hack_immune", false)) and not is_ally:
-			draw_arc(local_pos, radius + 13.0, 0.0, TAU, 44, Color("#ff3658", 0.78), 2.5)
-			draw_string(_font, local_pos + Vector2(-12, -42), "免疫", HORIZONTAL_ALIGNMENT_CENTER, -1, 9, Color("#ffd0d8"))
+			var immune_r := radius + (14.0 if used_boss_sprite else 13.0)
+			draw_arc(local_pos, immune_r, 0.0, TAU, 44, Color("#ff3658", 0.78), 2.5)
+			var immune_y := -52.0 if used_boss_sprite else -42.0
+			draw_string(_font, local_pos + Vector2(-12, immune_y), "免疫", HORIZONTAL_ALIGNMENT_CENTER, -1, 9, Color("#ffd0d8"))
 		# 战斗中显示指挥官分配的组标签
 		if _controller.phase == NightTdController.Phase.COMBAT:
 			var goal_key: String = str(enemy.get("goal_key", ""))
@@ -517,14 +531,16 @@ func _draw_combat_entities() -> void:
 				draw_string(_font, local_pos + Vector2(-10, -32),
 					"佯攻", HORIZONTAL_ALIGNMENT_CENTER, -1, 8,
 					Color(0.6, 0.5, 0.9, 0.8))
-		if _controller.phase == NightTdController.Phase.COMBAT:
+		if _controller.phase == NightTdController.Phase.COMBAT and not used_boss_sprite:
 			var move_dir: Vector2 = enemy.get("move_dir", Vector2.ZERO)
 			if move_dir.length_squared() > 0.0001:
 				var arrow_tip := local_pos + move_dir * (radius + 14.0)
 				_draw_arrow_head(arrow_tip, move_dir, 11.0, Color(1.0, 0.45, 0.35, 0.95))
 		var hp_ratio: float = clampf(float(enemy["hp"]) / maxf(float(enemy["max_hp"]), 1.0), 0.0, 1.0)
-		draw_rect(Rect2(local_pos.x - 18, local_pos.y - 28, 36, 5), Color(0.05, 0.05, 0.05, 0.95), true)
-		draw_rect(Rect2(local_pos.x - 18, local_pos.y - 28, 36 * hp_ratio, 5), Color("#ff5f57"), true)
+		var bar_w := 52.0 if used_boss_sprite else 36.0
+		var bar_y := local_pos.y - (54.0 if used_boss_sprite else 28.0)
+		draw_rect(Rect2(local_pos.x - bar_w * 0.5, bar_y, bar_w, 5), Color(0.05, 0.05, 0.05, 0.95), true)
+		draw_rect(Rect2(local_pos.x - bar_w * 0.5, bar_y, bar_w * hp_ratio, 5), Color("#ff5f57"), true)
 
 	for projectile in _controller._projectiles:
 		var from_pos := to_local(projectile["from"])
