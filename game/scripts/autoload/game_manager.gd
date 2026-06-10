@@ -2,6 +2,7 @@ extends Node
 
 const RunStateClass = preload("res://scripts/run_state.gd")
 const DifficultySelectScript := preload("res://scripts/menu/difficulty_select.gd")
+const RunLoadingScene := preload("res://scenes/menu/run_loading.tscn")
 
 enum Difficulty { EASY, NORMAL, HARD }
 const RUN_CONFIG_PATH := "res://data/run_config.json"
@@ -10,6 +11,7 @@ const SCENE_MAIN_MENU := "res://scenes/menu/main_menu.tscn"
 const SCENE_OPENING_PROLOGUE := "res://scenes/menu/opening_prologue.tscn"
 const SCENE_DIFFICULTY := "res://scenes/menu/difficulty_select.tscn"
 const SCENE_SQUAD := "res://scenes/menu/squad_select.tscn"
+const SCENE_RUN_LOADING := "res://scenes/menu/run_loading.tscn"
 const SCENE_GAME := "res://scenes/main.tscn"
 const SCENE_DAY := "res://scenes/day_exploration.tscn"
 const SCENE_NIGHT_TD := "res://scenes/night_td/night_td_standalone.tscn"
@@ -43,6 +45,9 @@ var _run_config: Dictionary = {}
 
 var _pending_new_game := false
 var _pending_load_save := false
+var _run_bootstrap: Dictionary = {}
+var _preloaded_game_scene: PackedScene = null
+var _await_enter_overlay_dismiss := false
 
 # -- 场景切换模式（方案四）：Day/Night 独立场景之间的状态传递 --
 var run_state = null   # RunState — 跨场景共享状态（类型在 preload 中解析）
@@ -142,6 +147,10 @@ func _load_run_config() -> void:
 func go_to_main_menu() -> void:
 	_pending_new_game = false
 	_pending_load_save = false
+	_run_bootstrap = {}
+	_preloaded_game_scene = null
+	_await_enter_overlay_dismiss = false
+	RunTransition.hide_cover()
 	run_state = null
 	_play_music_cue("menu_main", 1.0)
 	get_tree().change_scene_to_file(SCENE_MAIN_MENU)
@@ -168,6 +177,7 @@ func begin_new_game_flow() -> void:
 	_pending_new_game = true
 	difficulty = Difficulty.NORMAL
 	squad_id = "scavenger"
+	_run_bootstrap = {}
 	run_state = null
 	_play_music_cue("opening_prologue", 1.0)
 	get_tree().change_scene_to_file(SCENE_OPENING_PROLOGUE)
@@ -187,8 +197,56 @@ func go_to_squad_select() -> void:
 func start_run() -> void:
 	_pending_new_game = false
 	run_state = null
+	_run_bootstrap = {}
+	_preloaded_game_scene = null
+	_await_enter_overlay_dismiss = true
+	RunTransition.preload_background()
+	RunTransition.show_cover()
+	get_tree().change_scene_to_packed(RunLoadingScene)
+
+
+func store_run_bootstrap(data: Dictionary) -> void:
+	_run_bootstrap = data
+
+
+func has_run_bootstrap() -> bool:
+	return _run_bootstrap.has("map")
+
+
+func run_bootstrap_textures_preloaded() -> bool:
+	return has_run_bootstrap() and bool(_run_bootstrap.get("textures_preloaded", false))
+
+
+func consume_run_bootstrap() -> Dictionary:
+	var data := _run_bootstrap
+	_run_bootstrap = {}
+	return data
+
+
+func set_preloaded_game_scene(scene: PackedScene) -> void:
+	_preloaded_game_scene = scene
+
+
+func should_dismiss_enter_overlay() -> bool:
+	return _await_enter_overlay_dismiss
+
+
+func dismiss_enter_overlay() -> void:
+	if not _await_enter_overlay_dismiss:
+		return
+	_await_enter_overlay_dismiss = false
+	if RunTransition.is_covering():
+		await RunTransition.fade_out_cover()
+
+
+func enter_game_after_bootstrap() -> void:
 	_play_music_cue("day_exploration", 1.0)
-	get_tree().change_scene_to_file(SCENE_GAME)
+	RunTransition.show_cover()
+	if _preloaded_game_scene != null:
+		get_tree().change_scene_to_packed(_preloaded_game_scene)
+		_preloaded_game_scene = null
+	else:
+		get_tree().change_scene_to_file(SCENE_GAME)
 
 
 func get_difficulty_name(value: int = -1) -> String:

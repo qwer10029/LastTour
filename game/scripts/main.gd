@@ -158,10 +158,11 @@ func _ready() -> void:
 	if road_render_settings == null:
 		road_render_settings = RoadRenderSettings.new()
 	DayTopdownRender.apply_settings(road_render_settings)
-	DayTopdownRender.reload_road_textures()
-	DayTopdownRender.reload_prop_textures()
-	DayTopdownRender.preload_wilderness_noise()
-	DayTopdownRender.preload_interior_textures()
+	if not _run_bootstrap_textures_ready():
+		DayTopdownRender.reload_road_textures()
+		DayTopdownRender.reload_prop_textures()
+		DayTopdownRender.preload_wilderness_noise()
+		DayTopdownRender.preload_interior_textures()
 	if enable_road_tuning_panel:
 		_setup_road_tuning_panel()
 	_ensure_input_actions()
@@ -191,6 +192,15 @@ func _ready() -> void:
 	_sync_day_entity_visibility()
 	_refresh_ui()
 	queue_redraw()
+	if GameManager.should_dismiss_enter_overlay():
+		call_deferred("_dismiss_enter_overlay")
+
+
+func _dismiss_enter_overlay() -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if GameManager.should_dismiss_enter_overlay():
+		await GameManager.dismiss_enter_overlay()
 
 
 func _setup_road_tuning_panel() -> void:
@@ -586,6 +596,20 @@ func _on_repair_option_pressed(material: String) -> void:
 	_repair_with_material(material)
 
 
+func _run_bootstrap_textures_ready() -> bool:
+	return GameManager.run_bootstrap_textures_preloaded()
+
+
+func _apply_pregenerated_map(bootstrap: Dictionary) -> void:
+	var map: Variant = bootstrap.get("map")
+	if map is WorldMapData:
+		_map = map
+	_current_layer = maxi(int(bootstrap.get("current_layer", 1)), 1)
+	_elevator_repair_progress = 0
+	_current_district_index = -1
+	_apply_overworld_biome_for_layer()
+
+
 func _start_new_run() -> void:
 	_run_ended = false
 	_run_end_reason = ""
@@ -596,7 +620,10 @@ func _start_new_run() -> void:
 	_run_journal = RunJournal.new()
 	_story_controller.reset_for_new_run()
 	_init_player_loadout()
-	_generate_layer_map()
+	if GameManager.has_run_bootstrap():
+		_apply_pregenerated_map(GameManager.consume_run_bootstrap())
+	else:
+		_generate_layer_map()
 	_fuel = fuel_max
 	_reset_vehicle_hp_for_new_run()
 	_spawn_resources()
@@ -732,7 +759,7 @@ func _process(_delta: float) -> void:
 		return
 	if Input.is_action_just_pressed("enter_defense_mode"):
 		if _mode == TravelMode.FOOT:
-			_try_foot_return_to_vehicle()
+			_try_foot_console_interact()
 		else:
 			_try_enter_defense_mode()
 
@@ -770,7 +797,8 @@ func _physics_process(delta: float) -> void:
 
 	if Input.is_action_just_pressed("interact"):
 		if _mode == TravelMode.FOOT:
-			_handle_foot_interact()
+			if not _try_foot_return_to_vehicle():
+				_handle_foot_interact()
 		elif _mode == TravelMode.DRIVE and _segment_target_index < 0:
 			if _try_advance_story_dialogue():
 				pass
@@ -801,11 +829,8 @@ func _physics_process(delta: float) -> void:
 		)
 		if not gate_active:
 			_try_begin_drive_from_input()
-	if Input.is_action_just_pressed("repair"):
-		if _can_use_kunlun_control():
-			_attempt_kunlun_terminal()
-		else:
-			_attempt_repair_elevator()
+	if Input.is_action_just_pressed("repair") and _mode == TravelMode.FOOT:
+		_try_foot_console_interact()
 
 	match _mode:
 		TravelMode.DRIVE:
@@ -1520,10 +1545,7 @@ func _on_return_pressed() -> void:
 			_refresh_ui()
 
 func _on_repair_pressed() -> void:
-	if _can_use_kunlun_control():
-		_attempt_kunlun_terminal()
-	else:
-		_attempt_repair_elevator()
+	_try_foot_console_interact()
 
 func _can_disembark() -> bool:
 	if _mode != TravelMode.DRIVE or _segment_target_index >= 0:
@@ -1922,7 +1944,7 @@ func _consume_repair_material() -> bool:
 
 func _repair_button_label() -> String:
 	if _backpack.has("parts", ItemDefs.REPAIR_PARTS_EACH) or _backpack.has("scrap", ItemDefs.REPAIR_SCRAP_EACH) or (_backpack.has("wood", ItemDefs.REPAIR_WOOD_EACH) and _backpack.has("scrap", ItemDefs.REPAIR_SCRAP_ALT_EACH)):
-		return "修复电梯 (R · 自选材料)"
+		return "修复电梯 (F · 自选材料)"
 	return "修复电梯 (材料不足)"
 
 
@@ -4110,7 +4132,7 @@ func _draw_door_exit_hint(door_rect: Rect2) -> void:
 		return
 	if door_rect.size.x <= 0.0 or door_rect.size.y <= 0.0:
 		return
-	var text := _story_controller.foot_door_hint(_current_district_index) if is_instance_valid(_story_controller) else "F 返回车辆"
+	var text := _story_controller.foot_door_hint(_current_district_index) if is_instance_valid(_story_controller) else "E 返回车辆"
 	var bubble_w := clampf(float(text.length()) * 10.0 + 24.0, 72.0, 140.0)
 	var bubble_h := 16.0
 	var door_center_x := door_rect.position.x + door_rect.size.x * 0.5
@@ -4140,10 +4162,16 @@ func _handle_foot_interact() -> void:
 		if is_instance_valid(evening_notice) and evening_notice.has_method("show_message"):
 			evening_notice.show_message("先完成抉择，才能离开。")
 		return
+
+
+func _try_foot_console_interact() -> bool:
 	if _is_near_kunlun_console():
 		_attempt_kunlun_terminal()
-	elif _is_near_elevator_console():
+		return true
+	if _is_near_elevator_console():
 		_attempt_repair_elevator()
+		return true
+	return false
 
 
 func _try_foot_return_to_vehicle() -> bool:
@@ -4222,7 +4250,7 @@ func _elevator_console_hint_text() -> String:
 	var needed := _current_repair_cost() - _elevator_repair_progress
 	if needed <= 0:
 		return "电梯已就绪"
-	return "E 修复电梯 · %d/%d" % [_elevator_repair_progress, _current_repair_cost()]
+	return "F 修复电梯 · %d/%d" % [_elevator_repair_progress, _current_repair_cost()]
 
 
 func _draw_elevator_console_hint(console_rect: Rect2) -> void:
@@ -4234,7 +4262,7 @@ func _draw_elevator_console_hint(console_rect: Rect2) -> void:
 func _draw_kunlun_console_hint(console_rect: Rect2) -> void:
 	if not _can_use_kunlun_control() or not _is_near_kunlun_console():
 		return
-	_draw_interior_console_hint(console_rect, "E 启动通信终端", Color("#6eb8ff"))
+	_draw_interior_console_hint(console_rect, "F 启动通信终端", Color("#6eb8ff"))
 
 
 func _draw_interior_console_hint(console_rect: Rect2, text: String, accent: Color) -> void:

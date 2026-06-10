@@ -945,7 +945,7 @@ func foot_door_hint(district_index: int) -> String:
 			return StoryData.prompt_return(story_id)
 	if story_id != "" and run_state.is_reward_pending(story_id):
 		return StoryData.prompt_reward(story_id)
-	return "F 返回车辆"
+	return "E 返回车辆"
 
 
 func get_foot_loot_nodes() -> Array[Area2D]:

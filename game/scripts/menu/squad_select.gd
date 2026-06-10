@@ -53,6 +53,7 @@ var _logistics_card: SquadCard
 func _ready() -> void:
 	SquadSelect.clear_texture_cache()
 	preload_assets()
+	RunTransition.preload_background()
 	_play_music_cue("menu_select", 0.8)
 	_setup_background()
 	_setup_header()

@@ -45,6 +45,7 @@ func generate(
 	rng_seed: int = 0,
 	is_final_layer: bool = false,
 	debug_near_spawn: bool = false,
+	on_progress: Callable = Callable(),
 ) -> void:
 	columns = new_columns
 	rows = new_rows
@@ -54,16 +55,22 @@ func generate(
 	hub_indices.clear()
 	start_node_index = -1
 
+	var report := func(ratio: float, label: String) -> void:
+		if on_progress.is_valid():
+			on_progress.call(clampf(ratio, 0.0, 1.0), label)
+
 	var rng := RandomNumberGenerator.new()
 	if rng_seed == 0:
 		rng.randomize()
 	else:
 		rng.seed = rng_seed
 
+	report.call(0.04, "铺设地表网格…")
 	for row in range(rows):
 		for column in range(columns):
 			cells.append(_create_empty_cell(Vector2i(column, row)))
 
+	report.call(0.12, "选址枢纽营地…")
 	var hub_coords: Array[Vector2i] = _pick_cells(rng, max(2, min(4, (columns + rows) / 4)))
 	for coord in hub_coords:
 		var index := index_from_coord(coord)
@@ -71,9 +78,12 @@ func generate(
 		cells[index]["building_type"] = "hub"
 		hub_indices.append(index)
 
+	report.call(0.18, "规划资源区…")
 	var district_coords: Array[Vector2i] = _pick_district_coords(
 		rng, max(8, min(16, (columns + rows) / 3)), hub_coords
 	)
+	var district_total := maxi(district_coords.size(), 1)
+	var district_step := 0
 	for coord in district_coords:
 		var index := index_from_coord(coord)
 		if index in hub_indices:
@@ -99,6 +109,10 @@ func generate(
 			rng, int(cells[index]["resource_total"]), building_type, foot_layout, foot_origin_offset
 		)
 		district_indices.append(index)
+		district_step += 1
+		if district_step % 2 == 0 or district_step == district_total:
+			var local := 0.18 + 0.52 * float(district_step) / float(district_total)
+			report.call(local, "建设资源区 %d/%d…" % [district_step, district_total])
 
 	if is_final_layer:
 		_ensure_kunlun_control_district()
@@ -107,16 +121,20 @@ func generate(
 
 	if district_indices.is_empty():
 		return
+	report.call(0.74, "连接道路网络…")
 	# 路在格与格之间的边沿：所有非建筑格（空地/hub）四向连通，建筑格本身不可通行
 	_link_traversable_grid()
 	_finalize_cell_kinds()
 	_setup_district_roadside(rng)
 	_finalize_cell_kinds()
+	report.call(0.86, "标记出发节点…")
 	_mark_start_node()
 	if debug_near_spawn:
 		_place_special_building_near_start(is_final_layer)
+	report.call(0.92, "散布地表细节…")
 	_place_terrain_scatter(rng)
 	_place_road_blockages(rng)
+	report.call(1.0, "世界地图生成完成")
 
 func get_world_size() -> Vector2:
 	return Vector2(columns * cell_size.x, rows * cell_size.y)
