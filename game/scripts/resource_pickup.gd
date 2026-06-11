@@ -28,8 +28,8 @@ func _load_texture() -> void:
 	if not is_instance_valid(sprite):
 		return
 	if _is_evidence():
-		sprite.texture = ItemIconFactory.get_texture("scrap", 28)
-		sprite.modulate = Color("#ffd966")
+		sprite.texture = ItemIconFactory.get_texture(item_id, 28)
+		sprite.modulate = Color.WHITE
 		if sprite.texture != null:
 			var tex_size := sprite.texture.get_size()
 			if tex_size.x > 0.0:

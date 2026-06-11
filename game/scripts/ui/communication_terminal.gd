@@ -5,16 +5,24 @@ const SciFiFramePanelScript = preload("res://scripts/ui/sci_fi_frame_panel.gd")
 signal strike_completed
 signal transfer_completed
 
-enum Phase { HIDDEN, INTRO, UPLOAD, READ, REPORT, CAPTCHA, RESULT_FAIL, RESULT_PASS }
+enum Phase { HIDDEN, INTRO, UPLOAD, READ, REPORT, CAPTCHA, EVIDENCE_AUDIT, RESULT_FAIL, RESULT_PASS }
 
 const COLOR_ALERT := Color("#ff3d4a")
+const REQUIRED_EVIDENCE_IDS := [
+	"backdoor_info",
+	"clone_identity",
+	"faction_conflict",
+	"human_extinction_proof",
+]
 
 var _phase: int = Phase.HIDDEN
 var _report_choice: String = ""
 var _run_layer: int = 3
 var _day_index: int = 1
 var _run_journal_entries: Array = []
+var _backpack_snapshot: Dictionary = {}
 var _upload_done: bool = false
+var _audit_passed: bool = false
 
 var _dim: ColorRect
 var _frame: SciFiFramePanel
@@ -27,6 +35,7 @@ var _options_box: VBoxContainer
 var _captcha_box: VBoxContainer
 var _captcha_slider: HSlider
 var _captcha_hint: Label
+var _captcha_close_btn: Button
 var _primary_btn: Button
 var _option_buttons: Array[Button] = []
 
@@ -52,6 +61,23 @@ func _build_ui() -> void:
 	_frame = SciFiFramePanelScript.new()
 	_frame.custom_minimum_size = Vector2(800, 560)
 	center.add_child(_frame)
+
+	_captcha_close_btn = Button.new()
+	_captcha_close_btn.name = "CaptchaAuditClose"
+	_captcha_close_btn.text = "X"
+	_captcha_close_btn.visible = false
+	_captcha_close_btn.focus_mode = Control.FOCUS_NONE
+	_captcha_close_btn.mouse_filter = Control.MOUSE_FILTER_STOP
+	_captcha_close_btn.z_index = 20
+	_captcha_close_btn.custom_minimum_size = Vector2(30, 26)
+	_captcha_close_btn.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_captcha_close_btn.offset_left = -42.0
+	_captcha_close_btn.offset_top = 14.0
+	_captcha_close_btn.offset_right = -12.0
+	_captcha_close_btn.offset_bottom = 40.0
+	HudTheme.apply_sci_fi_terminal_button(_captcha_close_btn, Color("#e87840"))
+	_captcha_close_btn.pressed.connect(_on_captcha_close_pressed)
+	_frame.add_child(_captcha_close_btn)
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -132,14 +158,17 @@ func _build_ui() -> void:
 	HudTheme.apply_sci_fi_terminal_button(_primary_btn)
 	_primary_btn.pressed.connect(_on_primary_pressed)
 	root.add_child(_primary_btn)
+	_frame.move_child(_captcha_close_btn, _frame.get_child_count() - 1)
 
 
-func start_flow(run_journal_entries: Array, run_layer: int = 3, day_index: int = 1) -> void:
+func start_flow(run_journal_entries: Array, run_layer: int = 3, day_index: int = 1, backpack_snapshot: Dictionary = {}) -> void:
 	_run_journal_entries = run_journal_entries.duplicate(true)
+	_backpack_snapshot = backpack_snapshot.duplicate(true)
 	_report_choice = ""
 	_run_layer = run_layer
 	_day_index = day_index
 	_upload_done = false
+	_audit_passed = false
 	visible = true
 	_play_music_cue("terminal", 0.9)
 	_enter_phase(Phase.INTRO)
@@ -161,6 +190,7 @@ func _enter_phase(phase: int) -> void:
 	_clear_option_buttons()
 	_options_box.visible = false
 	_captcha_box.visible = false
+	_captcha_close_btn.visible = false
 	_log_section.visible = false
 	_log_history.visible = false
 	_body_label.visible = true
@@ -199,10 +229,19 @@ func _enter_phase(phase: int) -> void:
 			_header_label.visible = false
 			_body_label.text = "> %s" % RunEndingDefs.TERMINAL_CAPTCHA_PROMPT
 			_captcha_box.visible = true
+			_captcha_close_btn.visible = true
 			_captcha_slider.value = 0.0
 			_captcha_hint.text = "滑块进度：0 / 100"
 			_primary_btn.text = "提交验证"
 			_primary_btn.disabled = true
+		Phase.EVIDENCE_AUDIT:
+			_title_label.text = "通信终端 · 证据审计"
+			_header_label.visible = false
+			var audit := _evidence_audit_report()
+			_audit_passed = bool(audit.get("passed", false))
+			_body_label.text = str(audit.get("text", ""))
+			_primary_btn.text = "提交证据包" if _audit_passed else "提交中断记录"
+			_primary_btn.disabled = false
 		Phase.RESULT_FAIL:
 			_title_label.text = "通信终端 · 验证失败"
 			_title_label.add_theme_color_override("font_color", COLOR_ALERT)
@@ -219,7 +258,7 @@ func _enter_phase(phase: int) -> void:
 			HudTheme.apply_terminal_title(_title_label)
 			_header_label.visible = false
 			_body_label.text = "%s\n\n%s" % [
-				HudTheme.format_terminal_log(RunEndingDefs.TERMINAL_VERIFY_PASS_TEXT, false),
+				HudTheme.format_terminal_log(_pass_text(), false),
 				HudTheme.format_terminal_log(RunEndingDefs.TERMINAL_TRANSFER_TEXT, false),
 			]
 			_primary_btn.text = "接管控制台"
@@ -310,6 +349,57 @@ func _on_captcha_value_changed(value: float) -> void:
 	_primary_btn.disabled = value < 100.0
 
 
+func _on_captcha_close_pressed() -> void:
+	if _phase != Phase.CAPTCHA:
+		return
+	_enter_phase(Phase.EVIDENCE_AUDIT)
+
+
+func _required_evidence_ids() -> Array[String]:
+	var ids: Array[String] = []
+	var configured := EvidenceData.terminal_required_ids()
+	if not configured.is_empty():
+		for id in configured:
+			ids.append(str(id))
+		return ids
+	for id in REQUIRED_EVIDENCE_IDS:
+		ids.append(str(id))
+	return ids
+
+
+func _has_evidence_item(evidence_id: String) -> bool:
+	return int(_backpack_snapshot.get("evidence:%s" % evidence_id, 0)) > 0
+
+
+func _evidence_audit_report() -> Dictionary:
+	var missing: Array[String] = []
+	var present: Array[String] = []
+	for evidence_id in _required_evidence_ids():
+		if _has_evidence_item(evidence_id):
+			present.append(EvidenceData.title_of(evidence_id))
+		else:
+			missing.append(EvidenceData.title_of(evidence_id))
+	var lines: PackedStringArray = []
+	lines.append("> 操作者主动放弃 CAPTCHA。")
+	lines.append("> 终端转入异常中断审计，扫描背包内实体证据。")
+	lines.append("")
+	if not present.is_empty():
+		lines.append("> 已提交证据：%s" % "、".join(present))
+	if missing.is_empty():
+		lines.append("> 归档证明链完整。")
+		lines.append("> 操作员 CAPTCHA 已放弃；物理证据包验证紧急移交后门。")
+		return {"passed": true, "text": "\n".join(lines)}
+	lines.append("> 缺失证据：%s" % "、".join(missing))
+	lines.append("> 中断行为缺少授权依据。")
+	return {"passed": false, "text": "\n".join(lines)}
+
+
+func _pass_text() -> String:
+	if _audit_passed:
+		return RunEndingDefs.TERMINAL_AUDIT_PASS_TEXT
+	return RunEndingDefs.TERMINAL_VERIFY_PASS_TEXT
+
+
 func _on_primary_pressed() -> void:
 	match _phase:
 		Phase.INTRO:
@@ -322,7 +412,9 @@ func _on_primary_pressed() -> void:
 		Phase.CAPTCHA:
 			if _captcha_slider.value < 100.0:
 				return
-			if MetaManager.has_all_truth_encounters():
+			_enter_phase(Phase.RESULT_FAIL)
+		Phase.EVIDENCE_AUDIT:
+			if _audit_passed:
 				_enter_phase(Phase.RESULT_PASS)
 			else:
 				_enter_phase(Phase.RESULT_FAIL)

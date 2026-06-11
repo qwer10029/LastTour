@@ -6,6 +6,7 @@ signal continue_pressed
 signal tower_power_step(tower_id: int, delta_step: float)
 signal power_tower_selected(tower_id: int)
 signal overlay_toggled(state: bool)
+signal fuel_boost_pressed
 
 @onready var top_bar: PanelContainer = $TopBar
 @onready var side_panel: PanelContainer = $Sidebar
@@ -25,7 +26,7 @@ var _tower_card_data := {
 	"jammer":  {"icon": "⚡", "name": "干扰信标", "color": "#6ed08b"},
 	"barrier": {"icon": "▣", "name": "物理路障", "color": "#9e8564"},
 	"trap":    {"icon": "▲", "name": "电磁陷阱", "color": "#e87840"},
-	"cryo_beacon": {"icon": "❄", "name": "低温信标", "color": "#83d8ff"},
+	"cryo_beacon": {"icon": "≋", "name": "噪声信标", "color": "#c6d65c"},
 	"hacker":  {"icon": "⌁", "name": "入侵天线", "color": "#5ac8e0"},
 	"sniper":  {"icon": "◎", "name": "狙击信标", "color": "#7aa6ff"},
 	"splash":  {"icon": "❖", "name": "电弧塔",   "color": "#e0a23a"},
@@ -49,6 +50,8 @@ const HOVER_DELAY: float = 0.45
 # Power
 var _power_panel: VBoxContainer = null
 var _energy_label: Label = null
+var _fuel_boost_btn: Button = null
+var _fuel_boost_label: Label = null
 var _power_list: VBoxContainer = null
 var _power_empty_label: Label = null
 var _power_rows: Dictionary = {}
@@ -476,6 +479,20 @@ func _build_power_panel() -> void:
 	_energy_label.add_theme_color_override("font_color", Color(COLORS["subtitle"]))
 	_power_panel.add_child(_energy_label)
 
+	_fuel_boost_btn = Button.new()
+	_fuel_boost_btn.text = "应急供能"
+	_fuel_boost_btn.custom_minimum_size = Vector2(0, 32)
+	HudTheme.apply_sci_fi_terminal_button(_fuel_boost_btn, Color(COLORS["amber"]))
+	_fuel_boost_btn.pressed.connect(func(): fuel_boost_pressed.emit())
+	_power_panel.add_child(_fuel_boost_btn)
+
+	_fuel_boost_label = Label.new()
+	_fuel_boost_label.text = "燃料: --"
+	_fuel_boost_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_fuel_boost_label.add_theme_font_size_override("font_size", 10)
+	_fuel_boost_label.add_theme_color_override("font_color", Color(COLORS["subtitle"]))
+	_power_panel.add_child(_fuel_boost_label)
+
 	_power_list = VBoxContainer.new()
 	_power_list.add_theme_constant_override("separation", 2)
 	_power_panel.add_child(_power_list)
@@ -489,6 +506,24 @@ func _build_power_panel() -> void:
 func set_energy_status(current: float, capacity: float, demand: float) -> void:
 	if is_instance_valid(_energy_label):
 		_energy_label.text = "反应堆: %.0f/%.0f  耗能 %.1f/s" % [current, capacity, demand]
+
+
+func set_fuel_boost_status(fuel: float, fuel_max: float, active: bool, remaining: float, burn_rate: float, production_bonus: float) -> void:
+	if is_instance_valid(_fuel_boost_btn):
+		_fuel_boost_btn.disabled = fuel <= 0.0
+	if not is_instance_valid(_fuel_boost_label):
+		return
+	var max_text := "%.0f" % fuel_max if fuel_max > 0.0 else "--"
+	if active:
+		_fuel_boost_label.text = "燃料 %.0f/%s · 供能 %.0fs · +%.1f/s · 燃烧 %.1f/s" % [
+			fuel,
+			max_text,
+			remaining,
+			production_bonus,
+			burn_rate,
+		]
+	else:
+		_fuel_boost_label.text = "燃料 %.0f/%s · 应急供能待命" % [fuel, max_text]
 
 
 func update_power_list(towers: Array) -> void:

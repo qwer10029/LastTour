@@ -234,9 +234,18 @@ func _kill_tween(store: Dictionary, key: Variant) -> void:
 
 
 func _select_difficulty(value: int) -> void:
-	GameManager.difficulty = value
-	GameManager.go_to_squad_select()
+	var manager := _game_manager()
+	if manager == null:
+		return
+	manager.difficulty = value
+	manager.go_to_squad_select()
 
 
 func _on_back_pressed() -> void:
-	GameManager.go_to_main_menu()
+	var manager := _game_manager()
+	if manager != null:
+		manager.go_to_main_menu()
+
+
+func _game_manager() -> Node:
+	return get_tree().root.get_node_or_null("GameManager") if get_tree() != null else null

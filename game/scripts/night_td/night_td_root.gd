@@ -42,6 +42,8 @@ func _ready() -> void:
 		_run_state.vehicle_hp_max,
 		snapshot,
 		_run_state.night_session_options,
+		_run_state.fuel,
+		_run_state.fuel_max,
 	)
 
 	# 暂停检查：将 GameManager 的暂停状态同步过来

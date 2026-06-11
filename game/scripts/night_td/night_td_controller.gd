@@ -57,6 +57,9 @@ const FLOW_REBUILD_INTERVAL := 0.25
 
 # --- 威胁影响图（P2）---
 const ENERGY_CONFIG_PATH := "res://data/night_td/energy.json"
+const FUEL_BOOST_DURATION_SEC := 10.0
+const FUEL_BOOST_TOTAL_COST := 12.0
+const FUEL_BOOST_PRODUCTION_BONUS := 3.0
 var _influence: NightTdInfluence = null
 var _display_influence: NightTdInfluence = null   # 独立的热力图缓存（布防/战斗两阶段均可查询）
 var _display_influence_dirty := true
@@ -70,6 +73,10 @@ var _commander: NightTdCommander = null
 # --- 能源系统（P4）---
 var _energy: NightTdEnergy = null
 var _next_tower_id := 1   # 每座塔分配稳定 id，用于能源/UI 索引
+var _vehicle_fuel: float = -1.0
+var _vehicle_fuel_max: float = -1.0
+var _fuel_boost_remaining: float = 0.0
+var _fuel_boost_spent: float = 0.0
 
 # --- 黑入系统（P5）---
 const SHEPHERD_DEGRADE_SEC := 8.0   # 牧羊者被策反/击杀后，敌方 AI 退化时长
@@ -92,6 +99,12 @@ var _session_kind: String = "normal"
 var _phase_title_override: String = ""
 var _no_day_advance := false
 var _screen_camera: Camera2D = null
+var _enemy_index_by_eid: Dictionary = {}
+var _active_slow_towers: Array[Dictionary] = []
+var _cell_tower_map: Dictionary = {}
+var _tower_cache_dirty := true
+var _healer_aura_accum := 0.0
+const HEALER_AURA_INTERVAL := 0.2
 
 
 func _ready() -> void:
@@ -110,6 +123,7 @@ func _ready() -> void:
 		hud.tower_power_step.connect(_on_tower_power_step)
 		hud.power_tower_selected.connect(_on_power_tower_selected)
 		hud.overlay_toggled.connect(_on_overlay_toggled)
+		hud.fuel_boost_pressed.connect(_on_fuel_boost_pressed)
 
 
 func set_session_paused(paused: bool) -> void:
@@ -157,6 +171,8 @@ func start_session(
 	vehicle_hp_max: float = -1.0,
 	backpack_snapshot: Dictionary = {},
 	session_options: Dictionary = {},
+	vehicle_fuel: float = -1.0,
+	vehicle_fuel_max: float = -1.0,
 ) -> void:
 	_session_options = session_options.duplicate(true)
 	_session_kind = str(_session_options.get("kind", "normal"))
@@ -169,6 +185,10 @@ func start_session(
 		_local_backpack.load_from_dictionary(backpack_snapshot)
 	_salvage_pending = {}
 	_breach_losses = {}
+	_enemy_index_by_eid.clear()
+	_active_slow_towers.clear()
+	_cell_tower_map.clear()
+	_tower_cache_dirty = true
 	_event_log.clear()
 	_converted_survivors.clear()
 	_combat_tower_ids.clear()
@@ -186,6 +206,11 @@ func start_session(
 		base_hp = clampf(vehicle_hp, 0.0, base_max_hp)
 	else:
 		base_hp = base_max_hp
+	_vehicle_fuel = vehicle_fuel if vehicle_fuel >= 0.0 else 0.0
+	_vehicle_fuel_max = vehicle_fuel_max if vehicle_fuel_max > 0.0 else _vehicle_fuel
+	_fuel_boost_remaining = 0.0
+	_fuel_boost_spent = 0.0
+	_healer_aura_accum = 0.0
 	placement_remaining = placement_time_sec if allow_placement else 0.0
 	_selected_tower = "jammer"
 	_towers.clear()
@@ -253,6 +278,7 @@ func start_session(
 			hud.set_hint("没有进入布防模式，敌人将直接来袭。")
 		hud.clear_log()
 		_notify_debug_skip_available()
+		_refresh_fuel_boost_hud()
 	_update_hud_tools()
 	_play_music_cue("night_setup" if phase == Phase.PLACE else "night_combat", 0.8)
 
@@ -334,6 +360,10 @@ func hide_session() -> void:
 	visible = false
 	_towers.clear()
 	_enemies.clear()
+	_enemy_index_by_eid.clear()
+	_active_slow_towers.clear()
+	_cell_tower_map.clear()
+	_tower_cache_dirty = true
 	# 清除污流场数据和显示缓存，防止下次布防阶段绘制过期箭头/热力图
 	_flow = null
 	_display_influence = null
@@ -379,8 +409,66 @@ func _process_place(delta: float) -> void:
 	placement_remaining = maxf(placement_remaining - delta, 0.0)
 	if is_instance_valid(hud):
 		hud.set_placement_timer(placement_remaining)
+		_refresh_fuel_boost_hud()
 	if placement_remaining <= 0.0:
 		_begin_combat()
+
+
+func _fuel_boost_burn_rate() -> float:
+	return FUEL_BOOST_TOTAL_COST / maxf(FUEL_BOOST_DURATION_SEC, 0.001)
+
+
+func _fuel_boost_active() -> bool:
+	return _fuel_boost_remaining > 0.0 and _vehicle_fuel > 0.0
+
+
+func _fuel_boost_bonus() -> float:
+	return FUEL_BOOST_PRODUCTION_BONUS if _fuel_boost_active() else 0.0
+
+
+func _update_fuel_boost(delta: float) -> void:
+	if _fuel_boost_remaining <= 0.0:
+		_refresh_fuel_boost_hud()
+		return
+	if _vehicle_fuel <= 0.0:
+		_fuel_boost_remaining = 0.0
+		_refresh_fuel_boost_hud()
+		if is_instance_valid(hud):
+			hud.append_log("应急供能中止：燃料耗尽。", Color("#e87840"))
+		return
+	var burn := minf(_fuel_boost_burn_rate() * delta, _vehicle_fuel)
+	_vehicle_fuel = maxf(_vehicle_fuel - burn, 0.0)
+	_fuel_boost_spent += burn
+	_fuel_boost_remaining = maxf(_fuel_boost_remaining - delta, 0.0)
+	if _vehicle_fuel <= 0.0:
+		_fuel_boost_remaining = 0.0
+	_refresh_fuel_boost_hud()
+
+
+func _refresh_fuel_boost_hud() -> void:
+	if is_instance_valid(hud) and hud.has_method("set_fuel_boost_status"):
+		hud.set_fuel_boost_status(
+			_vehicle_fuel,
+			_vehicle_fuel_max,
+			_fuel_boost_active(),
+			_fuel_boost_remaining,
+			_fuel_boost_burn_rate(),
+			FUEL_BOOST_PRODUCTION_BONUS,
+		)
+
+
+func _on_fuel_boost_pressed() -> void:
+	if phase != Phase.COMBAT:
+		return
+	if _vehicle_fuel <= 0.0:
+		if is_instance_valid(hud):
+			hud.append_log("应急供能失败：车辆燃料不足。", Color("#e87840"))
+		_refresh_fuel_boost_hud()
+		return
+	_fuel_boost_remaining = FUEL_BOOST_DURATION_SEC
+	_refresh_fuel_boost_hud()
+	if is_instance_valid(hud):
+		hud.append_log("应急供能启动：反应堆临时 +%.1f/s。" % FUEL_BOOST_PRODUCTION_BONUS, Color("#f0a040"))
 
 
 
@@ -403,6 +491,7 @@ func _process_combat(delta: float) -> void:
 		if _spawn_timer <= 0.0 and _wave_queue.size() > 0:
 			_spawn_next_enemy()
 			_spawn_timer = spawn_interval_sec
+	_update_fuel_boost(delta)
 	_update_energy(delta)
 	_update_commander(delta)
 	_update_enemy_specials(delta)
@@ -486,6 +575,7 @@ func _spawn_from_spec(spec: Dictionary) -> void:
 		"heal_radius": float(def.get("heal_radius", 0.0)),
 		"heal_per_sec": float(def.get("heal_per_sec", 0.0)),
 	})
+	_enemy_index_by_eid[eid] = _enemies.size() - 1
 	_enemies_spawned += 1
 	if is_instance_valid(hud):
 		var route_hint := (" · 路线 %s" % route_id) if route_id != "" else ""
@@ -576,7 +666,40 @@ func _count_summons_alive(parent_eid: int) -> int:
 	return count
 
 
+func _rebuild_enemy_index_cache() -> void:
+	_enemy_index_by_eid.clear()
+	for i in range(_enemies.size()):
+		_enemy_index_by_eid[int(_enemies[i].get("eid", -1))] = i
+
+
+func _mark_tower_cache_dirty() -> void:
+	_tower_cache_dirty = true
+
+
+func _ensure_tower_caches() -> void:
+	if not _tower_cache_dirty:
+		return
+	_active_slow_towers.clear()
+	_cell_tower_map.clear()
+	for tower in _towers:
+		if tower.get("removed", false):
+			continue
+		_cell_tower_map[tower["cell"]] = tower
+		var tdef: Dictionary = NightTdDefs.get_tower_def(str(tower["type"]))
+		if not bool(tdef.get("applies_slow", false)):
+			continue
+		if float(tower.get("power_scale", 1.0)) <= 0.05:
+			continue
+		_active_slow_towers.append(tower)
+	_tower_cache_dirty = false
+
+
 func _update_enemy_auras(delta: float) -> void:
+	_healer_aura_accum += delta
+	if _healer_aura_accum < HEALER_AURA_INTERVAL:
+		return
+	var aura_delta := _healer_aura_accum
+	_healer_aura_accum = 0.0
 	for healer in _enemies:
 		if str(healer.get("faction", "enemy")) != "enemy" or float(healer.get("hp", 0.0)) <= 0.0:
 			continue
@@ -585,30 +708,28 @@ func _update_enemy_auras(delta: float) -> void:
 		if radius <= 0.0 or heal_per_sec <= 0.0:
 			continue
 		var center: Vector2 = healer["pos"]
+		var radius_sq := radius * radius
 		var healer_eid := int(healer.get("eid", -1))
 		for target in _enemies:
 			if int(target.get("eid", -2)) == healer_eid:
 				continue
 			if str(target.get("faction", "enemy")) != "enemy" or float(target.get("hp", 0.0)) <= 0.0:
 				continue
-			if (target["pos"] as Vector2).distance_to(center) > radius:
+			if (target["pos"] as Vector2).distance_squared_to(center) > radius_sq:
 				continue
 			var max_hp := maxf(float(target.get("max_hp", 1.0)), 1.0)
-			target["hp"] = minf(float(target.get("hp", max_hp)) + heal_per_sec * delta, max_hp)
+			target["hp"] = minf(float(target.get("hp", max_hp)) + heal_per_sec * aura_delta, max_hp)
 
 
 func _slow_factor_at(pos: Vector2, enemy: Dictionary) -> float:
 	if bool(enemy.get("effect_immune", false)):
 		return 1.0
+	_ensure_tower_caches()
 	var slow := 1.0
-	for tower in _towers:
-		if tower.get("removed", false):
-			continue
+	for tower in _active_slow_towers:
 		var tdef: Dictionary = NightTdDefs.get_tower_def(str(tower["type"]))
-		if not bool(tdef.get("applies_slow", false)):
-			continue
 		var range_px := float(tdef.get("range", 0.0))
-		if range_px <= 0.0 or (tower["world_pos"] as Vector2).distance_to(pos) > range_px:
+		if range_px <= 0.0 or (tower["world_pos"] as Vector2).distance_squared_to(pos) > range_px * range_px:
 			continue
 		var scale := float(tower.get("power_scale", 1.0))
 		if scale <= 0.05:
@@ -647,17 +768,15 @@ func _update_enemies(delta: float) -> void:
 				to_remove.append(i)
 			continue
 		var slow: float = _slow_factor_at(pos, enemy)
-		for tower in _towers:
-			if tower.get("removed", false):
-				continue
-			if tower["cell"] == cell and tower["type"] == "barrier":
-				var bdef: Dictionary = NightTdDefs.get_tower_def("barrier")
-				var sf := float(bdef.get("slow_factor", 0.0))
-				if sf <= 0.0:
-					slow = 0.0  # 路障完全阻挡：敌人停止移动，原地攻击路障
-				else:
-					slow = minf(slow, sf)
-				_damage_tower(tower, float(enemy["base_damage"]) * delta)  # 敌人用自身攻击力破坏路障
+		var cell_tower := _tower_at_cell(cell)
+		if not cell_tower.is_empty() and cell_tower["type"] == "barrier":
+			var bdef: Dictionary = NightTdDefs.get_tower_def("barrier")
+			var sf := float(bdef.get("slow_factor", 0.0))
+			if sf <= 0.0:
+				slow = 0.0  # 路障完全阻挡：敌人停止移动，原地攻击路障
+			else:
+				slow = minf(slow, sf)
+			_damage_tower(cell_tower, float(enemy["base_damage"]) * delta)  # 敌人用自身攻击力破坏路障
 		# 流场梯度 + 分离转向 + 每单位航向噪声，得到本帧前进方向。
 		# 指挥官（P3）为编入小组的敌人提供专属目标流场（集结点/攻坚塔/佯攻基地）；
 		# 无指挥或未编组时回退到主 base 流场。
@@ -681,11 +800,9 @@ func _update_enemies(delta: float) -> void:
 				var tw := _tower_at_cell(atk_cell)
 				if not tw.is_empty():
 					_damage_tower(tw, TOWER_MELEE_DPS * delta)
-		for tower in _towers:
-			if tower.get("removed", false):
-				continue
-			if tower["type"] == "trap" and tower["cell"] == cell:
-				_trigger_trap(tower, enemy)
+		cell_tower = _tower_at_cell(cell)
+		if not cell_tower.is_empty() and cell_tower["type"] == "trap":
+			_trigger_trap(cell_tower, enemy)
 		if pos.distance_to(base_pos) < 28.0:
 			# 敌人是回收机器：突破后主要是"拖走物资"，对车辆只造成轻微伤害。
 			# 这样资源匮乏的第一夜即使被突破，也是损失资源、而非车毁人亡。
@@ -716,7 +833,11 @@ func _update_enemies(delta: float) -> void:
 				hud.append_log("[%.0f] 击毁%s +%d废料" % [_combat_time, ename, scrap_val], Color("#6ed08b"))
 			to_remove.append(i)
 	for idx in range(to_remove.size() - 1, -1, -1):
+		var removed_enemy: Dictionary = _enemies[to_remove[idx]]
+		_clear_tower_target_eid(int(removed_enemy.get("eid", -1)))
 		_enemies.remove_at(to_remove[idx])
+	if not to_remove.is_empty():
+		_rebuild_enemy_index_cache()
 
 
 ## 突破时从真实背包拖走物资：优先废料/木材，其次燃料/补给，最后才动零件（最珍贵）。
@@ -787,10 +908,16 @@ func _update_towers(delta: float) -> void:
 		tower["cooldown"] = maxf(float(tower["cooldown"]) - delta, 0.0)
 		if float(tower["cooldown"]) > 0.0:
 			continue
-		var target: int = _find_enemy_in_range(tower["world_pos"], range_px)
-		if target < 0:
+		var enemy := _locked_enemy_for_tower(tower, range_px)
+		if enemy.is_empty():
+			var target_eid := _find_enemy_in_range(tower["world_pos"], range_px)
+			if target_eid < 0:
+				tower["target_eid"] = -1
+				continue
+			tower["target_eid"] = target_eid
+			enemy = _enemy_by_eid(target_eid)
+		if enemy.is_empty():
 			continue
-		var enemy: Dictionary = _enemies[target]
 		var curve: Dictionary = tdef.get("power_curve", {})
 		var dmg_mul := maxf(1.0 + float(curve.get("damage_per_power", 0.0)) * (scale - 1.0), 0.05)
 		var rate_mul := maxf(1.0 + float(curve.get("firerate_per_power", 0.0)) * (scale - 1.0), 0.2)
@@ -799,10 +926,11 @@ func _update_towers(delta: float) -> void:
 		if splash > 0.0:
 			# 溅射：对目标点附近所有敌人造成伤害。
 			var center: Vector2 = enemy["pos"]
+			var splash_sq := splash * splash
 			for foe in _enemies:
 				if str(foe.get("faction", "enemy")) != "enemy":
 					continue
-				if (foe["pos"] as Vector2).distance_to(center) <= splash:
+				if (foe["pos"] as Vector2).distance_squared_to(center) <= splash_sq:
 					foe["hp"] = float(foe["hp"]) - hit_dmg
 		else:
 			enemy["hp"] = float(enemy["hp"]) - hit_dmg
@@ -821,17 +949,42 @@ func _update_towers(delta: float) -> void:
 			_projectiles.remove_at(i)
 
 
+func _locked_enemy_for_tower(tower: Dictionary, range_px: float) -> Dictionary:
+	var target_eid := int(tower.get("target_eid", -1))
+	if target_eid < 0:
+		return {}
+	var enemy := _enemy_by_eid(target_eid)
+	if enemy.is_empty() or str(enemy.get("faction", "enemy")) != "enemy" or float(enemy.get("hp", 0.0)) <= 0.0:
+		tower["target_eid"] = -1
+		return {}
+	var range_sq := range_px * range_px
+	if (tower["world_pos"] as Vector2).distance_squared_to(enemy["pos"]) > range_sq:
+		tower["target_eid"] = -1
+		return {}
+	return enemy
+
+
 func _find_enemy_in_range(origin: Vector2, range_px: float) -> int:
 	var best: int = -1
-	var best_dist: float = range_px
+	var best_dist_sq: float = range_px * range_px
 	for i in range(_enemies.size()):
 		if str(_enemies[i].get("faction", "enemy")) != "enemy":
 			continue  # 不打已策反的友军
-		var dist: float = origin.distance_to(_enemies[i]["pos"])
-		if dist <= best_dist:
-			best_dist = dist
-			best = i
+		if float(_enemies[i].get("hp", 0.0)) <= 0.0:
+			continue
+		var dist_sq: float = origin.distance_squared_to(_enemies[i]["pos"])
+		if dist_sq <= best_dist_sq:
+			best_dist_sq = dist_sq
+			best = int(_enemies[i].get("eid", -1))
 	return best
+
+
+func _clear_tower_target_eid(eid: int) -> void:
+	if eid < 0:
+		return
+	for tower in _towers:
+		if int(tower.get("target_eid", -1)) == eid:
+			tower["target_eid"] = -1
 
 
 func _cell_adjacent_or_equal(a: Vector2i, b: Vector2i) -> bool:
@@ -839,18 +992,16 @@ func _cell_adjacent_or_equal(a: Vector2i, b: Vector2i) -> bool:
 
 
 func _tower_at_cell(cell: Vector2i) -> Dictionary:
-	for tower in _towers:
-		if tower.get("removed", false):
-			continue
-		if tower["cell"] == cell:
-			return tower
-	return {}
+	_ensure_tower_caches()
+	return _cell_tower_map.get(cell, {})
 
 
 func _trigger_trap(tower: Dictionary, enemy: Dictionary) -> void:
 	var tdef: Dictionary = NightTdDefs.get_tower_def("trap")
 	enemy["hp"] = float(enemy["hp"]) - float(tdef.get("damage", 40))
 	tower["removed"] = true
+	tower["target_eid"] = -1
+	_mark_tower_cache_dirty()
 	if is_instance_valid(hud):
 		hud.append_log("陷阱触发！")
 
@@ -859,6 +1010,8 @@ func _damage_tower(tower: Dictionary, amount: float) -> void:
 	tower["hp"] = float(tower["hp"]) - amount
 	if float(tower["hp"]) <= 0.0:
 		tower["removed"] = true
+		tower["target_eid"] = -1
+		_mark_tower_cache_dirty()
 		# 路障消失 → 流场出现缺口；攻击塔消失 → 危险场出现缺口。两者都要重算。
 		_mark_flow_dirty()
 
@@ -899,7 +1052,7 @@ func _update_energy(delta: float) -> void:
 		var up := float(tdef.get("upkeep", 0.0))
 		if up > 0.0:
 			upkeeps[int(tower["id"])] = up
-	_energy.tick(delta, upkeeps)
+	_energy.tick(delta, upkeeps, _fuel_boost_bonus())
 	var any_changed := false
 	for tower in _towers:
 		if tower.get("removed", false) or not tower.has("id"):
@@ -912,11 +1065,13 @@ func _update_energy(delta: float) -> void:
 			any_changed = true
 		tower["power_scale"] = new_scale
 	if any_changed:
+		_mark_tower_cache_dirty()
 		_mark_flow_dirty()
 	# 刷新 HUD 能源显示与始终在场的功率列表。
 	if is_instance_valid(hud):
 		hud.set_energy_status(_energy.current, _energy.capacity, _energy.current_demand(upkeeps))
 		hud.update_power_list(_powered_tower_rows())
+		_refresh_fuel_boost_hud()
 
 
 ## 收集所有耗电塔供 HUD 功率列表显示。
@@ -943,6 +1098,7 @@ func adjust_tower_power(tower_id: int, delta_step: float) -> void:
 	if _energy == null:
 		return
 	_energy.step_power(tower_id, delta_step)
+	_mark_tower_cache_dirty()
 	_mark_flow_dirty()
 
 
@@ -987,6 +1143,7 @@ func _update_hackers(delta: float) -> void:
 ## 把一个敌方单位策反为我方。牧羊者被策反则触发敌方 AI 退化。
 func _convert_enemy(enemy: Dictionary) -> void:
 	enemy["faction"] = "ally"
+	_clear_tower_target_eid(int(enemy.get("eid", -1)))
 	enemy["hacked_by"] = -1
 	enemy["goal_key"] = "ally"
 	enemy["_converted_at"] = _combat_time
@@ -1021,9 +1178,15 @@ func _trigger_shepherd_degrade(reason: String) -> void:
 
 
 func _enemy_by_eid(eid: int) -> Dictionary:
-	for e in _enemies:
-		if int(e.get("eid", -1)) == eid:
-			return e
+	if eid < 0:
+		return {}
+	var idx := int(_enemy_index_by_eid.get(eid, -1))
+	if idx >= 0 and idx < _enemies.size() and int(_enemies[idx].get("eid", -1)) == eid:
+		return _enemies[idx]
+	_rebuild_enemy_index_cache()
+	idx = int(_enemy_index_by_eid.get(eid, -1))
+	if idx >= 0 and idx < _enemies.size():
+		return _enemies[idx]
 	return {}
 
 
@@ -1345,6 +1508,7 @@ func _on_cell_clicked(cell: Vector2i) -> void:
 		"cell": cell,
 		"world_pos": field.cell_to_world(cell),
 		"cooldown": 0.0,
+		"target_eid": -1,
 		"hp": float(tdef.get("hp", 30)),
 		"removed": false,
 		"power_scale": 1.0,
@@ -1352,6 +1516,7 @@ func _on_cell_clicked(cell: Vector2i) -> void:
 	# 耗电塔登记进能源系统（额定功率 1.0）。upkeep=0 的塔登记后不影响电池。
 	if _energy != null and float(tdef.get("upkeep", 0.0)) > 0.0:
 		_energy.register_tower(tower_id, 1.0)
+	_mark_tower_cache_dirty()
 	_mark_flow_dirty()
 	if is_instance_valid(hud):
 		_refresh_resource_hud()
@@ -1383,6 +1548,8 @@ func _remove_tower_at_cell(cell: Vector2i) -> String:
 		if _energy != null and tower.has("id"):
 			_energy.unregister_tower(int(tower["id"]))
 		tower["removed"] = true
+		tower["target_eid"] = -1
+		_mark_tower_cache_dirty()
 		_mark_flow_dirty()
 		return str(tdef.get("name", tower["type"]))
 	return ""
@@ -1474,6 +1641,7 @@ func _begin_combat() -> void:
 		var total := _wave_scheduler.total_spawn_events if _wave_scheduler != null else _enemies_spawned + _wave_queue.size()
 		hud.set_combat_status("波次 %d/%d · 场上 %d 敌" % [_enemies_spawned, total, _count_hostiles()])
 		hud.append_log("—— 夜间威胁来袭 ——")
+		_refresh_fuel_boost_hud()
 
 
 func _end_combat_vehicle_destroyed() -> void:
@@ -1575,6 +1743,10 @@ func _compose_result_message(result: Dictionary) -> String:
 	lines.append("")
 	lines.append("—— 车辆状态 ——")
 	lines.append("  HP: %.0f/%.0f" % [float(result.get("base_hp", 0)), float(result.get("base_hp_max", 100))])
+	if float(result.get("fuel_loss", 0.0)) > 0.0:
+		lines.append("  燃料消耗: %.1f" % float(result.get("fuel_loss", 0.0)))
+		if float(result.get("fuel_boost_loss", 0.0)) > 0.0:
+			lines.append("  其中应急供能: %.1f" % float(result.get("fuel_boost_loss", 0.0)))
 
 	return "\n".join(lines)
 
@@ -1637,6 +1809,7 @@ func _build_result() -> Dictionary:
 		outcome = "success"
 		loss_severity = "none"
 		msg = "防线稳固！车辆完好，今夜安全度过。"
+	fuel_loss += _fuel_boost_spent
 	var inv_loss: int = 0
 	match loss_severity:
 		"partial":
@@ -1668,6 +1841,7 @@ func _build_result() -> Dictionary:
 		"inventory_loss": inv_loss,
 		"loss_severity": loss_severity,
 		"fuel_loss": fuel_loss,
+		"fuel_boost_loss": _fuel_boost_spent,
 		"base_hp": base_hp,
 		"base_hp_max": base_max_hp,
 		"enemies_killed": _enemies_killed,

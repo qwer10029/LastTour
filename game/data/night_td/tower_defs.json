@@ -51,7 +51,7 @@
 			"power_curve": {"damage_per_power": 0.0, "firerate_per_power": 0.0}
 		},
 		"cryo_beacon": {
-			"name": "低温信标",
+			"name": "噪声信标",
 			"cost": 2,
 			"range": 130.0,
 			"damage": 0.0,
@@ -59,9 +59,9 @@
 			"hp": 38.0,
 			"slow_factor": 0.55,
 			"applies_slow": true,
-			"color": "#83d8ff",
+			"color": "#c6d65c",
 			"radius": 14.0,
-			"desc": "持续减缓射程内敌人，无法影响特殊免疫目标。",
+			"desc": "广播刺耳噪声与伪信标，拖慢射程内敌人；无法影响特殊免疫目标。",
 			"build_cost": {"parts": 1, "scrap": 2},
 			"salvage": {"scrap": 1},
 			"is_hack_tower": false,

@@ -2,6 +2,7 @@ class_name ItemDefs
 extends RefCounted
 
 const DATA_PATH := "res://data/item_defs.json"
+const EVIDENCE_DATA_PATH := "res://data/evidence.json"
 
 static var REPAIR_PARTS_EACH := 1
 static var REPAIR_SCRAP_EACH := 2
@@ -16,6 +17,8 @@ static var CRAFT_PARTS_OUT := 1
 
 static var _items: Dictionary = {}
 static var _loot_by_building: Dictionary = {}
+static var _evidence_entries: Dictionary = {}
+static var _evidence_loaded := false
 
 
 static func _static_init() -> void:
@@ -125,6 +128,11 @@ static func _load_data() -> void:
 static func normalize_item_id(item_id: String) -> String:
 	if item_id.is_empty():
 		return ""
+	if item_id.begins_with("evidence:"):
+		var evidence_id := item_id.substr("evidence:".length())
+		if evidence_id != "" and _evidence_has_entry(evidence_id):
+			return "evidence:%s" % evidence_id
+		return ""
 	match item_id:
 		"food", "water":
 			return "supplies"
@@ -136,6 +144,19 @@ static func normalize_item_id(item_id: String) -> String:
 
 static func get_def(item_id: String) -> Dictionary:
 	var normalized := normalize_item_id(item_id)
+	if normalized.begins_with("evidence:"):
+		var evidence_id := normalized.substr("evidence:".length())
+		if not _evidence_has_entry(evidence_id):
+			return {}
+		return {
+			"name": evidence_title_of(evidence_id),
+			"desc": evidence_content_of(evidence_id),
+			"stack_max": 1,
+			"color": Color("#ffd966"),
+			"usable": false,
+			"is_evidence": true,
+			"evidence_id": evidence_id,
+		}
 	return _items.get(normalized, {})
 
 
@@ -156,6 +177,13 @@ static func get_detail_text(item_id: String, inventory: InventoryData = null) ->
 	lines.append(str(def.get("name", normalized)))
 	lines.append(str(def.get("desc", "")))
 	lines.append("")
+	if normalized.begins_with("evidence:"):
+		lines.append("【证据】可在顶层通信终端提交审计。")
+		lines.append("夜间突破不会拖走证据，且不能用于建造。")
+		if inventory != null:
+			lines.append("")
+			lines.append("背包持有：%d 个" % inventory.count(normalized))
+		return "\n".join(lines)
 	match normalized:
 		"supplies":
 			var amt := float(def.get("restore_stamina", 45.0))
@@ -195,6 +223,61 @@ static func get_repair_requirement_text(inventory: InventoryData) -> String:
 		else:
 			lines.append("✗ 材料不足，请继续探索收集")
 	return "\n".join(lines)
+
+
+static func evidence_title_of(evidence_id: String) -> String:
+	var node := _evidence_node()
+	if node != null and node.has_method("title_of"):
+		return str(node.call("title_of", evidence_id))
+	_ensure_evidence_loaded()
+	return str(_evidence_entries.get(evidence_id, {}).get("title", evidence_id))
+
+
+static func evidence_content_of(evidence_id: String) -> String:
+	var node := _evidence_node()
+	if node != null and node.has_method("content_of"):
+		return str(node.call("content_of", evidence_id))
+	_ensure_evidence_loaded()
+	return str(_evidence_entries.get(evidence_id, {}).get("content", ""))
+
+
+static func _evidence_has_entry(evidence_id: String) -> bool:
+	var node := _evidence_node()
+	if node != null and node.has_method("has_entry"):
+		return bool(node.call("has_entry", evidence_id))
+	_ensure_evidence_loaded()
+	return _evidence_entries.has(evidence_id)
+
+
+static func _evidence_node() -> Node:
+	var main_loop := Engine.get_main_loop()
+	if main_loop is SceneTree:
+		return (main_loop as SceneTree).root.get_node_or_null("EvidenceData")
+	return null
+
+
+static func _ensure_evidence_loaded() -> void:
+	if _evidence_loaded:
+		return
+	_evidence_loaded = true
+	_evidence_entries.clear()
+	var file := FileAccess.open(EVIDENCE_DATA_PATH, FileAccess.READ)
+	if file == null:
+		return
+	var parsed: Variant = JSON.parse_string(file.get_as_text())
+	file.close()
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return
+	var raw: Variant = (parsed as Dictionary).get("evidences", [])
+	if typeof(raw) != TYPE_ARRAY:
+		return
+	for entry_var in raw:
+		if typeof(entry_var) != TYPE_DICTIONARY:
+			continue
+		var entry: Dictionary = entry_var
+		var id := str(entry.get("evidence_id", ""))
+		if id != "":
+			_evidence_entries[id] = entry
 
 
 static func can_repair_with_inventory(inventory: InventoryData) -> bool:

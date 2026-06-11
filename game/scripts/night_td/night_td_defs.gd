@@ -50,7 +50,7 @@ static func _load_data() -> void:
 			"desc": "单次高额伤害，触发后消失，宜放在要道。",
 		},
 		"cryo_beacon": {
-			"name": "低温信标",
+			"name": "噪声信标",
 			"cost": 2,
 			"range": 130.0,
 			"damage": 0.0,
@@ -58,9 +58,9 @@ static func _load_data() -> void:
 			"hp": 38.0,
 			"slow_factor": 0.55,
 			"applies_slow": true,
-			"color": Color("#83d8ff"),
+			"color": Color("#c6d65c"),
 			"radius": 14.0,
-			"desc": "持续减缓射程内敌人，无法影响特殊免疫目标。",
+			"desc": "广播刺耳噪声与伪信标，拖慢射程内敌人；无法影响特殊免疫目标。",
 		},
 	}
 	_enemies = {

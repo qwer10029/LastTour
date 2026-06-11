@@ -7,6 +7,7 @@ const DayTopdownRender = preload("res://scripts/day_topdown_render.gd")
 const RunStateClass = preload("res://scripts/run_state.gd")
 const NpcDialogueRunnerScript = preload("res://scripts/story/npc_dialogue_runner.gd")
 const FINAL_TERMINAL_WAVE_PATH := "res://data/night_td/waves/night_wave_final_terminal.json"
+const FUEL_EMPTY_EPSILON := 0.001
 var _building_pick_index: int = 0
 var _foot_local_pos: Vector2 = Vector2.ZERO
 var _foot_move_dir: Vector2 = Vector2.UP
@@ -94,6 +95,8 @@ var _game_paused := false
 var _pause_layer: CanvasLayer
 var _pause_panel: PanelContainer
 var _pause_confirm: ConfirmationDialog
+var _fuel_empty_dialog: AcceptDialog
+var _fuel_empty_prompt_open := false
 var _war_fog_checkbox: CheckBox
 var _repair_choice_panel: PanelContainer
 var _repair_progress_label: Label
@@ -169,6 +172,7 @@ func _ready() -> void:
 	_connect_buttons()
 	_setup_pause_ui()
 	_setup_backpack_ui()
+	_setup_fuel_empty_dialog()
 	_setup_story_controller()
 	_setup_run_end_ui()
 	_setup_stat_bars()
@@ -693,6 +697,7 @@ func _spawn_player() -> void:
 func _spawn_resources() -> void:
 	if resource_scene == null:
 		resource_scene = load("res://scenes/resource_pickup.tscn")
+	_seed_final_layer_evidence_spawns()
 	for node in _resource_nodes:
 		if is_instance_valid(node):
 			node.queue_free()
@@ -713,11 +718,45 @@ func _spawn_resources() -> void:
 			pickup.position = _map.cell_rect(district_index).position + spawn_position
 			pickup.set_meta("district_index", district_index)
 			pickup.set_meta("item_id", loot_id)
+			if loot_id.begins_with("evidence:"):
+				pickup.set_meta("skip_map_resource", true)
 			if pickup.has_method("setup_loot"):
 				pickup.setup_loot(loot_id)
 			if pickup.has_signal("collected"):
 				pickup.collected.connect(func(loot_id: String, p: Area2D): _on_resource_collected(district_index, loot_id, p))
 			_resource_nodes.append(pickup)
+
+
+func _seed_final_layer_evidence_spawns() -> void:
+	if _current_layer < total_layers:
+		return
+	for district_index in _map.district_indices:
+		if not _map.district_has_kunlun_control(district_index):
+			continue
+		var cell := _map.get_cell(district_index)
+		var spawns: Array = cell.get("resource_spawns", [])
+		var existing: Dictionary = {}
+		for spawn_var in spawns:
+			if spawn_var is Dictionary:
+				existing[str(spawn_var.get("item_id", ""))] = true
+		var offsets := {
+			"clone_identity": Vector2(96.0, 80.0),
+			"faction_conflict": Vector2(160.0, 112.0),
+			"human_extinction_proof": Vector2(224.0, 144.0),
+			"backdoor_info": Vector2(288.0, 96.0),
+		}
+		for evidence_id in EvidenceData.terminal_required_ids():
+			var item_id := "evidence:%s" % evidence_id
+			if existing.has(item_id) or _backpack.has(item_id, 1):
+				continue
+			var offset: Vector2 = offsets.get(str(evidence_id), Vector2(120.0 + float(spawns.size()) * 28.0, 112.0))
+			spawns.append({
+				"x": offset.x,
+				"y": offset.y,
+				"item_id": item_id,
+			})
+		cell["resource_spawns"] = spawns
+		return
 
 func _process(_delta: float) -> void:
 	if _run_ended or _game_paused or _backpack_open:
@@ -933,19 +972,38 @@ func _process_drive(delta: float) -> void:
 	if axis == 0.0:
 		_update_vehicle_transform()
 		return
+	if not _can_drive_with_current_fuel():
+		_update_vehicle_transform()
+		return
 	var forward_dir := _map.direction_between(_segment_from_index, _segment_target_index)
 	var forward_vec := _drive_direction_vector(forward_dir)
 	if forward_vec.length_squared() > 0.01:
 		_vehicle_facing = forward_vec if axis > 0.0 else -forward_vec
-	_segment_progress += axis * drive_speed * delta / maxf(_segment_length, 1.0)
+	var segment_len := maxf(_segment_length, 1.0)
+	var distance_to_edge := (_segment_progress if axis < 0.0 else 1.0 - _segment_progress) * segment_len
+	var desired_distance := minf(drive_speed * delta, maxf(distance_to_edge, 0.0))
+	var movement_distance := desired_distance
+	var fuel_used := 0.0
+	if fuel_per_pixel > 0.0:
+		var fuel_needed := desired_distance * fuel_per_pixel
+		if fuel_needed > _fuel:
+			var fuel_ratio := clampf(_fuel / maxf(fuel_needed, FUEL_EMPTY_EPSILON), 0.0, 1.0)
+			movement_distance *= fuel_ratio
+			fuel_used = _fuel
+		else:
+			fuel_used = fuel_needed
+	_segment_progress += signf(axis) * movement_distance / segment_len
 	_update_vehicle_transform()
-	_fuel = maxf(_fuel - abs(axis) * drive_speed * delta * fuel_per_pixel, 0.0)
+	_fuel = maxf(_fuel - fuel_used, 0.0)
 
 	if _segment_progress >= 1.0:
 		_arrive_at_node(_segment_target_index)
 	elif _segment_progress <= 0.0 and axis < 0.0:
 		_segment_progress = 0.0
 		_halt_at_node(_segment_from_index)
+	if _fuel <= FUEL_EMPTY_EPSILON and fuel_per_pixel > 0.0:
+		_fuel = 0.0
+		_can_drive_with_current_fuel()
 
 func _process_foot(delta: float) -> void:
 	if _current_district_index < 0:
@@ -1289,6 +1347,8 @@ func _begin_drive_segment(from_index: int, to_index: int) -> void:
 		return
 	var travel_dir := _map.direction_between(from_index, to_index)
 	if travel_dir == "" or not _map.is_direction_passable(from_index, travel_dir):
+		return
+	if not _can_drive_with_current_fuel():
 		return
 	_mode = TravelMode.DRIVE
 	_current_node_index = from_index
@@ -1729,6 +1789,21 @@ func _setup_backpack_ui() -> void:
 	_backpack_ui.closed.connect(_on_backpack_closed)
 
 
+func _setup_fuel_empty_dialog() -> void:
+	var hud := get_node_or_null("HUD")
+	_fuel_empty_dialog = AcceptDialog.new()
+	_fuel_empty_dialog.name = "FuelEmptyDialog"
+	_fuel_empty_dialog.title = "燃料耗尽"
+	_fuel_empty_dialog.dialog_text = "车辆燃料已耗尽。请使用背包中的燃料桶补充燃料后继续。"
+	_fuel_empty_dialog.ok_button_text = "打开背包"
+	_fuel_empty_dialog.confirmed.connect(_on_fuel_empty_dialog_confirmed)
+	_fuel_empty_dialog.close_requested.connect(_on_fuel_empty_dialog_closed)
+	if hud != null:
+		hud.add_child(_fuel_empty_dialog)
+	else:
+		add_child(_fuel_empty_dialog)
+
+
 func _init_player_loadout() -> void:
 	_survival.reset_for_new_run()
 	_backpack.clear()
@@ -1838,9 +1913,48 @@ func _use_backpack_item(item_id: String) -> bool:
 			_backpack.remove("fuel", 1)
 			var fuel_recover := float(ItemDefs.get_def("fuel").get("restore_fuel", 140.0))
 			_fuel = minf(_fuel + fuel_recover, fuel_max)
+			_fuel_empty_prompt_open = false
+			if is_instance_valid(_fuel_empty_dialog):
+				_fuel_empty_dialog.hide()
 			return true
 		_:
 			return false
+
+
+func _can_drive_with_current_fuel() -> bool:
+	if fuel_per_pixel <= 0.0:
+		return true
+	if _fuel > FUEL_EMPTY_EPSILON:
+		return true
+	_fuel = 0.0
+	if _backpack.has("fuel", 1):
+		_show_empty_fuel_prompt()
+	else:
+		_trigger_out_of_fuel()
+	return false
+
+
+func _show_empty_fuel_prompt() -> void:
+	if _fuel_empty_prompt_open:
+		return
+	_fuel_empty_prompt_open = true
+	if not is_instance_valid(_fuel_empty_dialog):
+		_open_backpack()
+		return
+	_fuel_empty_dialog.popup_centered()
+	_refresh_ui()
+
+
+func _on_fuel_empty_dialog_confirmed() -> void:
+	_fuel_empty_prompt_open = false
+	if _run_ended:
+		return
+	_open_backpack()
+	_refresh_ui()
+
+
+func _on_fuel_empty_dialog_closed() -> void:
+	_fuel_empty_prompt_open = false
 
 
 func _consume_repair_material() -> bool:
@@ -2046,6 +2160,19 @@ func _trigger_vehicle_destroyed() -> void:
 	_show_run_summary()
 
 
+func _trigger_out_of_fuel() -> void:
+	if _run_ended:
+		return
+	_fuel = 0.0
+	_fuel_empty_prompt_open = false
+	if is_instance_valid(_fuel_empty_dialog):
+		_fuel_empty_dialog.hide()
+	_run_ended = true
+	_run_end_reason = "out_of_fuel"
+	_freeze_run_for_end()
+	_show_run_summary()
+
+
 func _begin_final_ceremony() -> void:
 	if _run_ended:
 		return
@@ -2095,7 +2222,9 @@ func _start_final_terminal_defense() -> void:
 			_vehicle_hp,
 			_vehicle_hp_max,
 			snapshot,
-			options
+			options,
+			_fuel,
+			fuel_max
 		)
 		_refresh_ui()
 		return
@@ -2114,7 +2243,8 @@ func _open_communication_terminal() -> void:
 		return
 	var day_n := time_system.day_index if is_instance_valid(time_system) else 1
 	_play_music_cue("terminal", 0.9)
-	_communication_terminal.start_flow(_run_journal.get_entries(), _current_layer, day_n)
+	var snapshot := _backpack.to_dictionary() if is_instance_valid(_backpack) and _backpack.has_method("to_dictionary") else {}
+	_communication_terminal.start_flow(_run_journal.get_entries(), _current_layer, day_n, snapshot)
 
 
 func _on_terminal_strike() -> void:
@@ -2143,6 +2273,8 @@ func _freeze_run_for_end() -> void:
 	_game_paused = false
 	if is_instance_valid(_pause_layer):
 		_pause_layer.visible = false
+	if is_instance_valid(_fuel_empty_dialog):
+		_fuel_empty_dialog.hide()
 	if is_instance_valid(time_system):
 		time_system.pause()
 	if is_instance_valid(night_defense):
@@ -2181,6 +2313,8 @@ func _show_run_summary() -> void:
 			title = "本局结束 · 车辆损毁"
 		"player_collapsed":
 			title = "本局结束 · 乘员倒下"
+		"out_of_fuel":
+			title = "本局结束 · 燃料耗尽"
 		"reached_top":
 			title = "本局结算 · 归档完成"
 		"strike":
@@ -2225,6 +2359,9 @@ func _build_run_summary_data(title: String) -> Dictionary:
 	elif _run_end_reason == "player_collapsed":
 		log_lines.append("体力耗尽，乘员已无法继续行动。")
 		log_lines.append("本局勘探失败，新的克隆体即将被派遣。")
+	elif _run_end_reason == "out_of_fuel":
+		log_lines.append("车辆燃料耗尽，背包中也没有可用燃料桶。")
+		log_lines.append("本局勘探停在荒路上，新的克隆体即将被派遣。")
 	elif _run_end_reason == "strike":
 		log_lines.append("通讯终端身份验证未通过，昆仑程序对本次勘探实施打击。")
 		log_lines.append("本局失败；与终端的接触已被记录，新的克隆体即将被派遣。")
@@ -2242,7 +2379,7 @@ func _build_run_summary_data(title: String) -> Dictionary:
 			"fake_success":
 				log_lines.append("虚假成功信号已注入。循环以讽刺的方式停摆。")
 
-	var is_failure := _run_end_reason in ["vehicle_destroyed", "player_collapsed", "strike"]
+	var is_failure := _run_end_reason in ["vehicle_destroyed", "player_collapsed", "out_of_fuel", "strike"]
 	return {
 		"title": title,
 		"is_failure": is_failure,
@@ -2443,7 +2580,7 @@ func _apply_save_data(data: Dictionary) -> void:
 	_run_ended = bool(layer.get("run_ended", false))
 	_run_end_reason = str(layer.get("run_end_reason", ""))
 	_final_choice_id = str(layer.get("final_choice_id", ""))
-	if _run_ended and (_run_end_reason == "vehicle_destroyed" or _run_end_reason == "player_collapsed" or _run_end_reason == "strike"):
+	if _run_ended and _run_end_reason in ["vehicle_destroyed", "player_collapsed", "out_of_fuel", "strike"]:
 		_show_run_summary()
 	elif _run_ended and _run_end_reason == "reached_top":
 		if _final_choice_id != "":
@@ -2534,7 +2671,7 @@ func _restore_time_phase_after_load(keep_terminal_music: bool = false) -> void:
 					snapshot = _backpack.to_dictionary().duplicate()
 				night_defense.start_td_session(
 					_backpack.total_count(), GameManager.difficulty, time_system.day_index, true,
-					_vehicle_hp, _vehicle_hp_max, snapshot
+					_vehicle_hp, _vehicle_hp_max, snapshot, {}, _fuel, fuel_max
 				)
 			_play_music_cue("night_setup", 0.9)
 			time_system.pause()
@@ -2689,7 +2826,7 @@ func _on_night_setup_started(day_index: int, manual_setup: bool) -> void:
 			snapshot = _backpack.to_dictionary().duplicate()
 		night_defense.start_td_session(
 			_backpack.total_count(), GameManager.difficulty, day_index, manual_setup,
-			_vehicle_hp, _vehicle_hp_max, snapshot
+			_vehicle_hp, _vehicle_hp_max, snapshot, {}, _fuel, fuel_max
 		)
 	_play_music_cue("night_setup", 1.0)
 	_refresh_ui()

@@ -79,14 +79,15 @@ func effective_scale(tower_id: int) -> float:
 
 ## 每帧推进电池。upkeeps: tower_id(int) -> upkeep(float)。
 ## 返回 brownout 系数（1=供电充足，<1=本帧限电）。
-func tick(delta: float, upkeeps: Dictionary) -> float:
+func tick(delta: float, upkeeps: Dictionary, production_bonus: float = 0.0) -> float:
+	var production := maxf(production_rate + production_bonus, 0.0)
 	# 计划总功耗
 	var demand := 0.0
 	for tower_id: int in _levels.keys():
 		var up := float(upkeeps.get(tower_id, 0.0))
 		demand += up * float(_levels[tower_id])
 	# 可用功率 = 反应堆产能 + 电池放电（本帧最多放 current/delta）
-	var available := production_rate
+	var available := production
 	if delta > 0.0:
 		available += current / delta
 	var brownout := 1.0
@@ -94,7 +95,7 @@ func tick(delta: float, upkeeps: Dictionary) -> float:
 		brownout = available / demand
 	# 结算电池：净流入 =（产能 − 实际功耗）
 	var actual_draw := demand * brownout
-	current = clampf(current + (production_rate - actual_draw) * delta, 0.0, capacity)
+	current = clampf(current + (production - actual_draw) * delta, 0.0, capacity)
 	# 写每塔有效系数
 	for tower_id: int in _levels.keys():
 		_effective[tower_id] = float(_levels[tower_id]) * brownout

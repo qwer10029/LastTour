@@ -204,6 +204,9 @@ cython_debug/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
+# Local/placeholder audio assets
+/game/assets/music/
+
 # Ruff stuff:
 .ruff_cache/
 

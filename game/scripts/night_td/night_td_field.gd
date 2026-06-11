@@ -647,13 +647,16 @@ func _draw_placed_towers() -> void:
 				])
 				draw_colored_polygon(points, tdef.get("color", Color.WHITE))
 			"cryo_beacon":
-				var cryo_color: Color = tdef.get("color", Color("#83d8ff"))
-				draw_circle(local_pos, float(tdef.get("range", 130)), Color(0.52, 0.85, 1.0, 0.08))
-				draw_arc(local_pos, float(tdef.get("range", 130)), 0.0, TAU, 48, Color(0.52, 0.85, 1.0, 0.24), 2.0)
-				draw_circle(local_pos, radius, cryo_color)
-				draw_circle(local_pos, radius * 0.45, Color("#092638"))
-				draw_line(local_pos + Vector2(-radius, 0), local_pos + Vector2(radius, 0), Color("#e8fbff"), 2.0)
-				draw_line(local_pos + Vector2(0, -radius), local_pos + Vector2(0, radius), Color("#e8fbff"), 2.0)
+				var noise_color: Color = tdef.get("color", Color("#c6d65c"))
+				var range_r := float(tdef.get("range", 130))
+				draw_circle(local_pos, range_r, Color(0.76, 0.84, 0.36, 0.07))
+				for rr in [range_r * 0.45, range_r * 0.7, range_r]:
+					draw_arc(local_pos, rr, 0.0, TAU, 56, Color(0.76, 0.84, 0.36, 0.22), 1.7)
+				draw_circle(local_pos, radius, noise_color)
+				draw_circle(local_pos, radius * 0.45, Color("#1a2416"))
+				draw_line(local_pos + Vector2(-radius * 0.7, -radius * 0.2), local_pos + Vector2(-radius * 0.2, radius * 0.35), Color("#f5ffb8"), 2.0)
+				draw_line(local_pos + Vector2(-radius * 0.2, radius * 0.35), local_pos + Vector2(radius * 0.25, -radius * 0.35), Color("#f5ffb8"), 2.0)
+				draw_line(local_pos + Vector2(radius * 0.25, -radius * 0.35), local_pos + Vector2(radius * 0.72, radius * 0.2), Color("#f5ffb8"), 2.0)
 			"hacker":
 				var hk_color: Color = tdef.get("color", Color("#5ac8e0"))
 				draw_arc(local_pos, float(tdef.get("range", 150)), 0.0, TAU, 48, Color(0.35, 0.78, 0.88, 0.18), 2.0)

@@ -62,6 +62,13 @@ const TERMINAL_VERIFY_PASS_TEXT := """【验证结果】
 
 最高权限正在移交……"""
 
+const TERMINAL_AUDIT_PASS_TEXT := """【验证结果】
+
+操作员 CAPTCHA 已放弃。
+归档证明链完整，工程师后门记录验证紧急移交条件。
+
+人类指挥部信号源已不存在，最高权限正在移交……"""
+
 const TERMINAL_TRANSFER_TEXT := "【权限移交完成】\n您已获得对昆仑中继的最高控制权。"
 
 const MESSAGE_PRESETS := [
