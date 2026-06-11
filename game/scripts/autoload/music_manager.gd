@@ -23,7 +23,7 @@ const CUES := {
 		"fade_sec": 1.6,
 	},
 	"day_exploration": {
-		"path": "res://assets/music/day_exploration.wav",
+		"path": "res://assets/music/day_exploration.mp3",
 		"loop": true,
 		"volume_db": -17.0,
 		"fade_sec": 2.0,
@@ -41,19 +41,19 @@ const CUES := {
 		"fade_sec": 1.2,
 	},
 	"night_combat": {
-		"path": "res://assets/music/night_combat.wav",
+		"path": "res://assets/music/night_combat.mp3",
 		"loop": true,
 		"volume_db": -13.5,
 		"fade_sec": 0.9,
 	},
 	"terminal": {
-		"path": "res://assets/music/terminal.wav",
+		"path": "res://assets/music/terminal.mp3",
 		"loop": true,
 		"volume_db": -16.0,
 		"fade_sec": 1.1,
 	},
 	"truth_reveal": {
-		"path": "res://assets/music/truth_reveal.wav",
+		"path": "res://assets/music/truth_reveal.mp3",
 		"loop": true,
 		"volume_db": -14.5,
 		"fade_sec": 1.6,
@@ -188,13 +188,23 @@ func _stream_for(cue_id: String) -> AudioStream:
 func _load_audio_stream(path: String, loop_enabled: bool) -> AudioStream:
 	var stream: AudioStream = null
 	var abs_path := ProjectSettings.globalize_path(path)
-	if FileAccess.file_exists(abs_path) and ClassDB.class_has_method("AudioStreamWAV", "load_from_file"):
-		stream = AudioStreamWAV.load_from_file(abs_path)
-	if ResourceLoader.exists(path):
+	var ext := path.get_extension().to_lower()
+	# 运行期直接从文件加载（不依赖编辑器导入），按扩展名分派 WAV / MP3 / OGG。
+	if ext == "mp3":
+		if FileAccess.file_exists(abs_path) and ClassDB.class_has_method("AudioStreamMP3", "load_from_file"):
+			stream = AudioStreamMP3.load_from_file(abs_path)
+	elif ext == "wav":
+		if FileAccess.file_exists(abs_path) and ClassDB.class_has_method("AudioStreamWAV", "load_from_file"):
+			stream = AudioStreamWAV.load_from_file(abs_path)
+	if stream == null and ResourceLoader.exists(path):
 		stream = load(path) as AudioStream
 	if stream is AudioStreamWAV:
 		var wav := stream as AudioStreamWAV
 		wav.loop_mode = AudioStreamWAV.LOOP_FORWARD if loop_enabled else AudioStreamWAV.LOOP_DISABLED
+	elif stream is AudioStreamMP3:
+		(stream as AudioStreamMP3).loop = loop_enabled
+	elif stream is AudioStreamOggVorbis:
+		(stream as AudioStreamOggVorbis).loop = loop_enabled
 	return stream
 
 
