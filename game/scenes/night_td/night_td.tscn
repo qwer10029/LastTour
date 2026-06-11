@@ -1,8 +1,10 @@
-[gd_scene load_steps=4 format=3 uid="uid://night_td_scene"]
+[gd_scene load_steps=6 format=3 uid="uid://night_td_scene"]
 
 [ext_resource type="Script" path="res://scripts/night_td/night_td_controller.gd" id="1_ctrl"]
 [ext_resource type="Script" path="res://scripts/night_td/night_td_field.gd" id="2_field"]
 [ext_resource type="Script" path="res://scripts/night_td/night_td_hud.gd" id="3_hud"]
+[ext_resource type="Script" path="res://scripts/night_td/night_td_defence_core_visual.gd" id="4_core"]
+[ext_resource type="Script" path="res://scripts/night_td/night_td_durability_bar.gd" id="5_bar"]
 
 [node name="NightTd" type="Node2D"]
 visible = false
@@ -12,100 +14,183 @@ placement_time_sec = 180.0
 [node name="Field" type="Node2D" parent="."]
 script = ExtResource("2_field")
 
+[node name="DefenceCoreVisual" type="Node2D" parent="Field"]
+script = ExtResource("4_core")
+
 [node name="Hud" type="CanvasLayer" parent="."]
 layer = 10
 script = ExtResource("3_hud")
 
-; -- Compact TopBar (64px, horizontal) --
-[node name="TopBar" type="PanelContainer" parent="Hud"]
-anchors_preset = 10
-anchor_right = 1.0
-offset_bottom = 64.0
-grow_horizontal = 2
-mouse_filter = 0
-
-[node name="HBox" type="HBoxContainer" parent="Hud/TopBar"]
-layout_mode = 2
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-alignment = 1
-theme_override_constants/separation = 20
-
-[node name="PhaseLabel" type="Label" parent="Hud/TopBar/HBox"]
-layout_mode = 2
-text = "夜晚塔防"
-
-[node name="ResourceLabel" type="Label" parent="Hud/TopBar/HBox"]
-layout_mode = 2
-text = "资源"
-
-[node name="TimerLabel" type="Label" parent="Hud/TopBar/HBox"]
-layout_mode = 2
-text = "布防 180s"
-
-; -- Breach Counter --
-[node name="BreachCounter" type="Label" parent="Hud"]
-offset_left = 12.0
-offset_top = 72.0
-text = "⚠ 突破: 0"
-visible = false
-mouse_filter = 1
-
-; -- Right Sidebar (200px) --
-[node name="Sidebar" type="PanelContainer" parent="Hud"]
-anchors_preset = 11
-anchor_left = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -200.0
-offset_top = 64.0
-offset_bottom = -16.0
-grow_vertical = 2
-mouse_filter = 0
-
-[node name="Margin" type="MarginContainer" parent="Hud/Sidebar"]
-layout_mode = 2
-theme_override_constants/margin_left = 8
-theme_override_constants/margin_top = 8
-theme_override_constants/margin_right = 8
-theme_override_constants/margin_bottom = 8
-
-[node name="VBox" type="VBoxContainer" parent="Hud/Sidebar/Margin"]
-layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="ScrollContainer" type="ScrollContainer" parent="Hud/Sidebar/Margin/VBox"]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-
-[node name="EventLog" type="VBoxContainer" parent="Hud/Sidebar/Margin/VBox/ScrollContainer"]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-theme_override_constants/separation = 2
-
-[node name="StartWaveBtn" type="Button" parent="Hud/Sidebar/Margin/VBox"]
-custom_minimum_size = Vector2(0, 36)
-layout_mode = 2
-text = "布防完成，开始接敌"
-
-; -- Result Overlay --
-[node name="ResultOverlay" type="Control" parent="Hud"]
-unique_name_in_owner = true
-visible = false
+[node name="Shell" type="Control" parent="Hud"]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+mouse_filter = 2
+
+[node name="WastelandBg" type="ColorRect" parent="Hud/Shell"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.02, 0.04, 0.07, 0.42)
+
+[node name="FrameOverlay" type="TextureRect" parent="Hud/Shell"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+modulate = Color(0.72, 0.82, 0.95, 1)
+
+[node name="TopStatusPanel" type="PanelContainer" parent="Hud/Shell"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 48.0
+offset_top = 12.0
+offset_right = -48.0
+offset_bottom = 72.0
+grow_horizontal = 2
+mouse_filter = 2
+
+[node name="Margin" type="MarginContainer" parent="Hud/Shell/TopStatusPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 8
+
+[node name="StatusHBox" type="HBoxContainer" parent="Hud/Shell/TopStatusPanel/Margin"]
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 24
+
+[node name="PhaseLabel" type="Label" parent="Hud/Shell/TopStatusPanel/Margin/StatusHBox"]
+layout_mode = 2
+text = "布防阶段"
+
+[node name="ResourceLabel" type="Label" parent="Hud/Shell/TopStatusPanel/Margin/StatusHBox"]
+layout_mode = 2
+text = "资源"
+
+[node name="TimerLabel" type="Label" parent="Hud/Shell/TopStatusPanel/Margin/StatusHBox"]
+layout_mode = 2
+text = "布防 180s"
+
+[node name="HeatmapSwitch" type="TextureButton" parent="Hud/Shell/TopStatusPanel/Margin/StatusHBox"]
+custom_minimum_size = Vector2(96, 32)
+layout_mode = 2
+stretch_mode = 5
+ignore_texture_size = true
+modulate = Color(1, 1, 1, 0.5)
+
+[node name="DurabilityBar" type="Control" parent="Hud/Shell"]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -200.0
+offset_top = -52.0
+offset_right = 200.0
+offset_bottom = -20.0
+grow_horizontal = 2
+grow_vertical = 0
+script = ExtResource("5_bar")
+
+[node name="SidebarPanel" type="PanelContainer" parent="Hud/Shell"]
+layout_mode = 1
+anchors_preset = 11
+anchor_left = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -228.0
+offset_top = 88.0
+offset_right = -16.0
+offset_bottom = -120.0
+grow_vertical = 2
 mouse_filter = 0
 
-[node name="Dimmer" type="ColorRect" parent="Hud/ResultOverlay"]
+[node name="Margin" type="MarginContainer" parent="Hud/Shell/SidebarPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="VBox" type="VBoxContainer" parent="Hud/Shell/SidebarPanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="StartWaveBtn" type="Button" parent="Hud/Shell/SidebarPanel/Margin/VBox"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+text = "布防完成 · 开始接敌"
+
+[node name="LogPanel" type="PanelContainer" parent="Hud/Shell"]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -228.0
+offset_top = -112.0
+offset_right = -16.0
+offset_bottom = -16.0
+grow_horizontal = 0
+grow_vertical = 0
+mouse_filter = 0
+
+[node name="Margin" type="MarginContainer" parent="Hud/Shell/LogPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 8
+
+[node name="VBox" type="VBoxContainer" parent="Hud/Shell/LogPanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="BreachCounter" type="Label" parent="Hud/Shell/LogPanel/Margin/VBox"]
+layout_mode = 2
+visible = false
+text = "⚠ 突破: 0"
+
+[node name="ScrollContainer" type="ScrollContainer" parent="Hud/Shell/LogPanel/Margin/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="EventLog" type="VBoxContainer" parent="Hud/Shell/LogPanel/Margin/VBox/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 2
+
+[node name="ResultOverlay" type="Control" parent="Hud/Shell"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+
+[node name="Dimmer" type="ColorRect" parent="Hud/Shell/ResultOverlay"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -115,47 +200,45 @@ grow_vertical = 2
 mouse_filter = 0
 color = Color(0, 0, 0, 0.55)
 
-[node name="CenterContainer" type="CenterContainer" parent="Hud/ResultOverlay"]
+[node name="CenterContainer" type="CenterContainer" parent="Hud/Shell/ResultOverlay"]
 layout_mode = 1
-anchors_preset = 0
-anchor_left = 0.0
-anchor_top = 0.25
+anchors_preset = 15
 anchor_right = 1.0
-anchor_bottom = 0.75
+anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
-[node name="ResultPanel" type="PanelContainer" parent="Hud/ResultOverlay/CenterContainer"]
+[node name="ResultPanel" type="PanelContainer" parent="Hud/Shell/ResultOverlay/CenterContainer"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(620, 0)
 layout_mode = 2
 
-[node name="Margin" type="MarginContainer" parent="Hud/ResultOverlay/CenterContainer/ResultPanel"]
+[node name="Margin" type="MarginContainer" parent="Hud/Shell/ResultOverlay/CenterContainer/ResultPanel"]
 layout_mode = 2
 theme_override_constants/margin_left = 24
 theme_override_constants/margin_top = 20
 theme_override_constants/margin_right = 24
 theme_override_constants/margin_bottom = 20
 
-[node name="VBox" type="VBoxContainer" parent="Hud/ResultOverlay/CenterContainer/ResultPanel/Margin"]
+[node name="VBox" type="VBoxContainer" parent="Hud/Shell/ResultOverlay/CenterContainer/ResultPanel/Margin"]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="ResultScroll" type="ScrollContainer" parent="Hud/ResultOverlay/CenterContainer/ResultPanel/Margin/VBox"]
+[node name="ResultScroll" type="ScrollContainer" parent="Hud/Shell/ResultOverlay/CenterContainer/ResultPanel/Margin/VBox"]
+custom_minimum_size = Vector2(0, 160)
 layout_mode = 2
 size_flags_vertical = 3
-custom_minimum_size = Vector2(0, 160)
 
-[node name="ResultLabel" type="Label" parent="Hud/ResultOverlay/CenterContainer/ResultPanel/Margin/VBox/ResultScroll"]
+[node name="ResultLabel" type="Label" parent="Hud/Shell/ResultOverlay/CenterContainer/ResultPanel/Margin/VBox/ResultScroll"]
 unique_name_in_owner = true
 layout_mode = 2
-horizontal_alignment = 1
-autowrap_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
+horizontal_alignment = 1
+autowrap_mode = 2
 
-[node name="ContinueBtn" type="Button" parent="Hud/ResultOverlay/CenterContainer/ResultPanel/Margin/VBox"]
+[node name="ContinueBtn" type="Button" parent="Hud/Shell/ResultOverlay/CenterContainer/ResultPanel/Margin/VBox"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(320, 48)
 layout_mode = 2

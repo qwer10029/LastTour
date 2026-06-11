@@ -57,6 +57,10 @@ func is_choice_mode() -> bool:
 	return _choice_mode
 
 
+func get_choice_count() -> int:
+	return _choice_buttons.size()
+
+
 func try_advance_page() -> bool:
 	if _choice_mode or not visible:
 		return false
@@ -183,12 +187,17 @@ func _build_choice_buttons(options: Array) -> void:
 		btn.text = "%d · %s" % [i + 1, labels[i]]
 		btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		btn.bind_hover_shift(shift_wrap)
+		btn.focus_mode = Control.FOCUS_NONE
 		btn.pressed.connect(_on_choice.bind(i))
 		shift_wrap.add_child(btn)
 		_choice_buttons.append(btn)
 
 
 func _on_choice(index: int) -> void:
+	call_deferred("_emit_choice", index)
+
+
+func _emit_choice(index: int) -> void:
 	choice_pressed.emit(index)
 	hide_dialogue()
 

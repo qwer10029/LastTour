@@ -38,6 +38,13 @@ static func clear_cache() -> void:
 	ArtAssetLoader.clear_alpha_cache()
 
 
+static func preload_all_towers() -> void:
+	for type_id in [
+		"jammer", "barrier", "trap", "cryo_beacon", "hacker", "sniper", "splash",
+	]:
+		tower_texture(type_id)
+
+
 static func _tower_file_id(type_id: String) -> String:
 	if type_id == "sniper":
 		return "cannon"

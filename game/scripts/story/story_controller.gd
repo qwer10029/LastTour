@@ -8,6 +8,8 @@ const FOOT_INTERACT_LOOT_RADIUS := 36.0
 const FOOT_INTERACT_HINT_RADIUS := 44.0
 const PROP_DIG_DURATION := 0.85
 const THUNDER_LEITING_STORY_ID := "thunder_leiting"
+const _TRAVEL_MODE_DRIVE := 0
+const _TRAVEL_MODE_FOOT := 1
 
 signal ui_refresh_requested
 signal thunder_boss_requested(district_index: int)
@@ -144,6 +146,8 @@ func handle_drive_interact(node_index: int) -> bool:
 
 
 func _handle_npc_dialogue_interact(story_id: String, node_index: int) -> bool:
+	if StoryData.is_interior_encounter(story_id) and not _is_foot_in_story_district(story_id):
+		return false
 	if not is_instance_valid(npc_dialogue):
 		return false
 	if is_instance_valid(gate_dialogue):
@@ -211,6 +215,8 @@ func should_show_thunder_gate_boss(district_index: int) -> bool:
 
 func advance_active_drive_dialogue() -> bool:
 	if not is_instance_valid(npc_dialogue) or not npc_dialogue.is_active():
+		return false
+	if StoryData.is_interior_encounter(npc_dialogue.story_id):
 		return false
 	if npc_dialogue.phase == _NpcDialogueRunner.Phase.LINE:
 		npc_dialogue.advance_line()
@@ -287,6 +293,8 @@ func _is_final_layer() -> bool:
 func start_story_talk(story_id: String, district_index: int = -1) -> void:
 	if story_id == "" or run_state.is_completed(story_id):
 		return
+	if StoryData.is_interior_encounter(story_id):
+		return
 	if district_index >= 0:
 		run_state.set_district(story_id, district_index)
 		_cache_gate_entrance(district_index)
@@ -306,9 +314,11 @@ func on_entered_district_foot(district_index: int) -> void:
 		if run_state.is_quest_active(story_id):
 			_sync_quest_pickups(story_id, district_index)
 			fix_foot_loot_positions(district_index)
+		elif run_state.is_completed(story_id):
+			_clear_unlocked_loot_for_district(district_index)
 		if not run_state.is_completed(story_id) and not run_state.is_quest_active(story_id):
 			call_deferred("_begin_interior_encounter", story_id)
-		_sync_ambient_loot(story_id, district_index)
+		call_deferred("_sync_ambient_loot", story_id, district_index)
 		return
 	if not run_state.is_quest_active(story_id):
 		return
@@ -329,6 +339,8 @@ func _interior_dialogue_entry(story_id: String) -> String:
 
 
 func _begin_interior_encounter(story_id: String) -> void:
+	if not _is_foot_in_story_district(story_id):
+		return
 	if not is_instance_valid(npc_dialogue) or run_state.is_completed(story_id):
 		return
 	if npc_dialogue.is_active() and npc_dialogue.story_id == story_id:
@@ -348,7 +360,7 @@ func _begin_interior_encounter(story_id: String) -> void:
 		_ui_locked = false
 		push_warning("[Story] 室内遭遇对话未能启动: %s" % story_id)
 		return
-	ui_refresh_requested.emit()
+	call_deferred("_emit_ui_refresh_requested")
 
 
 func try_interior_story_interact(district_index: int, player_local: Vector2 = Vector2.ZERO) -> bool:
@@ -894,6 +906,23 @@ func build_prompt(story_id: String) -> Dictionary:
 	}
 	if story_id == "" or run_state.is_completed(story_id):
 		return out
+	if StoryData.is_interior_encounter(story_id) and _is_interior_at_drive_gate(story_id):
+		if run_state.is_quest_active(story_id):
+			var quest_gate: Dictionary = StoryData.quest_def(story_id)
+			var need_gate := int(quest_gate.get("collect_count", 0))
+			if run_state.get_collect_count(story_id) >= need_gate:
+				out["text"] = StoryData.prompt_return(story_id)
+				out["disembark"] = StoryData.prompt_disembark(story_id)
+				out["show_disembark"] = true
+				return out
+			out["text"] = str(quest_gate.get("hint", "进入建筑完成委托"))
+			out["disembark"] = "进入"
+			out["show_disembark"] = true
+			return out
+		out["text"] = StoryData.title_of(story_id)
+		out["disembark"] = StoryData.prompt_disembark(story_id)
+		out["show_disembark"] = true
+		return out
 	if _uses_dialogue_file(story_id) and is_instance_valid(npc_dialogue) and npc_dialogue.is_active():
 		if npc_dialogue.phase == _NpcDialogueRunner.Phase.OPTIONS:
 			out["text"] = npc_dialogue.panel_text
@@ -915,18 +944,20 @@ func build_prompt(story_id: String) -> Dictionary:
 				out["disembark"] = StoryData.prompt_disembark(story_id)
 				out["show_disembark"] = true
 				return out
-			out["text"] = str(quest.get("hint", "E 进入完成委托"))
-			out["disembark"] = "进入 (E)"
+			out["text"] = str(quest.get("hint", "进入建筑完成委托"))
+			out["disembark"] = "进入"
 			out["show_disembark"] = true
 			return out
-		out["text"] = "%s · E 进入" % StoryData.title_of(story_id)
+		out["text"] = StoryData.title_of(story_id)
 		out["disembark"] = StoryData.prompt_disembark(story_id)
 		out["show_disembark"] = true
 		return out
 	if is_instance_valid(gate_dialogue) and gate_dialogue.is_active():
 		match gate_dialogue.phase:
 			StoryGateDialogue.Phase.INTRO:
-				out["text"] = "E 继续"
+				var intro_body := gate_dialogue.npc_bubble.strip_edges()
+				out["text"] = intro_body if intro_body != "" else "……"
+				out["continue_hint"] = "按 E 继续"
 			StoryGateDialogue.Phase.INTRO_CHOICE:
 				out["text"] = StoryData.gate_field(story_id, "choice_npc", "能帮我吗？")
 				out["disembark"] = "帮忙"
@@ -937,7 +968,7 @@ func build_prompt(story_id: String) -> Dictionary:
 				out["show_reward_choice"] = true
 		return out
 	if not run_state.is_quest_active(story_id) and not run_state.is_reward_pending(story_id):
-		out["text"] = "%s · E 交谈（同意前无法入内）" % StoryData.title_of(story_id)
+		out["text"] = "%s\n同意前无法入内。" % StoryData.title_of(story_id)
 		out["disembark"] = StoryData.prompt_disembark(story_id)
 		out["show_disembark"] = true
 		return out
@@ -947,16 +978,18 @@ func build_prompt(story_id: String) -> Dictionary:
 		if run_state.get_collect_count(story_id) >= need:
 			out["text"] = StoryData.prompt_return(story_id)
 			return out
-		out["text"] = str(quest.get("hint", "E 进入完成委托"))
-		out["disembark"] = "进入 (E)"
+		out["text"] = str(quest.get("hint", "进入建筑完成委托"))
+		out["disembark"] = "进入"
 		out["show_disembark"] = true
 		return out
 	if run_state.is_reward_pending(story_id):
 		out["text"] = StoryData.prompt_reward(story_id)
+		out["disembark"] = StoryData.prompt_reward(story_id)
+		out["show_disembark"] = true
 		return out
 	var quest: Dictionary = StoryData.quest_def(story_id)
-	out["text"] = str(quest.get("hint", "E 进入完成委托"))
-	out["disembark"] = "进入 (E)"
+	out["text"] = str(quest.get("hint", "进入建筑完成委托"))
+	out["disembark"] = "进入"
 	out["show_disembark"] = true
 	return out
 
@@ -1019,6 +1052,8 @@ func _try_reveal_tactical_sites_from_inventory() -> void:
 		_reveal_tactical_hidden_sites("staff_officer_07")
 	if backpack.has("data_chip_radar_coords", 1):
 		_reveal_tactical_hidden_sites("ad_1_radar")
+	if backpack.has("data_chip_supply_registry", 1):
+		_reveal_tactical_hidden_sites("chronicler_04")
 
 
 func to_save_dict() -> Dictionary:
@@ -1030,6 +1065,8 @@ func load_save_dict(raw: Variant) -> void:
 
 
 func _begin_gate_talk(story_id: String, district_index: int) -> void:
+	if StoryData.is_interior_encounter(story_id):
+		return
 	if run_state.is_completed(story_id):
 		return
 	if run_state.is_quest_active(story_id) and not _uses_dialogue_file(story_id):
@@ -1125,15 +1162,19 @@ func _on_npc_story_completed(story_id: String, result: Dictionary) -> void:
 		else:
 			push_warning("[Story] 日记未写入: %s (body=%s)" % [encounter_id, JournalData.body_of(encounter_id)])
 	var loot_key := str(result.get("reward_loot_key", ""))
+	var district := run_state.get_district(story_id)
 	if loot_key == "tactical_map" or encounter_id == "staff_officer_07_calibrate":
 		_reveal_tactical_hidden_sites("staff_officer_07")
 	if encounter_id == "ad_1_radar_coords":
 		_reveal_tactical_hidden_sites("ad_1_radar")
-	if loot_key != "":
-		var district := run_state.get_district(story_id)
+	if encounter_id == "chronicler_repair" or loot_key == "supply_map":
+		if district >= 0:
+			_clear_unlocked_loot_for_district(district)
+		_reveal_tactical_hidden_sites("chronicler_04")
+	if loot_key != "" and not (story_id == "chronicler_04" and loot_key == "supply_map"):
 		var loot_def: Dictionary = StoryData.reward_loot_def(story_id, loot_key)
 		var pickups: Variant = loot_def.get("pickups", [])
-		if typeof(pickups) == TYPE_ARRAY:
+		if typeof(pickups) == TYPE_ARRAY and district >= 0:
 			_spawn_unlocked_loot(district, pickups)
 			fix_foot_loot_positions(district)
 	run_state.mark_done(story_id)
@@ -1304,6 +1345,16 @@ func _sync_quest_pickups(story_id: String, district_index: int) -> void:
 		remaining -= 1
 
 
+func _clear_unlocked_loot_for_district(district_index: int) -> void:
+	for node in _unlocked_loot_nodes.duplicate():
+		if not is_instance_valid(node):
+			continue
+		if int(node.get_meta("district_index", -1)) != district_index:
+			continue
+		_unlocked_loot_nodes.erase(node)
+		node.queue_free()
+
+
 func _spawn_unlocked_loot(district_index: int, pickups: Array) -> void:
 	var map: WorldMapData = _map()
 	if map == null:
@@ -1390,6 +1441,49 @@ func _story_id_of_district(district_index: int) -> String:
 	if tag != "":
 		return StoryData.story_id_for_district_tag(tag)
 	return ""
+
+
+func suspend_interior_dialogue_for_drive(story_id: String) -> void:
+	if not StoryData.is_interior_encounter(story_id):
+		return
+	if not is_instance_valid(npc_dialogue) or not npc_dialogue.is_active():
+		return
+	if npc_dialogue.story_id != story_id:
+		return
+	npc_dialogue.reset_session()
+	if _active_story_id == story_id:
+		_active_story_id = ""
+	_ui_locked = false
+
+
+func _emit_ui_refresh_requested() -> void:
+	ui_refresh_requested.emit()
+
+
+func _travel_mode() -> int:
+	if _host == null:
+		return _TRAVEL_MODE_DRIVE
+	return int(_host.get("_mode"))
+
+
+func _current_district_index() -> int:
+	if _host == null:
+		return -1
+	return int(_host.get("_current_district_index"))
+
+
+func _is_foot_mode() -> bool:
+	return _travel_mode() == _TRAVEL_MODE_FOOT
+
+
+func _is_interior_at_drive_gate(story_id: String) -> bool:
+	if _is_foot_mode() or story_id == "":
+		return false
+	return story_id_at_node(_current_node_index()) == story_id
+
+
+func _is_foot_in_story_district(story_id: String) -> bool:
+	return _is_foot_mode() and _story_id_of_district(_current_district_index()) == story_id
 
 
 func _current_node_index() -> int:

@@ -144,8 +144,7 @@
       "actions": {
         "give_item": "data_chip",
         "count": 1,
-        "unlock_journal_entry": "chronicler_repair",
-        "spawn_reward_loot": "supply_map"
+        "unlock_journal_entry": "chronicler_repair"
       },
       "next": "story_done"
     },

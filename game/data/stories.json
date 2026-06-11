@@ -74,16 +74,10 @@
           [200, 88]
         ]
       },
-      "reward_loot": {
-        "supply_map": {
-          "pickups": [
-            { "item_id": "parts", "offset": [220, 72] },
-            { "item_id": "parts", "offset": [248, 104] },
-            { "item_id": "scrap", "offset": [184, 128] },
-            { "item_id": "fuel", "offset": [160, 96] }
-          ]
-        }
-      }
+      "tactical_hidden_sites": [
+        { "building_type": "warehouse", "building_label": "隐藏仓库" },
+        { "building_type": "garage", "building_label": "备件藏匿点" }
+      ]
     },
     {
       "story_id": "furnace_qc",

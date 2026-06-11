@@ -6,17 +6,23 @@ signal continue_pressed
 signal tower_power_step(tower_id: int, delta_step: float)
 signal power_tower_selected(tower_id: int)
 signal overlay_toggled(state: bool)
+signal intro_finished
 
-@onready var top_bar: PanelContainer = $TopBar
-@onready var side_panel: PanelContainer = $Sidebar
-@onready var phase_label: Label = $TopBar/HBox/PhaseLabel
-@onready var resource_label: Label = $TopBar/HBox/ResourceLabel
-@onready var timer_label: Label = $TopBar/HBox/TimerLabel
-@onready var start_btn: Button = $Sidebar/Margin/VBox/StartWaveBtn
-@onready var event_log_vbox: VBoxContainer = $Sidebar/Margin/VBox/ScrollContainer/EventLog
-@onready var event_scroll: ScrollContainer = $Sidebar/Margin/VBox/ScrollContainer
-@onready var breach_label: Label = $BreachCounter
-@onready var result_overlay: Control = $ResultOverlay
+@onready var shell: Control = $Shell
+@onready var frame_overlay: TextureRect = $Shell/FrameOverlay
+@onready var top_bar: PanelContainer = $Shell/TopStatusPanel
+@onready var side_panel: PanelContainer = $Shell/SidebarPanel
+@onready var log_panel: PanelContainer = $Shell/LogPanel
+@onready var phase_label: Label = $Shell/TopStatusPanel/Margin/StatusHBox/PhaseLabel
+@onready var resource_label: Label = $Shell/TopStatusPanel/Margin/StatusHBox/ResourceLabel
+@onready var timer_label: Label = $Shell/TopStatusPanel/Margin/StatusHBox/TimerLabel
+@onready var heatmap_switch: TextureButton = $Shell/TopStatusPanel/Margin/StatusHBox/HeatmapSwitch
+@onready var durability_bar: NightTdDurabilityBar = $Shell/DurabilityBar
+@onready var start_btn: Button = $Shell/SidebarPanel/Margin/VBox/StartWaveBtn
+@onready var event_log_vbox: VBoxContainer = $Shell/LogPanel/Margin/VBox/ScrollContainer/EventLog
+@onready var event_scroll: ScrollContainer = $Shell/LogPanel/Margin/VBox/ScrollContainer
+@onready var breach_label: Label = $Shell/LogPanel/Margin/VBox/BreachCounter
+@onready var result_overlay: Control = $Shell/ResultOverlay
 @onready var continue_btn: Button = %ContinueBtn
 @onready var result_panel: PanelContainer = %ResultPanel
 @onready var result_label: Label = %ResultLabel
@@ -36,8 +42,11 @@ var _continue_locked := false
 var _breach_count := 0
 var _tower_cards: Dictionary = {}
 var _cards_vbox: VBoxContainer = null
-var _overlay_btn: Button = null
 var _overlay_active := false
+var _intro_played := false
+var _heatmap_hover_tween: Tween
+var _log_hover_tween: Tween
+const HOVER_SCALE := Vector2(1.04, 1.04)
 
 # Tooltip
 var _tooltip: PanelContainer = null
@@ -64,6 +73,7 @@ const COLORS := {
 
 func _ready() -> void:
 	hide_session_ui()
+	_apply_holo_shell_styles()
 	_build_tooltip()
 	_build_cards_in_sidebar()
 	if is_instance_valid(start_btn):
@@ -71,8 +81,13 @@ func _ready() -> void:
 	if is_instance_valid(continue_btn):
 		continue_btn.pressed.connect(_on_continue_pressed)
 	_build_power_panel()
-	_build_overlay_button()
-	if is_instance_valid(breach_label): breach_label.visible = false
+	_setup_heatmap_switch()
+	_wire_hover_feedback()
+	for lbl in [phase_label, resource_label, timer_label]:
+		NightTdUiTheme.apply_holo_label(lbl)
+	NightTdUiTheme.apply_holo_label(breach_label, true)
+	if is_instance_valid(breach_label):
+		breach_label.visible = false
 	_select("jammer")
 
 
@@ -87,22 +102,31 @@ func show_session_ui() -> void:
 	show()
 	_continue_locked = false
 	_breach_count = 0
-	if is_instance_valid(top_bar): top_bar.show()
-	if is_instance_valid(side_panel): side_panel.show()
+	_intro_played = false
+	if is_instance_valid(shell):
+		shell.show()
+	if is_instance_valid(top_bar):
+		top_bar.show()
+	if is_instance_valid(side_panel):
+		side_panel.show()
+	if is_instance_valid(log_panel):
+		log_panel.show()
 	if is_instance_valid(breach_label):
 		breach_label.visible = false
 		breach_label.text = "⚠ 突破: 0"
 	clear_log()
 	hide_result_dialog()
-	if is_instance_valid(_overlay_btn): _overlay_btn.show()
+	if is_instance_valid(heatmap_switch):
+		heatmap_switch.show()
+	_play_intro_animation()
 
 
 func hide_session_ui() -> void:
 	hide_result_dialog()
-	if is_instance_valid(top_bar): top_bar.hide()
-	if is_instance_valid(side_panel): side_panel.hide()
-	if is_instance_valid(breach_label): breach_label.visible = false
-	if is_instance_valid(_overlay_btn): _overlay_btn.hide()
+	if is_instance_valid(shell):
+		shell.hide()
+	if is_instance_valid(breach_label):
+		breach_label.visible = false
 	hide()
 
 
@@ -290,67 +314,142 @@ func update_card_costs(backpack_counts: Dictionary) -> void:
 		cost_lbl.add_theme_color_override("font_color", Color(COLORS["accent"]) if ok else Color(COLORS["danger"]))
 
 
-# -- Overlay Toggle Button ------------------------------------------
+# -- 全息外壳 / 热力图 / 载入动画 --------------------------------
 
-func _build_overlay_button() -> void:
-	_overlay_btn = Button.new()
-	_overlay_btn.name = "OverlayBtn"
-	_overlay_btn.text = "📊 热力图: 关"
-	_overlay_btn.flat = true
-	_overlay_btn.add_theme_font_size_override("font_size", 11)
-	_overlay_btn.custom_minimum_size = Vector2(120, 28)
-
-	var s := StyleBoxFlat.new()
-	s.bg_color = Color(COLORS["panel"])
-	s.border_color = Color(COLORS["border"])
-	s.set_border_width_all(1); s.set_corner_radius_all(4)
-	_overlay_btn.add_theme_stylebox_override("normal", s)
-
-	var sh := StyleBoxFlat.new()
-	sh.bg_color = Color(COLORS["accent"], 0.2)
-	sh.border_color = Color(COLORS["accent"])
-	sh.set_border_width_all(1); sh.set_corner_radius_all(4)
-	_overlay_btn.add_theme_stylebox_override("hover", sh)
-
-	_overlay_btn.pressed.connect(_on_overlay_btn_pressed)
-
-	# Position: inside top bar, next to the timer/phase labels
+func _apply_holo_shell_styles() -> void:
+	if is_instance_valid(frame_overlay):
+		var frame_tex := NightTdUiTheme.load_texture(NightTdUiTheme.FRAME_INTERFACE)
+		if frame_tex != null:
+			frame_overlay.texture = frame_tex
 	if is_instance_valid(top_bar):
-		var hbox := top_bar.get_node_or_null("HBox")
-		if hbox != null:
-			hbox.add_child(_overlay_btn)
-		else:
-			add_child(_overlay_btn)
-			_overlay_btn.position = Vector2(300, 10)
-	else:
-		add_child(_overlay_btn)
-		_overlay_btn.position = Vector2(300, 10)
+		top_bar.add_theme_stylebox_override(
+			"panel",
+			NightTdUiTheme.panel_style(
+				NightTdUiTheme.PANEL_TOP_STATUS,
+				NightTdUiTheme.PANEL_MARGINS[NightTdUiTheme.PANEL_TOP_STATUS],
+			),
+		)
+	if is_instance_valid(side_panel):
+		side_panel.add_theme_stylebox_override(
+			"panel",
+			NightTdUiTheme.panel_style(
+				NightTdUiTheme.PANEL_SIDEBAR,
+				NightTdUiTheme.PANEL_MARGINS[NightTdUiTheme.PANEL_SIDEBAR],
+			),
+		)
+	if is_instance_valid(log_panel):
+		log_panel.add_theme_stylebox_override(
+			"panel",
+			NightTdUiTheme.panel_style(
+				NightTdUiTheme.PANEL_DIALOG_LOG,
+				NightTdUiTheme.PANEL_MARGINS[NightTdUiTheme.PANEL_DIALOG_LOG],
+			),
+		)
+	if is_instance_valid(result_panel):
+		result_panel.add_theme_stylebox_override("panel", NightTdUiTheme.panel_style(NightTdUiTheme.PANEL_DIALOG_LOG, 18))
 
-	_overlay_btn.show()
+
+func _setup_heatmap_switch() -> void:
+	if not is_instance_valid(heatmap_switch):
+		return
+	var tex := NightTdUiTheme.load_texture(NightTdUiTheme.SWITCH_HEATMAP_ON)
+	if tex != null:
+		heatmap_switch.texture_normal = tex
+		heatmap_switch.texture_pressed = tex
+		heatmap_switch.texture_hover = tex
+	heatmap_switch.modulate = Color(1, 1, 1, 0.5)
+	heatmap_switch.toggle_mode = true
+	heatmap_switch.button_pressed = false
+	heatmap_switch.pressed.connect(_on_heatmap_switch_pressed)
 
 
-func _on_overlay_btn_pressed() -> void:
-	_overlay_active = not _overlay_active
-	_refresh_overlay_btn_text()
+func _wire_hover_feedback() -> void:
+	if is_instance_valid(heatmap_switch):
+		heatmap_switch.mouse_entered.connect(_on_heatmap_mouse_entered)
+		heatmap_switch.mouse_exited.connect(_on_heatmap_mouse_exited)
+	if is_instance_valid(log_panel):
+		log_panel.mouse_entered.connect(_on_log_panel_mouse_entered)
+		log_panel.mouse_exited.connect(_on_log_panel_mouse_exited)
+
+
+func _play_intro_animation() -> void:
+	if _intro_played or not is_instance_valid(frame_overlay):
+		return
+	_intro_played = true
+	frame_overlay.modulate = NightTdUiTheme.COLOR_CHARGE_DARK
+	var tween := create_tween()
+	tween.tween_property(frame_overlay, "modulate", NightTdUiTheme.COLOR_CHARGE_GLOW, 0.42)\
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	tween.tween_property(frame_overlay, "modulate", Color(0.72, 0.82, 0.95, 1.0), 0.35)\
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.finished.connect(func(): intro_finished.emit())
+
+
+func play_defence_core_shield_intro(core_visual: NightTdDefenceCoreVisual) -> void:
+	if is_instance_valid(core_visual):
+		core_visual.play_shield_activate()
+
+
+func _on_heatmap_switch_pressed() -> void:
+	_overlay_active = heatmap_switch.button_pressed
+	_refresh_heatmap_switch_visual()
 	overlay_toggled.emit(_overlay_active)
 
 
-func _refresh_overlay_btn_text() -> void:
-	if is_instance_valid(_overlay_btn):
-		if _overlay_active:
-			_overlay_btn.text = "📊 热力图: 开"
-			var s := StyleBoxFlat.new()
-			s.bg_color = Color(COLORS["accent"], 0.18)
-			s.border_color = Color(COLORS["accent"])
-			s.set_border_width_all(2); s.set_corner_radius_all(4)
-			_overlay_btn.add_theme_stylebox_override("normal", s)
-		else:
-			_overlay_btn.text = "📊 热力图: 关"
-			var s := StyleBoxFlat.new()
-			s.bg_color = Color(COLORS["panel"])
-			s.border_color = Color(COLORS["border"])
-			s.set_border_width_all(1); s.set_corner_radius_all(4)
-			_overlay_btn.add_theme_stylebox_override("normal", s)
+func _refresh_heatmap_switch_visual() -> void:
+	if not is_instance_valid(heatmap_switch):
+		return
+	var alpha := 1.0 if _overlay_active else 0.5
+	heatmap_switch.modulate = Color(1, 1, 1, alpha)
+
+
+func _on_heatmap_mouse_entered() -> void:
+	if not is_instance_valid(heatmap_switch):
+		return
+	if _heatmap_hover_tween != null and _heatmap_hover_tween.is_valid():
+		_heatmap_hover_tween.kill()
+	_heatmap_hover_tween = create_tween().set_parallel(true)
+	_heatmap_hover_tween.tween_property(heatmap_switch, "scale", HOVER_SCALE, 0.16)\
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_heatmap_hover_tween.tween_property(heatmap_switch, "modulate:a", 1.0, 0.16)
+
+
+func _on_heatmap_mouse_exited() -> void:
+	if not is_instance_valid(heatmap_switch):
+		return
+	if _heatmap_hover_tween != null and _heatmap_hover_tween.is_valid():
+		_heatmap_hover_tween.kill()
+	_heatmap_hover_tween = create_tween().set_parallel(true)
+	_heatmap_hover_tween.tween_property(heatmap_switch, "scale", Vector2.ONE, 0.16)
+	var target_a := 1.0 if _overlay_active else 0.5
+	_heatmap_hover_tween.tween_property(heatmap_switch, "modulate:a", target_a, 0.16)
+
+
+func _on_log_panel_mouse_entered() -> void:
+	if not is_instance_valid(log_panel):
+		return
+	if _log_hover_tween != null and _log_hover_tween.is_valid():
+		_log_hover_tween.kill()
+	_log_hover_tween = create_tween().set_parallel(true)
+	_log_hover_tween.tween_property(log_panel, "scale", HOVER_SCALE, 0.18)\
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_log_hover_tween.tween_property(log_panel, "modulate", Color(0.82, 0.95, 1.15, 1.0), 0.18)
+
+
+func _on_log_panel_mouse_exited() -> void:
+	if not is_instance_valid(log_panel):
+		return
+	if _log_hover_tween != null and _log_hover_tween.is_valid():
+		_log_hover_tween.kill()
+	_log_hover_tween = create_tween().set_parallel(true)
+	_log_hover_tween.tween_property(log_panel, "scale", Vector2.ONE, 0.18)
+	_log_hover_tween.tween_property(log_panel, "modulate", Color.WHITE, 0.18)
+
+
+func set_vehicle_durability(current: float, maximum: float, animate: bool = true) -> void:
+	if not is_instance_valid(durability_bar) or maximum <= 0.0:
+		return
+	durability_bar.set_ratio(current / maximum, animate)
 
 
 # -- Phase --------------------------------------------------------
@@ -421,7 +520,8 @@ func set_place_mode(active: bool) -> void:
 	if is_instance_valid(_cards_vbox): _cards_vbox.visible = active
 	show_power_panel(false)
 	_update_card_states(active)
-	if is_instance_valid(_overlay_btn): _overlay_btn.show()
+	if is_instance_valid(heatmap_switch):
+		heatmap_switch.show()
 
 
 func set_combat_mode() -> void:
@@ -430,7 +530,8 @@ func set_combat_mode() -> void:
 	if is_instance_valid(_cards_vbox): _cards_vbox.visible = false
 	_update_card_states(false)
 	show_power_panel(true)
-	if is_instance_valid(_overlay_btn): _overlay_btn.show()
+	if is_instance_valid(heatmap_switch):
+		heatmap_switch.show()
 
 
 func _update_card_states(enabled: bool) -> void:
@@ -458,8 +559,8 @@ func _build_power_panel() -> void:
 	_power_panel = VBoxContainer.new()
 	_power_panel.name = "PowerPanel"
 	_power_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	_power_panel.offset_left = 12.0
-	_power_panel.offset_top = 96.0
+	_power_panel.offset_left = 16.0
+	_power_panel.offset_top = 88.0
 	_power_panel.custom_minimum_size = Vector2(200, 0)
 	_power_panel.add_theme_constant_override("separation", 3)
 	_power_panel.visible = false
