@@ -103,7 +103,10 @@ func _capture_night(save_image: bool = true) -> void:
 			100.0,
 			100.0,
 			{"scrap": 5, "wood": 3, "parts": 2, "fuel": 2, "supplies": 4},
-			)
+			{},
+			80.0,
+			100.0,
+		)
 	await _settle(20)
 	if save_image:
 		await _save_viewport("night_td")

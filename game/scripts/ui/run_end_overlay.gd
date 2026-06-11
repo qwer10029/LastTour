@@ -49,19 +49,19 @@ func _build_ui() -> void:
 	add_child(center)
 
 	_frame = SciFiFramePanelScript.new()
-	_frame.custom_minimum_size = Vector2(760, 560)
+	_frame.custom_minimum_size = Vector2(760, 520)
 	center.add_child(_frame)
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	margin.add_theme_constant_override("margin_left", 32)
-	margin.add_theme_constant_override("margin_top", 28)
+	margin.add_theme_constant_override("margin_top", 24)
 	margin.add_theme_constant_override("margin_right", 32)
-	margin.add_theme_constant_override("margin_bottom", 28)
+	margin.add_theme_constant_override("margin_bottom", 24)
 	_frame.add_child(margin)
 
 	var root := VBoxContainer.new()
-	root.add_theme_constant_override("separation", 16)
+	root.add_theme_constant_override("separation", 12)
 	margin.add_child(root)
 
 	_title_label = Label.new()
@@ -125,13 +125,13 @@ func _build_ui() -> void:
 	_body_label = Label.new()
 	_body_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_body_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_body_label.custom_minimum_size = Vector2(680, 220)
+	_body_label.custom_minimum_size = Vector2(680, 168)
 	HudTheme.apply_terminal_log_label(_body_label)
 	_body_label.visible = false
 	root.add_child(_body_label)
 
 	_choices_box = VBoxContainer.new()
-	_choices_box.add_theme_constant_override("separation", 10)
+	_choices_box.add_theme_constant_override("separation", 8)
 	_choices_box.visible = false
 	root.add_child(_choices_box)
 
@@ -319,9 +319,10 @@ func _rebuild_choice_buttons() -> void:
 	for choice_id in RunEndingDefs.FINAL_CHOICES.keys():
 		var def: Dictionary = RunEndingDefs.FINAL_CHOICES[choice_id]
 		var btn := Button.new()
-		btn.custom_minimum_size = Vector2(0, 44)
+		btn.custom_minimum_size = Vector2(0, 40)
 		btn.text = "%s\n%s" % [def.get("title", ""), def.get("summary", "")]
 		HudTheme.apply_sci_fi_terminal_button(btn, Color("#8ec8e8"))
+		btn.add_theme_font_size_override("font_size", 14)
 		btn.pressed.connect(_on_choice_pressed.bind(str(choice_id)))
 		_choices_box.add_child(btn)
 		_choice_buttons.append(btn)

@@ -4555,10 +4555,29 @@ func _draw_day_overworld() -> void:
 func _draw_world_speech_bubble(anchor: Vector2, text: String, fill: Color, border: Color) -> void:
 	var bubble_w := clampf(float(text.length()) * 11.0 + 20.0, 72.0, 220.0)
 	var bubble_h := 22.0
-	var bubble_pos := Vector2(anchor.x - bubble_w * 0.5, anchor.y - bubble_h - 6.0)
+	var bubble_size := Vector2(bubble_w, bubble_h)
+	var bubble_pos := _clamp_world_speech_bubble_position(
+		Vector2(anchor.x - bubble_w * 0.5, anchor.y - bubble_h - 6.0),
+		bubble_size,
+	)
 	draw_rect(Rect2(bubble_pos, Vector2(bubble_w, bubble_h)), Color(0.05, 0.09, 0.13, 0.84), true)
 	draw_rect(Rect2(bubble_pos, Vector2(bubble_w, bubble_h)), border, false, 1.0)
 	HudTheme.draw_string(self, bubble_pos + Vector2(8.0, 14.0), text, 11, fill)
+
+
+func _clamp_world_speech_bubble_position(world_pos: Vector2, bubble_size: Vector2) -> Vector2:
+	var to_screen := get_global_transform_with_canvas()
+	var screen_pos := to_screen * world_pos
+	var screen_size := to_screen.basis_xform(bubble_size)
+	screen_size = Vector2(absf(screen_size.x), absf(screen_size.y))
+	var viewport_size := get_viewport_rect().size
+	var margin := 8.0
+	var top_safe := HudTheme.TOP_HUD_Y + HudTheme.TOP_BAR_HEIGHT + 14.0
+	var max_x := maxf(margin, viewport_size.x - screen_size.x - margin)
+	var max_y := maxf(top_safe, viewport_size.y - screen_size.y - margin)
+	screen_pos.x = clampf(screen_pos.x, margin, max_x)
+	screen_pos.y = clampf(screen_pos.y, top_safe, max_y)
+	return to_screen.affine_inverse() * screen_pos
 
 
 func _draw_door_exit_hint(door_rect: Rect2) -> void:

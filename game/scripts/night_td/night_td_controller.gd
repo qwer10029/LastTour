@@ -260,12 +260,14 @@ func start_session(
 	_last_result = {}
 	phase = Phase.PLACE if allow_placement and placement_time_sec > 0.0 else Phase.COMBAT
 	show_route_overlay = phase == Phase.PLACE
-	show_overlay = false   # 覆盖层默认关闭，玩家可通过按钮开启
+	show_overlay = true
 	visible = true
 	if is_instance_valid(hud):
 		if not hud.intro_finished.is_connected(_on_hud_intro_finished):
 			hud.intro_finished.connect(_on_hud_intro_finished, CONNECT_ONE_SHOT)
 		hud.show_session_ui()
+		if hud.has_method("set_overlay_active"):
+			hud.set_overlay_active(show_overlay)
 		_sync_vehicle_durability_hud(false)
 		_refresh_resource_hud()
 		if phase == Phase.PLACE:
@@ -405,6 +407,8 @@ func hide_session() -> void:
 	_display_influence = null
 	_display_influence_dirty = true
 	if is_instance_valid(hud):
+		if hud.has_method("set_overlay_active"):
+			hud.set_overlay_active(false)
 		hud.hide_session_ui()
 
 
