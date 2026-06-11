@@ -3227,6 +3227,11 @@ func _on_night_setup_started(day_index: int, manual_setup: bool) -> void:
 		time_system.pause()
 	if is_instance_valid(evening_notice) and evening_notice.has_method("hide_notice"):
 		evening_notice.hide_notice()
+	# 顶层终局：到顶且已击败雷霆后的夜晚不再是普通刷怪夜，而是"顶层终端防线"——
+	# 打完直接接入通信终端走结局流程，不进入次日。否则普通夜会绕过整个终端结局。
+	if _current_layer >= total_layers and _thunder_leiting_defeated and not _final_defense_cleared:
+		_start_final_terminal_defense()
+		return
 	if is_instance_valid(night_defense):
 		# 传入背包快照（字典），而非 live 引用，切断耦合
 		var snapshot: Dictionary = {}
