@@ -2465,6 +2465,9 @@ func _request_terminal_access() -> void:
 		return
 	if not _thunder_leiting_defeated:
 		return
+	if not _final_defense_cleared:
+		_start_final_terminal_defense()
+		return
 	_open_communication_terminal()
 
 
@@ -2530,7 +2533,6 @@ func _start_thunder_leiting_boss() -> void:
 
 func _apply_thunder_leiting_victory() -> void:
 	_thunder_leiting_defeated = true
-	_final_defense_cleared = true
 	_backpack.add("composite_armor_panel", 3)
 	_backpack.add("auto_turret_auth", 3)
 	var recognition := "enemy"
@@ -4717,7 +4719,8 @@ func _draw_elevator_console_hint(console_rect: Rect2) -> void:
 func _draw_kunlun_console_hint(console_rect: Rect2) -> void:
 	if not _can_use_kunlun_control() or not _is_near_kunlun_console():
 		return
-	_draw_interior_console_hint(console_rect, "F 启动通信终端", Color("#6eb8ff"))
+	var hint_text := "F 接入通信终端" if _final_defense_cleared else "F 启动终端防线"
+	_draw_interior_console_hint(console_rect, hint_text, Color("#6eb8ff"))
 
 
 func _draw_interior_console_hint(console_rect: Rect2, text: String, accent: Color) -> void:

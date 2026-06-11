@@ -564,10 +564,12 @@ func _update_card_states(enabled: bool) -> void:
 
 # -- Result Screen ------------------------------------------------
 
-func show_result(text: String) -> void:
+func show_result(text: String, button_text: String = "确认结算，进入下一天") -> void:
 	_continue_locked = false
 	if is_instance_valid(result_label): result_label.text = text
-	if is_instance_valid(continue_btn): continue_btn.disabled = false
+	if is_instance_valid(continue_btn):
+		continue_btn.text = button_text
+		continue_btn.disabled = false
 	if is_instance_valid(result_overlay):
 		result_overlay.show(); result_overlay.visible = true
 	show_power_panel(false)

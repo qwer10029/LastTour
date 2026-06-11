@@ -1799,7 +1799,7 @@ func _end_combat_vehicle_destroyed() -> void:
 	base_hp = 0.0
 	phase = Phase.RESULT
 	if is_instance_valid(hud):
-		hud.show_result(_compose_result_message(_last_result))
+		hud.show_result(_compose_result_message(_last_result), "确认结算")
 		hud.set_phase_text(_session_phase_title("车辆损毁"))
 		hud.set_combat_status("车辆 HP 归零")
 
@@ -1808,8 +1808,16 @@ func _end_combat() -> void:
 	_combat_done = true
 	_last_result = _build_result()
 	phase = Phase.RESULT
+	if _session_kind == "final_terminal_defense":
+		_last_result["message"] = "顶层终端防线已清除。通信链路恢复，正在接入昆仑终端。"
+		if is_instance_valid(hud):
+			hud.set_phase_text(_session_phase_title("终端接入"))
+			hud.set_combat_status("防线存活，正在接入通信终端")
+		_finish_session.call_deferred()
+		return
 	if is_instance_valid(hud):
-		hud.show_result(_compose_result_message(_last_result))
+		var button_text := "确认，返回探索" if _no_day_advance else "确认结算，进入下一天"
+		hud.show_result(_compose_result_message(_last_result), button_text)
 		hud.set_phase_text(_session_phase_title("结算"))
 		hud.set_combat_status("交互结束，请确认结算")
 

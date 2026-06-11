@@ -8,10 +8,10 @@
 
 | cue | 文件 | 时长 | 状态 | 触发场景（已验证） |
 |---|---|---|---|---|
-| `day_exploration` | day_exploration.wav | 36s | **真曲（你提供）** | 白天探索：开局、从夜晚/终端返回白天 |
-| `night_combat` | night_combat.wav | 32s | **真曲（你提供）** | 夜晚塔防战斗阶段开始 |
-| `terminal` | terminal.wav | 28s | **占位** ← 待替换 | 顶层跟随终端指令 / 通讯终端开启（你说的"被开枪"段） |
-| `truth_reveal` | truth_reveal.wav | 34s | **占位** ← 待替换 | `_begin_final_ceremony`：知晓真相、玩家掌控终端 |
+| `day_exploration` | day_exploration.mp3 | 36s | **真曲（你提供）** | 白天探索：开局、从夜晚/终端返回白天 |
+| `night_combat` | night_combat.mp3 | 32s | **真曲（你提供）** | 夜晚塔防战斗阶段开始 |
+| `terminal` | terminal.mp3 | 28s | **占位/可重生成** ← 待确认 | 顶层跟随终端指令 / 通讯终端开启（你说的"被开枪"段） |
+| `truth_reveal` | truth_reveal.mp3 | 34s | **占位/可重生成** ← 待确认 | `_begin_final_ceremony`：知晓真相、玩家掌控终端 |
 | `night_setup` | night_setup.wav | 28s | 占位 | 夜晚布防准备阶段 |
 | `menu_main` | menu_main.wav | 32s | 占位 | 主菜单 |
 | `menu_select` | menu_select.wav | 24s | 占位 | 难度/分队选择、加载 |
@@ -22,12 +22,12 @@
 
 ## 你要生成的 2 首（直接替换同名文件即可，无需改代码）
 
-1. **`terminal.wav`** —「跟随终端指令 / 顶层被开枪」
+1. **`terminal.mp3`** —「跟随终端指令 / 顶层被开枪」
    - 情绪：冷峻、机械、被支配感；克制的合成低频脉冲 + 滴答终端音，
      暗藏不安。不要旋律性太强——这是"听命于机器"的段落。
    - 时长 ≥ 28s 可循环。
 
-2. **`truth_reveal.wav`** —「知晓一切、夺回终端控制」
+2. **`truth_reveal.mp3`** —「知晓一切、夺回终端控制」
    - 情绪：从压抑转向清明/释然，带一丝悲怆的觉醒感；可由稀疏钢琴/弦乐起，
      渐入温暖。这是全剧情感支点。
    - 时长 ≥ 34s 可循环。
@@ -42,5 +42,8 @@
   evening_warning/run_reset）若想统一音乐风格，也可逐一替换；它们能正常播放，
   替换是锦上添花，非必需。
 
-替换方式：把生成好的 wav 命名为上表的文件名，覆盖 `game/assets/music/` 下同名文件，
+替换方式：把生成好的音频命名为上表的文件名/扩展名，覆盖 `game/assets/music/` 下同名文件，
 重新用编辑器导入一次即可（代码与槽位都已就绪）。
+
+生成提示词：见 `docs/music-generation-prompts.md`。该文件按 cue 提供可直接复制到音乐生成器的英文提示词，
+并标明当前 `MusicManager` 使用的文件名/扩展名。
