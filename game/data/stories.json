@@ -1,22 +1,15 @@
 {
+  "required_stories_for_truth": [
+    "furnace_qc",
+    "chronicler_04",
+    "staff_officer_07",
+    "marian_k142"
+  ],
   "required_for_truth": [
-    "sentinel_s09_parts_gave2",
-    "sentinel_s09_parts_gave1",
-    "sentinel_s09_blueprint_gave2",
-    "sentinel_s09_blueprint_gave1",
-    "chronicler_repair",
-    "chronicler_plunder",
-    "furnace_scavenge",
     "furnace_truth",
-    "staff_officer_07_steal_battery",
+    "chronicler_repair",
     "staff_officer_07_calibrate",
-    "ad_1_radar_fuel",
-    "ad_1_radar_coords",
-    "ad_1_radar_tower",
-    "marian_obey",
-    "marian_truth",
-    "thunder_leiting_victory_ally",
-    "thunder_leiting_victory_enemy"
+    "marian_obey"
   ],
   "stories": [
     {
@@ -119,7 +112,7 @@
       "district_tag": "staff_officer_07",
       "building_type": "command",
       "building_label": "废弃指挥部",
-      "spawn_layer": 3,
+      "spawn_layer": 2,
       "spawn_near_start": false,
       "interior_encounter": true,
       "lock_exit_until_resolved": true,
@@ -149,7 +142,7 @@
       "district_tag": "ad_1_radar",
       "building_type": "radar",
       "building_label": "防空雷达站",
-      "spawn_layer": 1,
+      "spawn_layer": 2,
       "spawn_near_start": false,
       "interior_encounter": true,
       "prompt_disembark": "进入雷达站",
@@ -180,7 +173,7 @@
       "district_tag": "marian_k142",
       "building_type": "market",
       "building_label": "玛丽安公寓",
-      "spawn_layer": 1,
+      "spawn_layer": 2,
       "spawn_near_start": true,
       "interior_encounter": true,
       "lock_exit_until_resolved": true,

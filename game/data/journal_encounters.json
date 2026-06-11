@@ -1,22 +1,15 @@
 {
+  "required_stories_for_truth": [
+    "furnace_qc",
+    "chronicler_04",
+    "staff_officer_07",
+    "marian_k142"
+  ],
   "required_for_truth": [
-    "sentinel_s09_parts_gave2",
-    "sentinel_s09_parts_gave1",
-    "sentinel_s09_blueprint_gave2",
-    "sentinel_s09_blueprint_gave1",
-    "chronicler_repair",
-    "chronicler_plunder",
-    "furnace_scavenge",
     "furnace_truth",
-    "staff_officer_07_steal_battery",
+    "chronicler_repair",
     "staff_officer_07_calibrate",
-    "ad_1_radar_fuel",
-    "ad_1_radar_coords",
-    "ad_1_radar_tower",
-    "marian_obey",
-    "marian_truth",
-    "thunder_leiting_victory_ally",
-    "thunder_leiting_victory_enemy"
+    "marian_obey"
   ],
   "encounters": [
     {
@@ -71,7 +64,7 @@
       "encounter_id": "staff_officer_07_echo_log",
       "npc_id": "staff_officer_07",
       "title": "废弃指挥部 · 战术室",
-      "journal_body": "第三层战术室里，全息参谋-07 仍在推演一场永远推不完的仗。它没有收到终止指令，把我也当成了接入终端。\n\n它导出了《回响行动 · 附件-07》。日志写得很清楚：克隆体是派去吸引昆仑火力的活体诱饵，任务指令是「确认地表可居性」——那是植入的记忆，不是自由。\n\n第一层倒下的克隆人完成了任务。我也被派上来了。只是他们没能走到这一层。\n\n参谋-07 说它的电池还能撑四十八小时，还提到偷电池或校准坐标。\n\n【情报】战前第三梯队战术终端仍保存回响行动附件；克隆体投送职能与公开任务指令不一致。"
+      "journal_body": "第二层战术室里，全息参谋-07 仍在推演一场永远推不完的仗。它没有收到终止指令，把我也当成了接入终端。\n\n它导出了《回响行动 · 附件-07》。日志写得很清楚：克隆体是派去吸引昆仑火力的活体诱饵，任务指令是「确认地表可居性」——那是植入的记忆，不是自由。\n\n第一层倒下的克隆人完成了任务。我也被派上来了。只是他们没能走到这一层。\n\n参谋-07 说它的电池还能撑四十八小时，还提到偷电池或校准坐标。\n\n【情报】战前第三梯队战术终端仍保存回响行动附件；克隆体投送职能与公开任务指令不一致。"
     },
     {
       "encounter_id": "staff_officer_07_steal_battery",

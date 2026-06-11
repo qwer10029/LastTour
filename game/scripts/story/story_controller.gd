@@ -425,12 +425,26 @@ func try_collect_foot_loot(
 ) -> void:
 	_prune_invalid_quest_nodes()
 	_prune_invalid_unlocked_loot_nodes()
-	for node in _quest_nodes.duplicate():
+	var best_pickup: Area2D = null
+	var best_distance := radius
+	for node in _quest_nodes:
 		if bool(node.get_meta("interact_only", false)):
 			continue
-		_try_collect_node(node, district_index, player_local, radius)
-	for node in _unlocked_loot_nodes.duplicate():
-		_try_collect_node(node, district_index, player_local, radius)
+		if not _is_pickup_collect_candidate(node, district_index, player_local, radius):
+			continue
+		var dist := _foot_local_of_pickup(node, district_index).distance_to(player_local)
+		if dist < best_distance:
+			best_distance = dist
+			best_pickup = node
+	for node in _unlocked_loot_nodes:
+		if not _is_pickup_collect_candidate(node, district_index, player_local, radius):
+			continue
+		var dist := _foot_local_of_pickup(node, district_index).distance_to(player_local)
+		if dist < best_distance:
+			best_distance = dist
+			best_pickup = node
+	if best_pickup != null:
+		_collect_pickup_node(best_pickup, district_index)
 
 
 func try_interact_foot_loot(
@@ -637,6 +651,8 @@ func _quest_prop_local(quest: Dictionary) -> Vector2:
 func is_foot_loot_visible(node: Area2D, district_index: int) -> bool:
 	if not is_instance_valid(node):
 		return false
+	if bool(node.get_meta("picked_up", false)):
+		return false
 	if int(node.get_meta("district_index", -1)) != district_index:
 		return false
 	if node in _quest_nodes:
@@ -653,28 +669,39 @@ func foot_loot_label(node: Area2D) -> String:
 	return ItemIconFactory.loot_display_name(str(node.get_meta("item_id", "scrap")))
 
 
-func _try_collect_node(node: Node, district_index: int, player_local: Vector2, radius: float) -> void:
-	if not (node is Area2D):
-		return
-	var pickup := node as Area2D
+func _is_pickup_collect_candidate(
+	pickup: Area2D,
+	district_index: int,
+	player_local: Vector2,
+	radius: float,
+) -> bool:
+	if not is_instance_valid(pickup):
+		return false
+	if bool(pickup.get_meta("picked_up", false)):
+		return false
+	if int(pickup.get_meta("district_index", -1)) != district_index:
+		return false
+	if not is_foot_loot_visible(pickup, district_index):
+		return false
+	return _foot_local_of_pickup(pickup, district_index).distance_to(player_local) <= radius
+
+
+func _collect_pickup_node(pickup: Area2D, district_index: int) -> void:
 	if not is_instance_valid(pickup):
 		return
 	if bool(pickup.get_meta("picked_up", false)):
-		return
-	if int(pickup.get_meta("district_index", -1)) != district_index:
-		return
-	if not is_foot_loot_visible(pickup, district_index):
-		return
-	var loot_local := _foot_local_of_pickup(pickup, district_index)
-	if loot_local.distance_to(player_local) > radius:
 		return
 	if pickup in _quest_nodes:
 		_quest_nodes.erase(pickup)
 	if pickup in _unlocked_loot_nodes:
 		_unlocked_loot_nodes.erase(pickup)
+	if pickup.has_meta("ambient_loot_key"):
+		var ambient_story := str(pickup.get_meta("ambient_story_id", ""))
+		var loot_key := str(pickup.get_meta("ambient_loot_key", ""))
+		if ambient_story != "" and loot_key != "":
+			_mark_ambient_loot_collected(ambient_story, loot_key)
 	if _host != null:
 		_host.queue_redraw()
-	pickup.set_meta("picked_up", true)
 	var item_id := str(pickup.get_meta("item_id", "scrap"))
 	if _host != null and _host.has_method("_on_resource_collected"):
 		_host.call("_on_resource_collected", district_index, item_id, pickup)
@@ -791,11 +818,11 @@ func refresh_unlocked_loot(_mode_foot: bool, _current_district: int) -> void:
 func should_show_gate_npc(story_id: String) -> bool:
 	if story_id == "":
 		return false
-	if not DayTopdownRender.has_gate_npc_sprite(story_id):
+	if StoryData.is_interior_encounter(story_id):
 		return false
-	if story_id == WorldMapData.SENTINEL_STORY_ID:
-		return true
-	return not run_state.is_completed(story_id)
+	if story_id != WorldMapData.SENTINEL_STORY_ID:
+		return false
+	return DayTopdownRender.has_gate_npc_sprite(story_id)
 
 
 func get_gate_npc_anchor(district_index: int) -> Vector2:
@@ -1192,13 +1219,17 @@ func _story_apply_effect(district_index: int, effect: Dictionary) -> void:
 func _sync_ambient_loot(story_id: String, district_index: int) -> void:
 	if story_id == "" or district_index < 0:
 		return
-	for node in _unlocked_loot_nodes:
+	for node in _unlocked_loot_nodes.duplicate():
 		if not is_instance_valid(node):
 			continue
 		if int(node.get_meta("district_index", -1)) != district_index:
 			continue
-		if str(node.get_meta("ambient_story_id", "")) == story_id:
-			return
+		if str(node.get_meta("ambient_story_id", "")) != story_id:
+			continue
+		var loot_key := str(node.get_meta("ambient_loot_key", ""))
+		if loot_key != "" and _is_ambient_loot_collected(story_id, loot_key):
+			_unlocked_loot_nodes.erase(node)
+			node.queue_free()
 	var pickups := StoryData.interior_ambient_loot_pickups(story_id)
 	if pickups.is_empty():
 		return
@@ -1212,10 +1243,16 @@ func _spawn_ambient_loot(story_id: String, district_index: int, pickups: Array) 
 		return
 	map.ensure_foot_layout(district_index)
 	var foot_origin := map.get_foot_origin(district_index)
-	for pickup_var in pickups:
+	for pickup_index in range(pickups.size()):
+		var pickup_var: Variant = pickups[pickup_index]
 		if typeof(pickup_var) != TYPE_DICTIONARY:
 			continue
 		var pickup: Dictionary = pickup_var
+		var loot_key := _ambient_loot_key(story_id, pickup, pickup_index)
+		if _is_ambient_loot_collected(story_id, loot_key):
+			continue
+		if _has_active_ambient_loot_node(story_id, district_index, loot_key):
+			continue
 		var item_id := str(pickup.get("item_id", "scrap"))
 		var offset_arr: Variant = pickup.get("offset", [64, 64])
 		var offset := Vector2(64, 64)
@@ -1223,6 +1260,7 @@ func _spawn_ambient_loot(story_id: String, district_index: int, pickups: Array) 
 			offset = Vector2(float(offset_arr[0]), float(offset_arr[1]))
 		var node := _create_pickup(district_index, item_id, foot_origin + offset, "", false)
 		node.set_meta("ambient_story_id", story_id)
+		node.set_meta("ambient_loot_key", loot_key)
 		_unlocked_loot_nodes.append(node)
 
 
@@ -1383,6 +1421,53 @@ func _clear_quest_nodes() -> void:
 		if is_instance_valid(node):
 			node.queue_free()
 	_quest_nodes.clear()
+
+
+func _ambient_loot_key(story_id: String, pickup: Dictionary, index: int) -> String:
+	var offset_arr: Variant = pickup.get("offset", [])
+	if typeof(offset_arr) == TYPE_ARRAY and (offset_arr as Array).size() >= 2:
+		var arr: Array = offset_arr
+		return "%s@%d,%d" % [story_id, int(arr[0]), int(arr[1])]
+	return "%s@%d" % [story_id, index]
+
+
+func _collected_ambient_loot_keys(story_id: String) -> Array:
+	var raw: Variant = run_state.get_variable(story_id, "collected_ambient_loot", [])
+	if typeof(raw) != TYPE_ARRAY:
+		return []
+	return raw.duplicate()
+
+
+func _is_ambient_loot_collected(story_id: String, loot_key: String) -> bool:
+	if story_id == "" or loot_key == "":
+		return false
+	return _collected_ambient_loot_keys(story_id).has(loot_key)
+
+
+func _mark_ambient_loot_collected(story_id: String, loot_key: String) -> void:
+	if story_id == "" or loot_key == "":
+		return
+	var collected := _collected_ambient_loot_keys(story_id)
+	if collected.has(loot_key):
+		return
+	collected.append(loot_key)
+	run_state.set_variable(story_id, "collected_ambient_loot", collected)
+
+
+func _has_active_ambient_loot_node(story_id: String, district_index: int, loot_key: String) -> bool:
+	for node in _unlocked_loot_nodes:
+		if not is_instance_valid(node):
+			continue
+		if int(node.get_meta("district_index", -1)) != district_index:
+			continue
+		if str(node.get_meta("ambient_story_id", "")) != story_id:
+			continue
+		if str(node.get_meta("ambient_loot_key", "")) != loot_key:
+			continue
+		if bool(node.get_meta("picked_up", false)):
+			continue
+		return true
+	return false
 
 
 func _clear_unlocked_loot_nodes() -> void:

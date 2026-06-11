@@ -734,7 +734,11 @@ func _spawn_resources() -> void:
 		var cell := _map.get_cell(district_index)
 		if str(cell.get("story_id", "")) != "":
 			continue
+		_map.ensure_resource_spawn_collected_state(district_index)
 		for spawn_data in cell.get("resource_spawns", []):
+			var spawn_key := _map.resource_spawn_key(spawn_data)
+			if spawn_key != "" and _map.is_resource_spawn_collected(district_index, spawn_key):
+				continue
 			var spawn_position := Vector2.ZERO
 			var loot_id := "scrap"
 			if spawn_data is Dictionary:
@@ -745,9 +749,16 @@ func _spawn_resources() -> void:
 			var pickup := resource_scene.instantiate()
 			add_child(pickup)
 			pickup.visible = false
+			pickup.monitorable = false
+			pickup.monitoring = false
+			var collision := pickup.get_node_or_null("CollisionShape2D") as CollisionShape2D
+			if is_instance_valid(collision):
+				collision.disabled = true
 			pickup.position = _map.cell_rect(district_index).position + spawn_position
 			pickup.set_meta("district_index", district_index)
 			pickup.set_meta("item_id", loot_id)
+			if spawn_key != "":
+				pickup.set_meta("spawn_key", spawn_key)
 			if pickup.has_method("setup_loot"):
 				pickup.setup_loot(loot_id)
 			if pickup.has_signal("collected"):
@@ -1028,16 +1039,25 @@ func _try_collect_interior_pickups() -> void:
 	if _current_district_index < 0:
 		return
 	var player_world := _map.get_foot_origin(_current_district_index) + _foot_local_pos
+	var pickup_radius := 30.0
+	var best_pickup: Area2D = null
+	var best_distance := pickup_radius
 	for node in _resource_nodes:
 		if not is_instance_valid(node):
 			continue
+		if bool(node.get_meta("picked_up", false)):
+			continue
 		if int(node.get_meta("district_index", -1)) != _current_district_index:
 			continue
-		if node.global_position.distance_to(player_world) > 30.0:
+		var dist := node.global_position.distance_to(player_world)
+		if dist > pickup_radius:
 			continue
-		var loot_id := str(node.get_meta("item_id", "scrap"))
-		if node.has_signal("collected"):
-			node.collected.emit(loot_id, node)
+		if dist < best_distance:
+			best_distance = dist
+			best_pickup = node
+	if best_pickup != null and best_pickup.has_signal("collected"):
+		var loot_id := str(best_pickup.get_meta("item_id", "scrap"))
+		best_pickup.collected.emit(loot_id, best_pickup)
 	if is_instance_valid(_story_controller):
 		_story_controller.try_collect_foot_loot(_current_district_index, _foot_local_pos)
 
@@ -1673,6 +1693,8 @@ func _attempt_kunlun_terminal() -> void:
 	_request_terminal_access()
 
 func _on_resource_collected(district_index: int, item_id: String, pickup: Area2D) -> void:
+	if is_instance_valid(pickup) and bool(pickup.get_meta("picked_up", false)):
+		return
 	var loot_id := str(item_id)
 	if loot_id == "":
 		loot_id = "scrap"
@@ -1685,14 +1707,33 @@ func _on_resource_collected(district_index: int, item_id: String, pickup: Area2D
 			pickup.queue_free()
 		return
 	var skip_map := is_instance_valid(pickup) and bool(pickup.get_meta("skip_map_resource", false))
-	if not skip_map and not _map.collect_resource(district_index):
+	var spawn_key := str(pickup.get_meta("spawn_key", "")) if is_instance_valid(pickup) else ""
+	if not skip_map and spawn_key != "" and _map.is_resource_spawn_collected(district_index, spawn_key):
 		return
 	var added := _backpack.add(loot_id, 1)
+	if added <= 0:
+		return
+	if not skip_map:
+		if spawn_key != "":
+			if not _map.mark_resource_spawn_collected(district_index, spawn_key):
+				return
+		elif not _map.collect_resource(district_index):
+			return
 	if added > 0:
 		_refresh_ui()
 		_refresh_backpack_if_open()
 		if _mode == TravelMode.FOOT:
 			_mark_overworld_dirty()
+	if is_instance_valid(pickup):
+		if skip_map:
+			pickup.queue_free()
+		else:
+			pickup.set_meta("picked_up", true)
+			pickup.visible = false
+			var pickup_label := pickup.get_node_or_null("Label") as Label
+			if is_instance_valid(pickup_label):
+				pickup_label.visible = false
+			_refresh_resource_pickups()
 
 
 func _refresh_backpack_if_open() -> void:
@@ -2765,11 +2806,10 @@ func _refresh_resource_pickups() -> void:
 		if not is_instance_valid(node) or not node.has_meta("district_index"):
 			continue
 		var district_index := int(node.get_meta("district_index"))
-		var remaining := _map.sector_resource_remaining(district_index)
 		var show_map_loot := (
 			_mode == TravelMode.FOOT
 			and district_index == _current_district_index
-			and remaining > 0
+			and not bool(node.get_meta("picked_up", false))
 			and not (
 				is_instance_valid(_story_controller)
 				and _story_controller.should_hide_map_loot(district_index)
@@ -4396,6 +4436,8 @@ func _draw_foot_interior_static_layer(canvas: CanvasItem, district_index: int, p
 	_draw_interior_building_label(panel, _map.building_label(district_index))
 	if story_id == "furnace_qc":
 		DayTopdownRender.draw_furnace_machine(canvas, panel, true)
+	elif story_id == "chronicler_04":
+		DayTopdownRender.draw_chronicler_archive(canvas, panel, true)
 	elif story_id == "staff_officer_07":
 		DayTopdownRender.draw_tactical_hologram(canvas, panel, true)
 	elif story_id == "ad_1_radar":
@@ -4501,9 +4543,9 @@ func _draw_foot_interior() -> void:
 		for node in _resource_nodes:
 			if not is_instance_valid(node):
 				continue
-			if int(node.get_meta("district_index", -1)) != _current_district_index:
+			if bool(node.get_meta("picked_up", false)):
 				continue
-			if _map.sector_resource_remaining(_current_district_index) <= 0:
+			if int(node.get_meta("district_index", -1)) != _current_district_index:
 				continue
 			var loot_local := node.global_position - foot_origin
 			var loot_panel := _foot_local_to_panel(loot_local, _current_district_index)

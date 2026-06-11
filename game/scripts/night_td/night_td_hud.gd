@@ -27,7 +27,7 @@ var _tower_card_data := {
 	"trap":    {"icon": "▲", "name": "电磁陷阱", "color": "#e87840"},
 	"cryo_beacon": {"icon": "❄", "name": "低温信标", "color": "#83d8ff"},
 	"hacker":  {"icon": "⌁", "name": "入侵天线", "color": "#5ac8e0"},
-	"sniper":  {"icon": "◎", "name": "狙击信标", "color": "#7aa6ff"},
+	"sniper":  {"icon": "◎", "name": "炮塔", "color": "#7aa6ff"},
 	"splash":  {"icon": "❖", "name": "电弧塔",   "color": "#e0a23a"},
 }
 

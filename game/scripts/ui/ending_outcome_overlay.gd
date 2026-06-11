@@ -4,7 +4,7 @@ const SciFiFramePanelScript = preload("res://scripts/ui/sci_fi_frame_panel.gd")
 
 signal closed
 
-enum Mode { CREDITS, FAKE_SUCCESS, MESSAGE_ONLY_EPILOGUE }
+enum Mode { CREDITS, FAKE_SUCCESS, ARCHIVE_ONLY_EPILOGUE }
 
 var _mode: int = Mode.CREDITS
 var _dim: ColorRect
@@ -116,7 +116,7 @@ func show_outcome(choice_id: String, _run_layer: int, _day_index: int = 1) -> vo
 		"stop_signal":
 			_enter_credits()
 		"message_only":
-			_enter_message_only_epilogue()
+			_enter_archive_only_epilogue()
 		"fake_success":
 			_enter_fake_success()
 		_:
@@ -174,9 +174,9 @@ func _enter_fake_success() -> void:
 	_primary_btn.text = "返回主菜单"
 
 
-func _enter_message_only_epilogue() -> void:
-	_mode = Mode.MESSAGE_ONLY_EPILOGUE
-	_title.text = "只留言，不发停机"
+func _enter_archive_only_epilogue() -> void:
+	_mode = Mode.ARCHIVE_ONLY_EPILOGUE
+	_title.text = "仅归档 · 循环继续"
 	_section_label.visible = true
 	_credits_scroll.visible = false
 	_body.visible = true

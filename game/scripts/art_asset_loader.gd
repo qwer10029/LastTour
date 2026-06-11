@@ -72,6 +72,73 @@ static func texture_has_visible_pixels(tex: Texture2D, min_alpha: float = 0.02) 
 	return _image_has_visible_pixels(img, min_alpha)
 
 
+static func _is_outline_barrier(c: Color) -> bool:
+	if c.a <= 0.0:
+		return false
+	return c.r <= 0.095 and c.g <= 0.095 and c.b <= 0.095
+
+
+static func _collect_edge_reference_colors(img: Image) -> Array:
+	var w := img.get_width()
+	var h := img.get_height()
+	var refs: Array = []
+	var seen: Dictionary = {}
+	var points: Array[Vector2i] = [
+		Vector2i(0, 0),
+		Vector2i(w - 1, 0),
+		Vector2i(0, h - 1),
+		Vector2i(w - 1, h - 1),
+		Vector2i(w >> 1, 0),
+		Vector2i(w >> 1, h - 1),
+		Vector2i(0, h >> 1),
+		Vector2i(w - 1, h >> 1),
+	]
+	for p in points:
+		if p.x < 0 or p.y < 0 or p.x >= w or p.y >= h:
+			continue
+		var c := img.get_pixel(p.x, p.y)
+		if c.a <= 0.0 or _is_outline_barrier(c):
+			continue
+		var key := "%d_%d_%d" % [int(round(c.r * 255.0)), int(round(c.g * 255.0)), int(round(c.b * 255.0))]
+		if seen.has(key):
+			continue
+		seen[key] = true
+		refs.append(c)
+	return refs
+
+
+static func _refs_include_dark_background(refs: Array) -> bool:
+	for ref in refs:
+		var c: Color = ref
+		if c.r <= 0.08 and c.g <= 0.08 and c.b <= 0.08:
+			return true
+	return false
+
+
+static func _pixel_matches_background_like(c: Color, refs: Array, tolerance: float) -> bool:
+	if c.a <= 0.0 or _is_outline_barrier(c):
+		return false
+	if c.r >= 0.93 and c.g >= 0.93 and c.b >= 0.93:
+		return true
+	if _refs_include_dark_background(refs) and c.r <= 0.06 and c.g <= 0.06 and c.b <= 0.06:
+		for ref in refs:
+			if ref.r <= 0.08 and ref.g <= 0.08 and ref.b <= 0.08 and _color_near(c, ref, tolerance + 0.03):
+				return true
+	for ref in refs:
+		if _color_near(c, ref, tolerance):
+			return true
+	var max_c := maxf(c.r, maxf(c.g, c.b))
+	var min_c := minf(c.r, minf(c.g, c.b))
+	if max_c - min_c > 0.08:
+		return false
+	var lum := (c.r + c.g + c.b) / 3.0
+	for ref in refs:
+		var ref_lum: float = (ref.r + ref.g + ref.b) / 3.0
+		if absf(lum - ref_lum) <= tolerance + 0.12:
+			return true
+	return false
+
+
 static func _pixel_should_key_road_background(c: Color) -> bool:
 	if c.a <= 0.0:
 		return false
@@ -90,6 +157,23 @@ static func _pixel_should_key_road_background(c: Color) -> bool:
 	if neutral and saturation <= 0.06 and luminance <= 0.19:
 		return true
 	# 浅蓝灰棋盘格（雪路派生图常见）
+	if c.b >= 0.78 and c.r >= 0.68 and c.g >= 0.68 and (c.b - c.r) >= 0.03 and (c.b - c.g) >= 0.03:
+		return true
+	return false
+
+
+static func _pixel_should_key_light_background(c: Color) -> bool:
+	if c.a <= 0.0:
+		return false
+	if c.r >= 0.92 and c.g >= 0.92 and c.b >= 0.92:
+		return true
+	var max_c := maxf(c.r, maxf(c.g, c.b))
+	var min_c := minf(c.r, minf(c.g, c.b))
+	var luminance := (c.r + c.g + c.b) / 3.0
+	var saturation := max_c - min_c
+	var neutral := absf(c.r - c.g) <= 0.035 and absf(c.g - c.b) <= 0.035
+	if neutral and saturation <= 0.06 and luminance >= 0.32:
+		return true
 	if c.b >= 0.78 and c.r >= 0.68 and c.g >= 0.68 and (c.b - c.r) >= 0.03 and (c.b - c.g) >= 0.03:
 		return true
 	return false
@@ -175,6 +259,83 @@ static func apply_sampled_background_key(tex: Texture2D, tolerance: float = 0.05
 				changed = true
 	if not changed:
 		return tex
+	return ImageTexture.create_from_image(img)
+
+
+static func apply_light_background_key(tex: Texture2D) -> Texture2D:
+	if tex == null:
+		return null
+	var img := tex.get_image()
+	if img == null or img.is_empty():
+		return tex
+	if img.get_format() != Image.FORMAT_RGBA8:
+		img = img.duplicate()
+		img.convert(Image.FORMAT_RGBA8)
+	else:
+		img = img.duplicate()
+	var changed := false
+	for y in range(img.get_height()):
+		for x in range(img.get_width()):
+			var c := img.get_pixel(x, y)
+			if not _pixel_should_key_light_background(c):
+				continue
+			c.a = 0.0
+			img.set_pixel(x, y, c)
+			changed = true
+	if not changed:
+		return tex
+	return ImageTexture.create_from_image(img)
+
+
+## 像素精灵保守去底：仅洪泛与边缘相连的背景，黑色描边作隔离，避免误抠履带/深灰部件。
+static func apply_outlined_background_key(tex: Texture2D, tolerance: float = 0.045) -> Texture2D:
+	if tex == null:
+		return null
+	var img := tex.get_image()
+	if img == null or img.is_empty():
+		return tex
+	if img.get_format() != Image.FORMAT_RGBA8:
+		img = img.duplicate()
+		img.convert(Image.FORMAT_RGBA8)
+	else:
+		img = img.duplicate()
+	var refs := _collect_edge_reference_colors(img)
+	if refs.is_empty():
+		return tex
+	var w := img.get_width()
+	var h := img.get_height()
+	var visited := PackedByteArray()
+	visited.resize(w * h)
+	var queue: Array[Vector2i] = []
+
+	var try_seed := func(pos: Vector2i) -> void:
+		if pos.x < 0 or pos.y < 0 or pos.x >= w or pos.y >= h:
+			return
+		var idx := pos.y * w + pos.x
+		if visited[idx] != 0:
+			return
+		var c := img.get_pixel(pos.x, pos.y)
+		if not _pixel_matches_background_like(c, refs, tolerance):
+			return
+		visited[idx] = 1
+		queue.append(pos)
+
+	for x in range(w):
+		try_seed.call(Vector2i(x, 0))
+		try_seed.call(Vector2i(x, h - 1))
+	for y in range(h):
+		try_seed.call(Vector2i(0, y))
+		try_seed.call(Vector2i(w - 1, y))
+
+	var dirs := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+	while not queue.is_empty():
+		var pos: Vector2i = queue.pop_front()
+		var c := img.get_pixel(pos.x, pos.y)
+		c.a = 0.0
+		img.set_pixel(pos.x, pos.y, c)
+		for dir in dirs:
+			try_seed.call(pos + dir)
+
 	return ImageTexture.create_from_image(img)
 
 
@@ -264,44 +425,113 @@ static func harden_alpha_texture(tex: Texture2D, cutoff: float = 0.5) -> Texture
 	return ImageTexture.create_from_image(img)
 
 
-static func load_texture_icon_alpha_key(
+static func load_texture_loot_alpha_key(
 	preferred_path: String,
-	tolerance: float = 0.055,
 	fallback_path: String = "",
+	tolerance: float = 0.04,
 ) -> Texture2D:
-	var cache_key := "icon|%s|%.3f|%s" % [preferred_path, tolerance, fallback_path]
+	var cache_key := "loot_v2|%s|%.3f|%s" % [preferred_path, tolerance, fallback_path]
 	if _alpha_key_cache.has(cache_key):
 		return _alpha_key_cache[cache_key]
-	var tex := load_texture(preferred_path, fallback_path)
-	if tex == null:
+	var img := load_image_from_disk(preferred_path)
+	if img == null and fallback_path != "":
+		img = load_image_from_disk(fallback_path)
+	if img == null:
 		_alpha_key_cache[cache_key] = null
 		return null
-	tex = apply_flood_background_key(tex, tolerance)
-	_alpha_key_cache[cache_key] = tex
-	return tex
+	if img.get_format() != Image.FORMAT_RGBA8:
+		img = img.duplicate()
+		img.convert(Image.FORMAT_RGBA8)
+	if image_uses_alpha_channel(img):
+		var ready := ImageTexture.create_from_image(img)
+		_alpha_key_cache[cache_key] = ready
+		return ready
+	var tex := ImageTexture.create_from_image(img)
+	var keyed := apply_outlined_background_key(tex, tolerance)
+	if not texture_has_visible_pixels(keyed):
+		keyed = apply_flood_background_key(tex, tolerance)
+	if not texture_has_visible_pixels(keyed):
+		keyed = tex
+	_alpha_key_cache[cache_key] = keyed
+	return keyed
 
 
-## 角色精灵：边缘洪泛 + 棋盘格/灰底去除（AI 导出图常见假透明）。
+static func load_texture_icon_alpha_key(
+	preferred_path: String,
+	tolerance: float = 0.04,
+	fallback_path: String = "",
+) -> Texture2D:
+	return load_texture_loot_alpha_key(preferred_path, fallback_path, tolerance)
+
+
+## 角色精灵：描边隔离洪泛 + 仅去亮底残留（不去深灰履带/阴影）。
 static func load_texture_sprite_alpha_key(
 	preferred_path: String,
 	_threshold: float = 0.12,
 	fallback_path: String = "",
 ) -> Texture2D:
-	var cache_key := "sprite_v3|%s|%s" % [preferred_path, fallback_path]
+	var cache_key := "sprite_v4|%s|%s" % [preferred_path, fallback_path]
 	if _alpha_key_cache.has(cache_key):
 		return _alpha_key_cache[cache_key]
-	var tex := load_texture(preferred_path, fallback_path)
-	if tex == null:
+	var img := load_image_from_disk(preferred_path)
+	if img == null and fallback_path != "":
+		img = load_image_from_disk(fallback_path)
+	if img == null:
 		_alpha_key_cache[cache_key] = null
 		return null
-	var keyed := apply_flood_background_key(tex)
-	keyed = apply_road_background_key(keyed)
+	if img.get_format() != Image.FORMAT_RGBA8:
+		img = img.duplicate()
+		img.convert(Image.FORMAT_RGBA8)
+	if image_uses_alpha_channel(img):
+		var ready := ImageTexture.create_from_image(img)
+		_alpha_key_cache[cache_key] = ready
+		return ready
+	var tex := ImageTexture.create_from_image(img)
+	var keyed := apply_outlined_background_key(tex, 0.045)
+	keyed = apply_light_background_key(keyed)
 	if not texture_has_visible_pixels(keyed):
-		keyed = apply_road_background_key(tex)
+		keyed = apply_outlined_background_key(tex, 0.035)
 	if not texture_has_visible_pixels(keyed):
-		keyed = apply_sampled_background_key(tex)
+		keyed = apply_flood_background_key(tex, 0.05)
 	if not texture_has_visible_pixels(keyed):
 		keyed = tex
+	_alpha_key_cache[cache_key] = keyed
+	return keyed
+
+
+## Boss / 黑底 JPEG：低容差洪泛 + 黑底兜底 + alpha 硬化。
+static func load_texture_boss_alpha_key(
+	preferred_path: String,
+	fallback_path: String = "",
+	flood_tolerance: float = 0.05,
+	black_threshold: float = 0.08,
+) -> Texture2D:
+	var cache_key := "boss_v2|%s|%.3f|%.3f|%s" % [
+		preferred_path, flood_tolerance, black_threshold, fallback_path
+	]
+	if _alpha_key_cache.has(cache_key):
+		return _alpha_key_cache[cache_key]
+	var img := load_image_from_disk(preferred_path)
+	if img == null and fallback_path != "":
+		img = load_image_from_disk(fallback_path)
+	if img == null:
+		_alpha_key_cache[cache_key] = null
+		return null
+	if img.get_format() != Image.FORMAT_RGBA8:
+		img = img.duplicate()
+		img.convert(Image.FORMAT_RGBA8)
+	if image_uses_alpha_channel(img):
+		var ready := ImageTexture.create_from_image(img)
+		_alpha_key_cache[cache_key] = ready
+		return ready
+	var tex := ImageTexture.create_from_image(img)
+	var keyed := apply_flood_background_key(tex, flood_tolerance)
+	if not texture_has_visible_pixels(keyed):
+		keyed = apply_black_alpha_key(tex, black_threshold)
+	if not texture_has_visible_pixels(keyed):
+		_alpha_key_cache[cache_key] = tex
+		return tex
+	keyed = harden_alpha_texture(keyed, 0.5)
 	_alpha_key_cache[cache_key] = keyed
 	return keyed
 

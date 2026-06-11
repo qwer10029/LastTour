@@ -236,10 +236,12 @@ func _set_terminal_body(raw: String) -> void:
 func _refresh_log_history() -> void:
 	if not is_instance_valid(_log_history):
 		return
-	var intel := "> 情报收集：%d / %d" % [
+	var intel := "> 关键情报：%d / %d" % [
 		MetaManager.encounters_unlocked_count(),
 		MetaManager.required_encounter_count(),
 	]
+	if MetaManager.has_all_truth_encounters():
+		intel += "\n> 四条指定关键情报已集齐，隐藏结局已解锁。"
 	_log_history.text = "%s\n\n%s\n\n%s" % [
 		intel,
 		MetaManager.format_current_run_preview(_run_journal_entries, 8),
@@ -250,8 +252,12 @@ func _refresh_log_history() -> void:
 func _perform_upload() -> void:
 	if _upload_done:
 		return
-	MetaManager.upload_run_journal(_run_journal_entries, _run_layer, _day_index)
-	MetaManager.save_meta()
+	if not MetaManager.upload_run_journal(_run_journal_entries, _run_layer, _day_index):
+		_body_label.text = HudTheme.format_terminal_log(
+			"> 本局未记录任何遭遇日记，终端未生成新的上传批次。"
+		)
+	else:
+		MetaManager.save_meta()
 	_upload_done = true
 
 

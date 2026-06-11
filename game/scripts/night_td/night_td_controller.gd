@@ -819,10 +819,15 @@ func _update_towers(delta: float) -> void:
 		var scale := float(tower.get("power_scale", 1.0))
 		if scale <= 0.05:
 			continue  # 断电塔停摆（其威胁场也已归零 → 敌人会重新涌入）
+		var target: int = _find_enemy_in_range(tower["world_pos"], range_px)
+		if target >= 0:
+			var aim_enemy: Dictionary = _enemies[target]
+			var to_target: Vector2 = (aim_enemy["pos"] as Vector2) - (tower["world_pos"] as Vector2)
+			if to_target.length_squared() > 0.0001:
+				tower["face_dir"] = to_target.normalized()
 		tower["cooldown"] = maxf(float(tower["cooldown"]) - delta, 0.0)
 		if float(tower["cooldown"]) > 0.0:
 			continue
-		var target: int = _find_enemy_in_range(tower["world_pos"], range_px)
 		if target < 0:
 			continue
 		var enemy: Dictionary = _enemies[target]

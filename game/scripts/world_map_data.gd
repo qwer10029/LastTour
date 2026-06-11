@@ -482,6 +482,81 @@ func explored_count() -> int:
 			total += 1
 	return total
 
+func resource_spawn_key(spawn: Variant) -> String:
+	if spawn is Dictionary:
+		return "%.1f,%.1f" % [float(spawn.get("x", 0.0)), float(spawn.get("y", 0.0))]
+	if spawn is Vector2:
+		var pos: Vector2 = spawn
+		return "%.1f,%.1f" % [pos.x, pos.y]
+	return ""
+
+
+func collected_resource_spawn_keys(index: int) -> Array:
+	if not is_valid_index(index):
+		return []
+	var raw: Variant = cells[index].get("collected_resource_spawns", [])
+	if typeof(raw) != TYPE_ARRAY:
+		return []
+	return raw.duplicate()
+
+
+func is_resource_spawn_collected(index: int, key: String) -> bool:
+	if key == "":
+		return false
+	return collected_resource_spawn_keys(index).has(key)
+
+
+func ensure_resource_spawn_collected_state(index: int) -> void:
+	if not is_valid_index(index):
+		return
+	var collected := collected_resource_spawn_keys(index)
+	if not collected.is_empty():
+		_sync_resource_remaining(index)
+		return
+	var total := int(cells[index].get("resource_total", 0))
+	var remaining := int(cells[index].get("resource_remaining", 0))
+	if total <= 0 or remaining >= total:
+		return
+	var spawns: Variant = cells[index].get("resource_spawns", [])
+	if typeof(spawns) != TYPE_ARRAY:
+		return
+	var to_mark := total - remaining
+	for i in range(mini(to_mark, (spawns as Array).size())):
+		var key := resource_spawn_key((spawns as Array)[i])
+		if key != "" and not collected.has(key):
+			collected.append(key)
+	cells[index]["collected_resource_spawns"] = collected
+	_sync_resource_remaining(index)
+
+
+func mark_resource_spawn_collected(index: int, key: String) -> bool:
+	if not is_valid_index(index) or key == "":
+		return false
+	if is_resource_spawn_collected(index, key):
+		return false
+	var collected := collected_resource_spawn_keys(index)
+	collected.append(key)
+	cells[index]["collected_resource_spawns"] = collected
+	_sync_resource_remaining(index)
+	return true
+
+
+func _sync_resource_remaining(index: int) -> void:
+	if not is_valid_index(index):
+		return
+	var spawns: Variant = cells[index].get("resource_spawns", [])
+	if typeof(spawns) != TYPE_ARRAY:
+		cells[index]["resource_remaining"] = 0
+		return
+	var collected := collected_resource_spawn_keys(index)
+	var uncollected := 0
+	for spawn_var in spawns as Array:
+		var key := resource_spawn_key(spawn_var)
+		if key == "" or not collected.has(key):
+			uncollected += 1
+	cells[index]["resource_remaining"] = uncollected
+
+
 func collect_resource(index: int) -> bool:
 	if not is_valid_index(index):
 		return false
@@ -589,6 +664,7 @@ func _create_empty_cell(coord: Vector2i) -> Dictionary:
 		"resource_total": 0,
 		"resource_remaining": 0,
 		"resource_spawns": [],
+		"collected_resource_spawns": [],
 		"foot_grid_cols": 0,
 		"foot_grid_rows": 0,
 		"foot_blocked": [],
@@ -1758,6 +1834,7 @@ func _serialize_cell(cell: Dictionary) -> Dictionary:
 		"resource_total": int(cell.get("resource_total", 0)),
 		"resource_remaining": int(cell.get("resource_remaining", 0)),
 		"resource_spawns": spawns,
+		"collected_resource_spawns": _serialize_string_array(cell.get("collected_resource_spawns", [])),
 		"foot_grid_cols": int(cell.get("foot_grid_cols", 0)),
 		"foot_grid_rows": int(cell.get("foot_grid_rows", 0)),
 		"foot_blocked": _serialize_foot_blocked(cell.get("foot_blocked", [])),
@@ -1776,6 +1853,28 @@ func _serialize_cell(cell: Dictionary) -> Dictionary:
 		"tactical_label": str(cell.get("tactical_label", "")),
 		"tactical_source": str(cell.get("tactical_source", "")),
 	}
+
+
+func _serialize_string_array(raw: Variant) -> Array:
+	var result: Array = []
+	if typeof(raw) != TYPE_ARRAY:
+		return result
+	for entry in raw:
+		var key := str(entry)
+		if key != "":
+			result.append(key)
+	return result
+
+
+func _deserialize_string_array(raw: Variant) -> Array:
+	var result: Array = []
+	if typeof(raw) != TYPE_ARRAY:
+		return result
+	for entry in raw:
+		var key := str(entry)
+		if key != "" and not result.has(key):
+			result.append(key)
+	return result
 
 
 func _serialize_terrain_props(raw_list: Array) -> Array:
@@ -1830,6 +1929,7 @@ func _deserialize_cell(data: Dictionary) -> Dictionary:
 		"resource_total": int(data.get("resource_total", 0)),
 		"resource_remaining": int(data.get("resource_remaining", 0)),
 		"resource_spawns": spawns,
+		"collected_resource_spawns": _deserialize_string_array(data.get("collected_resource_spawns", [])),
 		"foot_grid_cols": int(data.get("foot_grid_cols", 0)),
 		"foot_grid_rows": int(data.get("foot_grid_rows", 0)),
 		"foot_blocked": _deserialize_foot_blocked(data.get("foot_blocked", [])),

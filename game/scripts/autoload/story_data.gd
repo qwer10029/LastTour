@@ -4,6 +4,7 @@ const DATA_PATH := "res://data/stories.json"
 
 var _stories: Dictionary = {}
 var _required_truth: Array[String] = []
+var _required_truth_stories: Array[String] = []
 
 
 func _ready() -> void:
@@ -13,6 +14,7 @@ func _ready() -> void:
 func _load() -> void:
 	_stories.clear()
 	_required_truth.clear()
+	_required_truth_stories.clear()
 	if not FileAccess.file_exists(DATA_PATH):
 		return
 	var file := FileAccess.open(DATA_PATH, FileAccess.READ)
@@ -23,6 +25,10 @@ func _load() -> void:
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return
 	var data: Dictionary = parsed
+	for raw_id in data.get("required_stories_for_truth", []):
+		var story_id := str(raw_id)
+		if story_id != "":
+			_required_truth_stories.append(story_id)
 	for raw_id in data.get("required_for_truth", []):
 		var id := str(raw_id)
 		if id != "":
@@ -39,6 +45,8 @@ func _load() -> void:
 
 
 func _rebuild_journal_index() -> void:
+	if JournalData.has_method("configure_truth_stories"):
+		JournalData.configure_truth_stories(_required_truth_stories)
 	if JournalData.has_method("rebuild_from_stories"):
 		JournalData.rebuild_from_stories(_stories, _required_truth)
 	if JournalData.has_method("ensure_legacy_loaded"):
@@ -221,6 +229,10 @@ func journal_for_encounter(encounter_id: String) -> Dictionary:
 	}
 
 
+func required_truth_story_ids() -> Array[String]:
+	return _required_truth_stories.duplicate()
+
+
 func required_truth_ids() -> Array[String]:
 	return _required_truth.duplicate()
 
@@ -229,6 +241,7 @@ func _clear_district_map_loot(cell: Dictionary) -> void:
 	cell["resource_total"] = 0
 	cell["resource_remaining"] = 0
 	cell["resource_spawns"] = []
+	cell["collected_resource_spawns"] = []
 
 
 func is_interior_encounter(story_id: String) -> bool:

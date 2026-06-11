@@ -92,16 +92,217 @@ Lumina 建议参数（可按你习惯微调）：
 物品	提示词摘要
 哨兵电池
 64x64 … chunky battery … green stripe … cyan #9ef0ff
-编史者存储模块
-64x64 … purple cartridge #b8a0e8 … gold pin dots
+编史者存储模块 · quest:chronicler_memory
+路径建议：game/assets/sprites/loot/quest_chronicler_memory.png
+
+64x64 simple pixel game item icon, chunky military memory cartridge for archive robot quest loot, short rectangular cartridge body purple-gray #b8a0e8, one darker purple end cap block #8a78b0, three small gold contact pin dots #d8b858 on bottom edge as thick squares not fine pins, faint yellow tape strip blob on one side #d8c878, dark thick outline, 2-tone flat shading, post-apocalyptic quest loot, transparent background, no text no labels no readable chip numbers no fine circuits no realistic metal
 熔炉昆仑基因片
 64x64 … cracked chip … red warning dot … DNA zigzag thick line
 参谋回响附件
 64x64 … blue file tab #88c8f0 … thick X seal blob
-雷达电机组件
-64x64 … olive motor #8a9868 … copper ring stub
+雷达电机组件 · quest:radar_motor
+路径建议：game/assets/sprites/loot/quest_radar_motor.png
+
+64x64 simple pixel game item icon, chunky short cylindrical electric motor for radar bunker repair, olive drab military casing #8a9868, one copper ring stub on top as thick orange-brown donut blob #c87848, dark shadow block on one side, dark thick outline, 2-tone flat shading, post-apocalyptic quest loot, transparent background, no text no labels no fine wires no screw detail
 玛丽安基因情报
 64x64 … slim data chip … pale pink-gray #d8b8c8 … simple clone ID bars not readable text
 雷霆装甲板
 64x64 … three stacked armor plate rectangles … scarlet scratch mark … dark outline
 完整 64×64 英文句若需要，我可以按 game/data/dialogues 里每个 reward 节点再补一版表格。
+
+---
+
+## 8. 夜战塔防单位 · 严格 90° 俯视角（Top-down）
+
+**统一规范（每条末尾已含，勿重复加精细/写实/8K）：**
+
+- 视角：`strict 90 degree top-down view, bird eye, no isometric, no perspective tilt, no side view`
+- 风格：对标 `player_foot` / `quest_battery` — Q 版像素、粗轮廓、大块造型、低饱和末世色
+- 背景：`transparent background`
+- Negative：`realistic, 3D render, metal gloss, complex texture, fine mechanical detail, gradient glow, high resolution illustration, anime cel shading, readable text, labels, watermark, logo, background scene clutter, photorealistic, isometric, diagonal view`
+
+**路径建议根目录：**
+
+- 敌人：`game/assets/sprites/night_td/enemies/`
+- 防御塔：`game/assets/sprites/night_td/towers/`
+
+### 8A. 敌人 · enemies（`game/data/night_td/enemy_defs.json`）
+
+| ID | 中文名 | 尺寸 | 主色 |
+|----|--------|------|------|
+| drone | 巡逻无人机 | 64×64 | #9ec9ff |
+| scout | 回收侦察机 | 64×64 | #ff7b6b |
+| swarm | 集群微型机 | 48×48 | #b8e86a |
+| heavy | 重装破障机 | 80×80 | #c97bff |
+| shepherd | 牧羊者指挥机 | 72×72 | #ffd24a |
+| armored | 装甲清道机 | 72×72 | #b0b0c0 |
+| saboteur | 破障突击机 | 64×64 | #ff9a3c |
+| sprinter | 高速突破机 | 48×48 | #7df9ff |
+| tank | 重型攻坚机 | 96×96 | #ff4444 |
+| repair_mender | 修复中继机 | 64×64 | #64dca0 |
+| terminal_overseer | 终端监管者 | 128×128 | #ff3658 |
+| thunder_leiting | 不败之盾-雷霆 | — | 已有 walk 图，勿重出 |
+
+**1. 巡逻无人机 · drone**
+
+路径：`game/assets/sprites/night_td/enemies/enemy_drone.png`
+
+```
+64x64 top-down 2D game sprite, small blocky patrol drone, flat quadcopter cross shape with four short rotor stubs, pale blue-gray body #9ec9ff, one dim scanner dot on nose, dark thick outline, 2-tone flat pixel shading, strict 90 degree top-down view bird eye no isometric no perspective tilt, transparent background, post-apocalyptic cleanup robot mood, no text no labels no rotor blur
+```
+
+**2. 回收侦察机 · scout**
+
+路径：`game/assets/sprites/night_td/enemies/enemy_scout.png`
+
+```
+64x64 top-down 2D game sprite, medium recon drone, arrowhead triangle hull pointing forward, coral-red casing #ff7b6b, single camera lens blob on front tip, dark thick outline, 2-tone flat pixel shading, strict 90 degree top-down view bird eye no isometric no perspective tilt, transparent background, post-apocalyptic scavenger robot mood, no text no labels
+```
+
+**3. 集群微型机 · swarm**
+
+路径：`game/assets/sprites/night_td/enemies/enemy_swarm.png`
+
+```
+48x48 top-down 2D game sprite, tiny micro drone, round pill body with two micro wing nubs, yellow-green #b8e86a, smallest unit silhouette, dark thick outline, 2-tone flat pixel shading, strict 90 degree top-down view bird eye no isometric no perspective tilt, transparent background, post-apocalyptic swarm bot mood, no text no labels
+```
+
+**4. 重装破障机 · heavy**
+
+路径：`game/assets/sprites/night_td/enemies/enemy_heavy.png`
+
+```
+80x80 top-down 2D game sprite, bulky breacher robot, wide rectangular chassis with front bulldozer wedge block, purple-gray armor #c97bff, two thick tread tracks as dark side strips, dark thick outline, 2-tone flat pixel shading, strict 90 degree top-down view bird eye no isometric no perspective tilt, transparent background, post-apocalyptic heavy demolition unit mood, no text no labels no hydraulic detail
+```
+
+**5. 牧羊者指挥机 · shepherd**
+
+路径：`game/assets/sprites/night_td/enemies/enemy_shepherd.png`
+
+```
+72x72 top-down 2D game sprite, command shepherd drone, diamond-shaped core with four short antenna spikes, golden yellow #ffd24a, faint outer ring hint as thin lighter halo blob not glow, dark thick outline, 2-tone flat pixel shading, strict 90 degree top-down view bird eye no isometric no perspective tilt, transparent background, post-apocalyptic commander bot mood, no text no labels
+```
+
+**6. 装甲清道机 · armored**
+
+路径：`game/assets/sprites/night_td/enemies/enemy_armored.png`
+
+```
+72x72 top-down 2D game sprite, armored sweeper robot, octagonal armored plate body, cool silver-gray #b0b0c0, darker center seam cross, short front plow notch, dark thick outline, 2-tone flat pixel shading, strict 90 degree top-down view bird eye no isometric no perspective tilt, transparent background, post-apocalyptic armored cleaner mood, no text no labels
+```
+
+**7. 破障突击机 · saboteur**
+
+路径：`game/assets/sprites/night_td/enemies/enemy_saboteur.png`
+
+```
+64x64 top-down 2D game sprite, fast saboteur drone, sleek teardrop body tapered forward, orange #ff9a3c, one bright impact tip wedge on front, dark thick outline, 2-tone flat pixel shading, strict 90 degree top-down view bird eye no isometric no perspective tilt, transparent background, post-apocalyptic assault bot mood, no text no labels
+```
+
+**8. 高速突破机 · sprinter**
+
+路径：`game/assets/sprites/night_td/enemies/enemy_sprinter.png`
+
+```
+48x48 top-down 2D game sprite, ultra small speed drone, thin needle capsule, cyan #7df9ff, motion implied by long narrow shape only not blur trails, dark thick outline, 2-tone flat pixel shading, strict 90 degree top-down view bird eye no isometric no perspective tilt, transparent background, post-apocalyptic sprinter bot mood, no text no labels
+```
+
+**9. 重型攻坚机 · tank**
+
+路径：`game/assets/sprites/night_td/enemies/enemy_tank.png`
+
+```
+96x96 top-down 2D game sprite, heavy siege crawler, chunky tank silhouette from above, dark red armor #ff4444, central turret block as small square, four corner leg pads, dark thick outline, 2-tone flat pixel shading, strict 90 degree top-down view bird eye no isometric no perspective tilt, transparent background, post-apocalyptic siege machine mood, no text no labels no gun barrel detail
+```
+
+**10. 修复中继机 · repair_mender**
+
+路径：`game/assets/sprites/night_td/enemies/enemy_repair_mender.png`
+
+```
+64x64 top-down 2D game sprite, repair relay drone, round medic hub body, mint green #64dca0, white cross hint as two thick rectangles not readable symbol text, small side tool arm stub, dark thick outline, 2-tone flat pixel shading, strict 90 degree top-down view bird eye no isometric no perspective tilt, transparent background, post-apocalyptic repair bot mood, no text no labels
+```
+
+**11. 终端监管者 · terminal_overseer**
+
+路径：`game/assets/sprites/night_td/enemies/enemy_terminal_overseer.png`
+
+```
+128x128 top-down 2D game sprite, massive terminal overseer boss, wide hex platform base, crimson core #ff3658, four corner sensor pylons as thick L-blocks, central red eye panel as one bright rectangle, dark thick outline, 2-tone flat pixel shading, strict 90 degree top-down view bird eye no isometric no perspective tilt, transparent background, post-apocalyptic kunlun terminal guardian mood, no text no labels no fine circuitry
+```
+
+**12. 不败之盾-雷霆 · thunder_leiting**
+
+状态：夜战已有 `npc_thunder_leiting_walk.png` 四帧行走图，勿重新生成。若需纯俯视角 TD 专用版：
+
+```
+128x128 top-down 2D game sprite, six-legged heavy tank boss seen from directly above, dark olive-gray armor #4a4a52, scarlet optical lens dot #ff3040, six thick leg pads around hull, dark thick outline, 2-tone flat pixel shading, strict 90 degree top-down view bird eye no isometric no perspective tilt, transparent background, no text no labels
+```
+
+### 8B. 防御塔 · towers（`game/data/night_td/tower_defs.json`）
+
+| ID | 中文名 | 尺寸 | 主色 |
+|----|--------|------|------|
+| jammer | 干扰信标 | 64×64 | #6ed08b |
+| barrier | 物理路障 | 64×64 | #9e8564 |
+| trap | 电磁陷阱 | 64×64 | #e87840 |
+| cryo_beacon | 低温信标 | 64×64 | #83d8ff |
+| hacker | 入侵天线 | 64×64 | #5ac8e0 |
+| sniper | 狙击信标 | 64×64 | #7aa6ff |
+| splash | 电弧塔 | 64×64 | #e0a23a |
+
+**1. 干扰信标 · jammer**
+
+路径：`game/assets/sprites/night_td/towers/tower_jammer.png`
+
+```
+64x64 top-down 2D game sprite, jammer beacon turret, small circular base with vertical dish antenna as half-circle bump on top, green #6ed08b, one horizontal emitter bar across top, dark thick outline, 2-tone flat pixel shading, strict 90 degree top-down view bird eye no isometric no perspective tilt, transparent background, post-apocalyptic field defense mood, no text no labels no signal waves
+```
+
+**2. 物理路障 · barrier**
+
+路径：`game/assets/sprites/night_td/towers/tower_barrier.png`
+
+```
+64x64 top-down 2D game sprite, physical road barrier, chunky sandbag-brown rectangle block #9e8564, lighter top edge stripe #f2e2c8, two dark bolt dots, fills one grid tile, dark thick outline, 2-tone flat pixel shading, strict 90 degree top-down view bird eye no isometric no perspective tilt, transparent background, post-apocalyptic barricade mood, no text no labels
+```
+
+**3. 电磁陷阱 · trap**
+
+路径：`game/assets/sprites/night_td/towers/tower_trap.png`
+
+```
+64x64 top-down 2D game sprite, electromagnetic mine trap, flat upward-pointing triangle mine #e87840, dark center dot, three corner contact pads, one-shot explosive look as simple shapes, dark thick outline, 2-tone flat pixel shading, strict 90 degree top-down view bird eye no isometric no perspective tilt, transparent background, post-apocalyptic trap mood, no text no labels no sparks
+```
+
+**4. 低温信标 · cryo_beacon**
+
+路径：`game/assets/sprites/night_td/towers/tower_cryo_beacon.png`
+
+```
+64x64 top-down 2D game sprite, cryo slow beacon, icy blue circular hub #83d8ff, dark navy center hole #092638, white cross frost lines through center as two thick bars, dark thick outline, 2-tone flat pixel shading, strict 90 degree top-down view bird eye no isometric no perspective tilt, transparent background, post-apocalyptic freeze beacon mood, no text no labels no snow particles
+```
+
+**5. 入侵天线 · hacker**
+
+路径：`game/assets/sprites/night_td/towers/tower_hacker.png`
+
+```
+64x64 top-down 2D game sprite, hack antenna turret, cyan disk base #5ac8e0, dark inner core #0a2030, three short antenna prongs around rim, dark thick outline, 2-tone flat pixel shading, strict 90 degree top-down view bird eye no isometric no perspective tilt, transparent background, post-apocalyptic signal hijack mood, no text no labels no matrix code
+```
+
+**6. 狙击信标 · sniper**
+
+路径：`game/assets/sprites/night_td/towers/tower_sniper.png`
+
+```
+64x64 top-down 2D game sprite, sniper beacon pillar, tall narrow blue gunner post #7aa6ff, dark scope core dot #0a1830, long barrel hint as one thin rectangle pointing up on sprite top edge, dark thick outline, 2-tone flat pixel shading, strict 90 degree top-down view bird eye no isometric no perspective tilt, transparent background, post-apocalyptic long-range turret mood, no text no labels
+```
+
+**7. 电弧塔 · splash**
+
+路径：`game/assets/sprites/night_td/towers/tower_splash.png`
+
+```
+64x64 top-down 2D game sprite, arc splash tower, amber coil base #e0a23a, dark center coil hole #1a0e00, four stubby lightning prongs around ring, dark thick outline, 2-tone flat pixel shading, strict 90 degree top-down view bird eye no isometric no perspective tilt, transparent background, post-apocalyptic area damage turret mood, no text no labels no electric glow
+```

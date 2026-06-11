@@ -30,10 +30,16 @@ func load_meta() -> void:
 	var data: Dictionary = parsed
 	if int(data.get("version", 0)) != META_VERSION:
 		return
-	for id in data.get("encounters_unlocked", []):
-		var id_str := str(id)
-		if id_str != "" and not encounters_unlocked.has(id_str):
-			encounters_unlocked.append(id_str)
+	# 旧版 message_wall / messages 字段已废弃，读取时忽略。
+	for upload_var in data.get("journal_uploads", []):
+		if typeof(upload_var) != TYPE_DICTIONARY:
+			continue
+		journal_uploads.append(_normalize_upload(upload_var))
+	var loaded_count := journal_uploads.size()
+	_prune_invalid_uploads()
+	if journal_uploads.size() != loaded_count:
+		call_deferred("save_meta")
+	_rebuild_encounters_from_uploads()
 	for legacy_id in data.get("evidence_collected", []):
 		var legacy := str(legacy_id)
 		if legacy.begins_with("placeholder_run_"):
@@ -41,10 +47,6 @@ func load_meta() -> void:
 	management_rights_transferred = bool(data.get("management_rights_transferred", false))
 	for e in data.get("endings_seen", []):
 		endings_seen.append(str(e))
-	for upload_var in data.get("journal_uploads", []):
-		if typeof(upload_var) != TYPE_DICTIONARY:
-			continue
-		journal_uploads.append(_normalize_upload(upload_var))
 
 
 func save_meta() -> void:
@@ -71,21 +73,20 @@ func unlock_encounter(encounter_id: String) -> bool:
 
 
 func encounters_unlocked_count() -> int:
-	return encounters_unlocked.size()
+	return JournalData.collected_truth_story_count(encounters_unlocked)
 
 
 func required_encounter_count() -> int:
-	return JournalData.required_encounter_ids().size()
+	return JournalData.required_story_count()
 
 
 func has_all_truth_encounters() -> bool:
-	for encounter_id in JournalData.required_encounter_ids():
-		if not encounters_unlocked.has(encounter_id):
-			return false
-	return true
+	return JournalData.has_all_story_logs(encounters_unlocked)
 
 
-func upload_run_journal(entries: Array, layer: int, day_index: int) -> void:
+func upload_run_journal(entries: Array, layer: int, day_index: int) -> bool:
+	if entries.is_empty():
+		return false
 	var normalized_entries: Array[Dictionary] = []
 	for entry_var in entries:
 		if typeof(entry_var) != TYPE_DICTIONARY:
@@ -102,30 +103,69 @@ func upload_run_journal(entries: Array, layer: int, day_index: int) -> void:
 			"day_index": int(entry.get("day_index", day_index)),
 		})
 		unlock_encounter(encounter_id)
+	if normalized_entries.is_empty():
+		return false
 	journal_uploads.append({
 		"run_id": "%d" % Time.get_unix_time_from_system(),
 		"layer": layer,
 		"day_index": day_index,
+		"reached_top": true,
 		"entries": normalized_entries,
 	})
-	while journal_uploads.size() > 12:
-		journal_uploads.pop_front()
+	while get_archived_uploads().size() > 12:
+		_remove_oldest_archived_upload()
+	return true
+
+
+func get_archived_uploads() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for upload in journal_uploads:
+		if _is_valid_archive_upload(upload):
+			out.append(upload)
+	return out
+
+
+func journal_upload_count() -> int:
+	return get_archived_uploads().size()
+
+
+func archive_status_label() -> String:
+	if has_all_truth_encounters():
+		return "真相已拼合 · 隐藏结局已解锁"
+	var collected := encounters_unlocked_count()
+	var required := required_encounter_count()
+	if collected > 0:
+		return "关键情报 %d / %d" % [collected, required]
+	return "尚无情报"
+
+
+func get_archived_entry(upload_index: int, entry_index: int) -> Dictionary:
+	var uploads := get_archived_uploads()
+	if upload_index < 0 or upload_index >= uploads.size():
+		return {}
+	var upload_entries: Variant = uploads[upload_index].get("entries", [])
+	if typeof(upload_entries) != TYPE_ARRAY:
+		return {}
+	if entry_index < 0 or entry_index >= upload_entries.size():
+		return {}
+	var entry_var: Variant = upload_entries[entry_index]
+	if typeof(entry_var) != TYPE_DICTIONARY:
+		return {}
+	return (entry_var as Dictionary).duplicate(true)
 
 
 func format_uploaded_logs_preview(max_uploads: int = 4) -> String:
-	if journal_uploads.is_empty():
-		return "（尚无上传记录。前代勘探者的日记会在到顶上传后出现在此处。）"
+	var uploads := get_archived_uploads()
+	if uploads.is_empty():
+		return "（尚无上传记录。只有抵达顶层并完成上传的勘探日记会归档于此。）"
 	var lines: PackedStringArray = []
-	var start := maxi(0, journal_uploads.size() - max_uploads)
-	for i in range(start, journal_uploads.size()):
-		var upload: Dictionary = journal_uploads[i]
+	var start := maxi(0, uploads.size() - max_uploads)
+	for i in range(start, uploads.size()):
+		var upload: Dictionary = uploads[i]
 		var layer := int(upload.get("layer", 0))
 		var day := int(upload.get("day_index", 0))
 		lines.append("—— 上传 #%d · 第%d层·第%d天 ——" % [i + 1, layer, day])
 		var upload_entries: Variant = upload.get("entries", [])
-		if typeof(upload_entries) != TYPE_ARRAY or upload_entries.is_empty():
-			lines.append("（本局未记录遭遇。）")
-			continue
 		for entry_var in upload_entries:
 			if typeof(entry_var) != TYPE_DICTIONARY:
 				continue
@@ -165,6 +205,41 @@ func record_ending(choice_id: String) -> void:
 	endings_seen.append(choice_id)
 
 
+func _is_valid_archive_upload(upload: Dictionary) -> bool:
+	if upload.is_empty():
+		return false
+	var upload_entries: Variant = upload.get("entries", [])
+	if typeof(upload_entries) != TYPE_ARRAY or upload_entries.is_empty():
+		return false
+	if upload.has("reached_top") and not bool(upload.get("reached_top", false)):
+		return false
+	return true
+
+
+func _prune_invalid_uploads() -> void:
+	var valid: Array[Dictionary] = []
+	for upload in journal_uploads:
+		if _is_valid_archive_upload(upload):
+			valid.append(upload)
+	journal_uploads = valid
+
+
+func _rebuild_encounters_from_uploads() -> void:
+	encounters_unlocked.clear()
+	for upload in get_archived_uploads():
+		for entry_var in upload.get("entries", []):
+			if typeof(entry_var) != TYPE_DICTIONARY:
+				continue
+			unlock_encounter(str((entry_var as Dictionary).get("encounter_id", "")))
+
+
+func _remove_oldest_archived_upload() -> void:
+	for i in range(journal_uploads.size()):
+		if _is_valid_archive_upload(journal_uploads[i]):
+			journal_uploads.remove_at(i)
+			return
+
+
 func _normalize_upload(raw: Dictionary) -> Dictionary:
 	var entries_out: Array[Dictionary] = []
 	for entry_var in raw.get("entries", []):
@@ -182,5 +257,6 @@ func _normalize_upload(raw: Dictionary) -> Dictionary:
 		"run_id": str(raw.get("run_id", "")),
 		"layer": int(raw.get("layer", 0)),
 		"day_index": int(raw.get("day_index", 0)),
+		"reached_top": bool(raw.get("reached_top", not entries_out.is_empty())),
 		"entries": entries_out,
 	}
