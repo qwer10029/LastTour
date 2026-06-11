@@ -204,9 +204,6 @@ cython_debug/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
-# Local/placeholder audio assets
-/game/assets/music/
-
 # Ruff stuff:
 .ruff_cache/
 
@@ -220,3 +217,4 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+/game/assets/music/source/
