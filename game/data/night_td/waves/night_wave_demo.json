@@ -1,111 +1,5 @@
 {
 	"name": "夜晚塔防 · 标准夜袭",
-	"spawn_points": {
-		"sp_east": ["F8", "E9", "D8"],
-		"sp_north": ["F2", "E2"],
-		"sp_south": ["B8", "C8"],
-		"sp_west": ["A3", "A5"]
-	},
-	"routes": {
-		"route_f_line": {
-			"label": "F 行迂回",
-			"waypoints": [
-				{ "cell": "F8", "standby": 0 },
-				{ "cell": "F6", "standby": 5 },
-				{ "cell": "F4", "standby": 5 },
-				{ "cell": "F2", "standby": 0 },
-				{ "cell": "D2", "standby": 0 },
-				{ "cell": "B2", "standby": 0 },
-				{ "cell": "B8", "standby": 0 }
-			]
-		},
-		"route_e_line": {
-			"label": "E 行压迫",
-			"waypoints": [
-				{ "cell": "E9", "standby": 0 },
-				{ "cell": "E6", "standby": 5 },
-				{ "cell": "E4", "standby": 0 },
-				{ "cell": "D2", "standby": 0 },
-				{ "cell": "B2", "standby": 0 },
-				{ "cell": "B8", "standby": 0 }
-			]
-		},
-		"route_d_rush": {
-			"label": "D 路突进",
-			"waypoints": [
-				{ "cell": "D8", "standby": 0 },
-				{ "cell": "D5", "standby": 0 },
-				{ "cell": "D2", "standby": 0 },
-				{ "cell": "B8", "standby": 0 }
-			]
-		},
-		"route_swarm": {
-			"label": "北侧蜂群",
-			"waypoints": [
-				{ "cell": "F2", "standby": 0 },
-				{ "cell": "E2", "standby": 0 },
-				{ "cell": "D2", "standby": 0 },
-				{ "cell": "B8", "standby": 0 }
-			]
-		},
-		"route_f_line_b": {
-			"label": "F 行迂回 (B)",
-			"waypoints": [
-				{ "cell": "F8", "standby": 0 },
-				{ "cell": "F5", "standby": 4 },
-				{ "cell": "F3", "standby": 0 },
-				{ "cell": "E2", "standby": 0 },
-				{ "cell": "C2", "standby": 0 },
-				{ "cell": "B8", "standby": 0 }
-			]
-		},
-		"route_f_line_c": {
-			"label": "F 行迂回 (C)",
-			"waypoints": [
-				{ "cell": "F8", "standby": 0 },
-				{ "cell": "D7", "standby": 5 },
-				{ "cell": "B5", "standby": 0 },
-				{ "cell": "B8", "standby": 0 }
-			]
-		},
-		"route_e_line_b": {
-			"label": "E 行压迫 (B)",
-			"waypoints": [
-				{ "cell": "E9", "standby": 0 },
-				{ "cell": "E5", "standby": 0 },
-				{ "cell": "C3", "standby": 5 },
-				{ "cell": "B8", "standby": 0 }
-			]
-		},
-		"route_e_line_c": {
-			"label": "E 行压迫 (C)",
-			"waypoints": [
-				{ "cell": "E9", "standby": 0 },
-				{ "cell": "C7", "standby": 0 },
-				{ "cell": "C4", "standby": 0 },
-				{ "cell": "D2", "standby": 0 },
-				{ "cell": "B8", "standby": 0 }
-			]
-		},
-		"route_d_rush_b": {
-			"label": "D 路突进 (B)",
-			"waypoints": [
-				{ "cell": "D8", "standby": 0 },
-				{ "cell": "D4", "standby": 0 },
-				{ "cell": "C2", "standby": 0 },
-				{ "cell": "B8", "standby": 0 }
-			]
-		},
-		"route_swarm_b": {
-			"label": "北侧蜂群 (B)",
-			"waypoints": [
-				{ "cell": "E2", "standby": 0 },
-				{ "cell": "D3", "standby": 0 },
-				{ "cell": "C5", "standby": 4 },
-				{ "cell": "B8", "standby": 0 }
-			]
-		}
-	},
 	"waves": [
 		{
 			"id": 1,
@@ -116,21 +10,15 @@
 					"spawn_interval": 0.9,
 					"pre_delay": 0,
 					"move_speed": 40,
-					"spawn_side": "east",
-					"route_id": "route_f_line",
-					"spawn_point": "F8",
-					"alternate_routes": ["route_f_line_b", "route_f_line_c"]
+					"spawn_side": "east"
 				},
 				{
 					"enemy": "drone",
 					"count": 6,
 					"spawn_interval": 1.0,
-					"pre_delay": 4.0,
+					"pre_delay": 5.0,
 					"move_speed": 38,
-					"spawn_side": "east",
-					"route_id": "route_e_line",
-					"spawn_point": "E9",
-					"alternate_routes": ["route_e_line_b", "route_e_line_c"]
+					"spawn_side": "east"
 				}
 			]
 		},
@@ -143,32 +31,23 @@
 					"spawn_interval": 0.55,
 					"pre_delay": 0,
 					"move_speed": 52,
-					"spawn_side": "north",
-					"route_id": "route_swarm",
-					"spawn_point": "F2",
-					"alternate_routes": ["route_swarm_b"]
+					"spawn_side": "east"
 				},
 				{
 					"enemy": "scout",
 					"count": 4,
 					"spawn_interval": 2.2,
-					"pre_delay": 6.0,
+					"pre_delay": 7.0,
 					"move_speed": 32,
-					"spawn_side": "south",
-					"route_id": "route_d_rush",
-					"spawn_point": "D8",
-					"alternate_routes": ["route_d_rush_b"]
+					"spawn_side": "south"
 				},
 				{
 					"enemy": "repair_mender",
 					"count": 1,
 					"spawn_interval": 4.0,
-					"pre_delay": 10.0,
+					"pre_delay": 12.0,
 					"move_speed": 24,
-					"spawn_side": "south",
-					"route_id": "route_d_rush",
-					"spawn_point": "D8",
-					"alternate_routes": ["route_d_rush_b"]
+					"spawn_side": "south"
 				}
 			]
 		},
@@ -181,21 +60,15 @@
 					"spawn_interval": 4.0,
 					"pre_delay": 0,
 					"move_speed": 20,
-					"spawn_side": "south",
-					"route_id": "route_d_rush",
-					"spawn_point": "D8",
-					"alternate_routes": ["route_d_rush_b"]
+					"spawn_side": "south"
 				},
 				{
 					"enemy": "drone",
 					"count": 8,
 					"spawn_interval": 0.8,
-					"pre_delay": 8.0,
+					"pre_delay": 6.0,
 					"move_speed": 42,
-					"spawn_side": "west",
-					"route_id": "route_f_line",
-					"spawn_point": "F8",
-					"alternate_routes": ["route_f_line_b", "route_f_line_c"]
+					"spawn_side": "north"
 				},
 				{
 					"enemy": "scout",
@@ -203,10 +76,7 @@
 					"spawn_interval": 2.5,
 					"pre_delay": 12.0,
 					"move_speed": 34,
-					"spawn_side": "north",
-					"route_id": "route_e_line",
-					"spawn_point": "E9",
-					"alternate_routes": ["route_e_line_b", "route_e_line_c"]
+					"spawn_side": "north"
 				}
 			]
 		}

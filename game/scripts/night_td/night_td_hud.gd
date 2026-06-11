@@ -126,6 +126,8 @@ func show_session_ui() -> void:
 
 func hide_session_ui() -> void:
 	hide_result_dialog()
+	show_power_panel(false)
+	clear_power_highlight()
 	if is_instance_valid(shell):
 		shell.hide()
 	if is_instance_valid(breach_label):
@@ -552,6 +554,8 @@ func show_result(text: String) -> void:
 	if is_instance_valid(continue_btn): continue_btn.disabled = false
 	if is_instance_valid(result_overlay):
 		result_overlay.show(); result_overlay.visible = true
+	show_power_panel(false)
+	clear_power_highlight()
 	if is_instance_valid(start_btn): start_btn.hide()
 	if is_instance_valid(_cards_vbox): _cards_vbox.visible = false
 

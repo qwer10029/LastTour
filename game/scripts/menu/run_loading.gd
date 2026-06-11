@@ -35,8 +35,14 @@ func _ready() -> void:
 
 
 func _release_transition_cover() -> void:
-	if RunTransition.is_covering():
-		RunTransition.hide_cover()
+	var transition := _run_transition()
+	if (
+		transition != null
+		and transition.has_method("is_covering")
+		and transition.has_method("hide_cover")
+		and bool(transition.is_covering())
+	):
+		transition.hide_cover()
 
 
 func _play_music_cue(cue_id: String, fade_sec: float = -1.0) -> void:
@@ -57,9 +63,17 @@ func _setup_labels() -> void:
 	MenuStyles.style_title(title_label, 38)
 	MenuStyles.style_subtitle(subtitle_label)
 	title_label.text = "正在进入废墟"
+	var manager := _game_manager()
+	var difficulty_name := "普通"
+	var squad_name := "拾荒者"
+	if manager != null:
+		if manager.has_method("get_difficulty_name"):
+			difficulty_name = str(manager.get_difficulty_name())
+		if manager.has_method("get_squad_name"):
+			squad_name = str(manager.get_squad_name())
 	subtitle_label.text = "%s · %s" % [
-		GameManager.get_difficulty_name(),
-		GameManager.get_squad_name(),
+		difficulty_name,
+		squad_name,
 	]
 
 
@@ -173,14 +187,21 @@ func _run_bootstrap_pipeline() -> void:
 	var map: WorldMapData = RunBootstrapScript.build_new_run_map(progress_cb)
 	await get_tree().process_frame
 
-	GameManager.store_run_bootstrap(RunBootstrapScript.pack_bootstrap(map))
+	var manager := _game_manager()
+	if manager != null and manager.has_method("store_run_bootstrap"):
+		manager.store_run_bootstrap(RunBootstrapScript.pack_bootstrap(map))
 	_set_progress(0.94, "加载游戏场景…")
 	await _preload_game_scene()
 	_set_progress(1.0, "准备就绪")
 
 
 func _preload_game_scene() -> void:
-	var scene_path := GameManager.SCENE_GAME
+	var scene_path := "res://scenes/main.tscn"
+	var manager := _game_manager()
+	if manager != null:
+		var configured_path: Variant = manager.get("SCENE_GAME")
+		if configured_path != null and str(configured_path) != "":
+			scene_path = str(configured_path)
 	var status := ResourceLoader.load_threaded_request(scene_path)
 	if status != OK:
 		return
@@ -190,7 +211,8 @@ func _preload_game_scene() -> void:
 		if load_status == ResourceLoader.THREAD_LOAD_LOADED:
 			var packed := ResourceLoader.load_threaded_get(scene_path)
 			if packed is PackedScene:
-				GameManager.set_preloaded_game_scene(packed)
+				if manager != null and manager.has_method("set_preloaded_game_scene"):
+					manager.set_preloaded_game_scene(packed)
 			_set_progress(0.98, "场景资源就绪")
 			return
 		if load_status == ResourceLoader.THREAD_LOAD_FAILED:
@@ -209,4 +231,20 @@ func _set_progress(ratio: float, label: String) -> void:
 
 
 func _enter_game_scene() -> void:
-	GameManager.enter_game_after_bootstrap()
+	var manager := _game_manager()
+	if manager != null and manager.has_method("enter_game_after_bootstrap"):
+		manager.enter_game_after_bootstrap()
+		return
+	get_tree().change_scene_to_file("res://scenes/main.tscn")
+
+
+func _run_transition() -> Node:
+	if get_tree() == null or get_tree().root == null:
+		return null
+	return get_tree().root.get_node_or_null("RunTransition")
+
+
+func _game_manager() -> Node:
+	if get_tree() == null or get_tree().root == null:
+		return null
+	return get_tree().root.get_node_or_null("GameManager")

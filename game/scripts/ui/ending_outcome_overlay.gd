@@ -93,6 +93,7 @@ func _build_ui() -> void:
 
 	var credits_body := RichTextLabel.new()
 	credits_body.name = "CreditsBody"
+	credits_body.bbcode_enabled = true
 	credits_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	credits_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	credits_body.custom_minimum_size = Vector2(660, 480)

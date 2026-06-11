@@ -2479,6 +2479,8 @@ func _start_thunder_leiting_boss() -> void:
 			_vehicle_hp_max,
 			snapshot,
 			options,
+			_fuel,
+			fuel_max
 		)
 		_refresh_ui()
 		return
@@ -2760,12 +2762,18 @@ func _pause_game() -> void:
 		_pause_layer.visible = true
 	if is_instance_valid(time_system) and not time_system.is_paused():
 		time_system.pause()
+	# 夜晚塔防会话自走一套 _process（战斗计时、刷怪、敌人移动、炮塔开火），
+	# 不受 time_system 暂停影响，必须显式冻结，否则按 ESC 后夜晚仍在流逝。
+	if is_instance_valid(night_td):
+		night_td.set_session_paused(true)
 
 
 func _resume_from_pause() -> void:
 	_game_paused = false
 	if is_instance_valid(_pause_layer):
 		_pause_layer.visible = false
+	if is_instance_valid(night_td):
+		night_td.set_session_paused(false)
 	if is_instance_valid(time_system):
 		if _is_night_phase():
 			time_system.pause()

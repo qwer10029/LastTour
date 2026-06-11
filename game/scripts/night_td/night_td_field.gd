@@ -72,7 +72,9 @@ func _reflow_layout() -> void:
 	))
 	_layout_tile_size = clampf(fitted_tile, 22.0, 56.0)
 	var vehicle_offset := _vehicle_center_offset()
-	var target_center := view_size * Vector2(0.5, 0.54)
+	# 以"可用区"（已扣除顶栏与右侧面板的预留）中心为锚点，而非整屏中心，
+	# 否则网格会向右滑到侧栏下方。垂直方向略微下偏(0.04)给顶部状态栏留白。
+	var target_center := play_rect.position + play_rect.size * Vector2(0.5, 0.54)
 	field_origin = target_center - vehicle_offset * _layout_tile_size
 
 
