@@ -1,0 +1,30 @@
+{
+	"_comment": "故事奖励道具 → 防御塔强化映射。消耗式可叠加（consume + accumulate）。每使用一个，把 delta 累加到 RunState 的 tower_upgrades。mult 类按乘法叠加(1+delta)，flag 类置真。night_td 在建塔时读取。",
+	"upgrades": {
+		"composite_armor_panel": {
+			"name": "复合装甲板",
+			"effect_text": "防御塔耐久 +10%",
+			"deltas": { "tower_hp_mult": 0.10 }
+		},
+		"auto_turret_auth": {
+			"name": "自动炮塔授权码",
+			"effect_text": "防御塔伤害 +12%",
+			"deltas": { "damage_mult": 0.12 }
+		},
+		"data_chip_radar_tower_mod": {
+			"name": "雷达防御加固模块",
+			"effect_text": "防御塔射程 +15%",
+			"deltas": { "range_mult": 0.15 }
+		},
+		"blueprint_pulse_tower": {
+			"name": "强化防御塔蓝图",
+			"effect_text": "防御塔伤害 +20%、耐久 +15%",
+			"deltas": { "damage_mult": 0.20, "tower_hp_mult": 0.15 }
+		}
+	},
+	"defaults": {
+		"damage_mult": 1.0,
+		"range_mult": 1.0,
+		"tower_hp_mult": 1.0
+	}
+}

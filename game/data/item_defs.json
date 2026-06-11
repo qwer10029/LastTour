@@ -58,10 +58,10 @@
 		},
 		"blueprint_pulse_tower": {
 			"name": "强化防御塔蓝图",
-			"desc": "10032 军营夜间布防方案第 7 修订版，含脉冲护盾层。",
+			"desc": "10032 军营夜间布防方案第 7 修订版，含脉冲护盾层。使用后写入夜间防御系统，提升全部防御塔。",
 			"stack_max": 1,
 			"color": "#8ec8e8",
-			"usable": false
+			"usable": true
 		},
 		"quest:chronicler_memory": {
 			"name": "存储模块",
@@ -122,10 +122,10 @@
 		},
 		"data_chip_radar_tower_mod": {
 			"name": "雷达防御加固模块",
-			"desc": "AD-1 写入的巡逻路线与干扰盲区数据，已合并至车载防御塔系统。",
+			"desc": "AD-1 写入的巡逻路线与干扰盲区数据。使用后合并至夜间防御塔系统，提升射程。",
 			"stack_max": 1,
 			"color": "#88e8b0",
-			"usable": false
+			"usable": true
 		},
 		"data_chip_clone_gene": {
 			"name": "克隆基因情报",
@@ -143,17 +143,17 @@
 		},
 		"composite_armor_panel": {
 			"name": "复合装甲板",
-			"desc": "从不败之盾-雷霆残骸拆下的装甲片段，仍可焊接到车体。",
+			"desc": "从不败之盾-雷霆残骸拆下的装甲片段。使用后焊到夜间防御塔上，提升其耐久。",
 			"stack_max": 99,
 			"color": "#a0a8b8",
-			"usable": false
+			"usable": true
 		},
 		"auto_turret_auth": {
 			"name": "自动炮塔授权码",
-			"desc": "雷霆单元死前未销毁的炮塔控制密钥，可写入夜间布防系统。",
+			"desc": "雷霆单元死前未销毁的炮塔控制密钥。使用后写入夜间布防系统，提升防御塔伤害。",
 			"stack_max": 99,
 			"color": "#e8c060",
-			"usable": false
+			"usable": true
 		}
 	},
 	"loot_by_building": {

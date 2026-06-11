@@ -101,6 +101,7 @@ var _session_options: Dictionary = {}
 var _session_kind: String = "normal"
 var _phase_title_override: String = ""
 var _no_day_advance := false
+var _tower_upgrades: Dictionary = NightTdUpgrades.default_state()
 var _screen_camera: Camera2D = null
 var _enemy_index_by_eid: Dictionary = {}
 var _active_slow_towers: Array[Dictionary] = []
@@ -181,6 +182,8 @@ func start_session(
 	_session_kind = str(_session_options.get("kind", "normal"))
 	_phase_title_override = str(_session_options.get("phase_title", ""))
 	_no_day_advance = bool(_session_options.get("no_day_advance", false))
+	# 防御塔强化（Part B）：从白天安装的升级道具累加而来，建塔时乘到属性上。
+	_tower_upgrades = NightTdUpgrades.sanitize(_session_options.get("tower_upgrades", {}))
 	_allow_placement = allow_placement
 	# 从快照创建本地背包副本（切断对白天状态的引用）
 	_local_backpack = InventoryData.new()
@@ -285,6 +288,9 @@ func start_session(
 			hud.set_phase_text(_session_phase_title("接敌中"))
 			hud.set_hint("没有进入布防模式，敌人将直接来袭。")
 		hud.clear_log()
+		var upgrade_summary := NightTdUpgrades.summary_text(_tower_upgrades)
+		if upgrade_summary != "":
+			hud.append_log("防御塔强化生效：%s" % upgrade_summary, Color("#88e8b0"))
 		_notify_debug_skip_available()
 		_refresh_fuel_boost_hud()
 	_update_hud_tools()
@@ -945,9 +951,9 @@ func _update_towers(delta: float) -> void:
 		# （路障 range=0、陷阱 fire_interval=999 由 one_shot 触发，均不在此开火。）
 		if bool(tdef.get("is_hack_tower", false)):
 			continue
-		var range_px := float(tdef.get("range", 0.0))
+		var range_px := float(tdef.get("range", 0.0)) * float(tower.get("range_mult", 1.0))
 		var fire_interval := float(tdef.get("fire_interval", 0.0))
-		var base_damage := float(tdef.get("damage", 0.0))
+		var base_damage := float(tdef.get("damage", 0.0)) * float(tower.get("damage_mult", 1.0))
 		if range_px <= 0.0 or base_damage <= 0.0 or fire_interval <= 0.0 or fire_interval >= 900.0:
 			continue
 		var scale := float(tower.get("power_scale", 1.0))
@@ -1631,6 +1637,7 @@ func _on_cell_clicked(cell: Vector2i) -> void:
 	resources_spent += cost
 	var tower_id := _next_tower_id
 	_next_tower_id += 1
+	var tower_hp_mult := float(_tower_upgrades.get("tower_hp_mult", 1.0))
 	var tower := {
 		"id": tower_id,
 		"type": _selected_tower,
@@ -1638,9 +1645,11 @@ func _on_cell_clicked(cell: Vector2i) -> void:
 		"world_pos": field.cell_to_world(cell),
 		"cooldown": 0.0,
 		"target_eid": -1,
-		"hp": float(tdef.get("hp", 30)),
+		"hp": float(tdef.get("hp", 30)) * tower_hp_mult,
 		"removed": false,
 		"power_scale": 1.0,
+		"damage_mult": float(_tower_upgrades.get("damage_mult", 1.0)),
+		"range_mult": float(_tower_upgrades.get("range_mult", 1.0)),
 	}
 	_towers.append(tower)
 	# 耗电塔登记进能源系统（额定功率 1.0）。upkeep=0 的塔登记后不影响电池。

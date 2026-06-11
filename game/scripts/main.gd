@@ -87,6 +87,8 @@ var _run_end_reason := ""
 var _final_choice_id := ""
 var _final_defense_cleared := false
 var _thunder_leiting_defeated := false
+# 防御塔强化（Part B）：故事奖励道具安装后累加的乘法系数。随存档/昼夜流转。
+var _tower_upgrades: Dictionary = NightTdUpgrades.default_state()
 var _pending_thunder_district := -1
 var _run_end_overlay: CanvasLayer
 var _communication_terminal: CanvasLayer
@@ -104,6 +106,7 @@ var _pause_layer: CanvasLayer
 var _pause_panel: PanelContainer
 var _pause_confirm: ConfirmationDialog
 var _fuel_empty_dialog: AcceptDialog
+var _tower_upgrade_dialog: AcceptDialog
 var _fuel_empty_prompt_open := false
 var _war_fog_checkbox: CheckBox
 var _repair_choice_panel: PanelContainer
@@ -682,6 +685,7 @@ func _start_new_run() -> void:
 	_final_choice_id = ""
 	_final_defense_cleared = false
 	_thunder_leiting_defeated = false
+	_tower_upgrades = NightTdUpgrades.default_state()
 	_pending_thunder_district = -1
 	_run_journal = RunJournal.new()
 	_story_controller.reset_for_new_run()
@@ -2145,6 +2149,20 @@ func _on_backpack_craft_parts() -> void:
 func _use_backpack_item(item_id: String) -> bool:
 	if not _backpack.has(item_id, 1):
 		return false
+	# 防御塔强化道具（Part B）：消耗式可叠加。安装即把 deltas 累加进 _tower_upgrades，
+	# 夜晚建塔时生效。提示玩家本次强化效果与当前累计倍率。
+	if NightTdUpgrades.is_upgrade_item(item_id):
+		if NightTdUpgrades.apply_item(_tower_upgrades, item_id):
+			_backpack.remove(item_id, 1)
+			var eff := NightTdUpgrades.effect_text(item_id)
+			var summary := NightTdUpgrades.summary_text(_tower_upgrades)
+			_show_tower_upgrade_toast(
+				"%s 已写入夜间防御系统：%s\n当前防御塔强化：%s" % [
+					NightTdUpgrades.display_name(item_id), eff, summary
+				]
+			)
+			return true
+		return false
 	match item_id:
 		"supplies":
 			_backpack.remove("supplies", 1)
@@ -2160,6 +2178,22 @@ func _use_backpack_item(item_id: String) -> bool:
 			return true
 		_:
 			return false
+
+
+## 防御塔强化安装提示（复用一个惰性创建的 AcceptDialog）。
+func _show_tower_upgrade_toast(text: String) -> void:
+	if not is_instance_valid(_tower_upgrade_dialog):
+		_tower_upgrade_dialog = AcceptDialog.new()
+		_tower_upgrade_dialog.name = "TowerUpgradeDialog"
+		_tower_upgrade_dialog.title = "防御塔强化"
+		_tower_upgrade_dialog.ok_button_text = "确认"
+		var hud := get_node_or_null("HUD")
+		if hud != null:
+			hud.add_child(_tower_upgrade_dialog)
+		else:
+			add_child(_tower_upgrade_dialog)
+	_tower_upgrade_dialog.dialog_text = text
+	_tower_upgrade_dialog.popup_centered()
 
 
 func _can_drive_with_current_fuel() -> bool:
@@ -2439,6 +2473,7 @@ func _final_terminal_session_options() -> Dictionary:
 		"wave_plan_path": FINAL_TERMINAL_WAVE_PATH,
 		"phase_title": "顶层终端防线",
 		"no_day_advance": true,
+		"tower_upgrades": _tower_upgrades.duplicate(true),
 	}
 
 
@@ -2453,6 +2488,7 @@ func _thunder_leiting_session_options() -> Dictionary:
 		"wave_plan_path": THUNDER_LEITING_WAVE_PATH,
 		"phase_title": "不败之盾-雷霆",
 		"no_day_advance": true,
+		"tower_upgrades": _tower_upgrades.duplicate(true),
 	}
 
 
@@ -2885,6 +2921,7 @@ func capture_save_data() -> Dictionary:
 			"run_ended": _run_ended,
 			"run_end_reason": _run_end_reason,
 			"final_choice_id": _final_choice_id,
+			"tower_upgrades": _tower_upgrades.duplicate(true),
 		},
 		"time": time_system.to_dictionary() if is_instance_valid(time_system) else {},
 		"foot": {
@@ -2939,6 +2976,7 @@ func _apply_save_data(data: Dictionary) -> void:
 	_run_ended = bool(layer.get("run_ended", false))
 	_run_end_reason = str(layer.get("run_end_reason", ""))
 	_final_choice_id = str(layer.get("final_choice_id", ""))
+	_tower_upgrades = NightTdUpgrades.sanitize(layer.get("tower_upgrades", {}))
 	if _run_ended and _run_end_reason in ["vehicle_destroyed", "player_collapsed", "out_of_fuel", "strike"]:
 		_show_run_summary()
 	elif _run_ended and _run_end_reason == "reached_top":
@@ -3038,7 +3076,8 @@ func _restore_time_phase_after_load(keep_terminal_music: bool = false) -> void:
 					snapshot = _backpack.to_dictionary().duplicate()
 				night_defense.start_td_session(
 					_backpack.total_count(), GameManager.difficulty, time_system.day_index, true,
-					_vehicle_hp, _vehicle_hp_max, snapshot, {}, _fuel, fuel_max
+					_vehicle_hp, _vehicle_hp_max, snapshot,
+					{"tower_upgrades": _tower_upgrades.duplicate(true)}, _fuel, fuel_max
 				)
 			_play_music_cue("night_setup", 0.9)
 			time_system.pause()
@@ -3192,7 +3231,8 @@ func _on_night_setup_started(day_index: int, manual_setup: bool) -> void:
 			snapshot = _backpack.to_dictionary().duplicate()
 		night_defense.start_td_session(
 			_backpack.total_count(), GameManager.difficulty, day_index, manual_setup,
-			_vehicle_hp, _vehicle_hp_max, snapshot, {}, _fuel, fuel_max
+			_vehicle_hp, _vehicle_hp_max, snapshot,
+			{"tower_upgrades": _tower_upgrades.duplicate(true)}, _fuel, fuel_max
 		)
 	_play_music_cue("night_setup", 1.0)
 	_refresh_ui()
