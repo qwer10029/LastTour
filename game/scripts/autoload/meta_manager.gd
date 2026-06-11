@@ -7,6 +7,7 @@ var encounters_unlocked: Array[String] = []
 var management_rights_transferred: bool = false
 var endings_seen: Array[String] = []
 var journal_uploads: Array[Dictionary] = []
+var night_tutorial_seen: bool = false
 
 
 func _ready() -> void:
@@ -18,6 +19,7 @@ func load_meta() -> void:
 	management_rights_transferred = false
 	endings_seen = []
 	journal_uploads = []
+	night_tutorial_seen = false
 	if not FileAccess.file_exists(META_PATH):
 		return
 	var file := FileAccess.open(META_PATH, FileAccess.READ)
@@ -45,6 +47,7 @@ func load_meta() -> void:
 		if legacy.begins_with("placeholder_run_"):
 			continue
 	management_rights_transferred = bool(data.get("management_rights_transferred", false))
+	night_tutorial_seen = bool(data.get("night_tutorial_seen", false))
 	for e in data.get("endings_seen", []):
 		endings_seen.append(str(e))
 
@@ -56,6 +59,7 @@ func save_meta() -> void:
 		"management_rights_transferred": management_rights_transferred,
 		"endings_seen": endings_seen,
 		"journal_uploads": journal_uploads,
+		"night_tutorial_seen": night_tutorial_seen,
 		"saved_at": int(Time.get_unix_time_from_system()),
 	}
 	var file := FileAccess.open(META_PATH, FileAccess.WRITE)
@@ -63,6 +67,18 @@ func save_meta() -> void:
 		return
 	file.store_string(JSON.stringify(payload, "\t"))
 	file.close()
+
+
+func mark_night_tutorial_seen() -> void:
+	if night_tutorial_seen:
+		return
+	night_tutorial_seen = true
+	save_meta()
+
+
+func reset_night_tutorial() -> void:
+	night_tutorial_seen = false
+	save_meta()
 
 
 func unlock_encounter(encounter_id: String) -> bool:

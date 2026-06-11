@@ -107,6 +107,7 @@ var _pause_panel: PanelContainer
 var _pause_confirm: ConfirmationDialog
 var _fuel_empty_dialog: AcceptDialog
 var _tower_upgrade_dialog: AcceptDialog
+var _night_tutorial: NightTutorialOverlay
 var _fuel_empty_prompt_open := false
 var _war_fog_checkbox: CheckBox
 var _repair_choice_panel: PanelContainer
@@ -3236,6 +3237,29 @@ func _on_night_setup_started(day_index: int, manual_setup: bool) -> void:
 		)
 	_play_music_cue("night_setup", 1.0)
 	_refresh_ui()
+	_maybe_show_night_tutorial()
+
+
+## 首次进入夜晚布防时弹出图文教程；看过后由 MetaManager 记住不再自动弹出。
+func _maybe_show_night_tutorial(force: bool = false) -> void:
+	var meta := get_node_or_null("/root/MetaManager")
+	if not force and meta != null and bool(meta.get("night_tutorial_seen")):
+		return
+	if is_instance_valid(_night_tutorial):
+		return
+	_night_tutorial = NightTutorialOverlay.new()
+	_night_tutorial.name = "NightTutorialOverlay"
+	var hud := get_node_or_null("HUD")
+	if hud != null:
+		hud.add_child(_night_tutorial)
+	else:
+		add_child(_night_tutorial)
+	_night_tutorial.finished.connect(func():
+		_night_tutorial = null
+		var m := get_node_or_null("/root/MetaManager")
+		if m != null and m.has_method("mark_night_tutorial_seen"):
+			m.mark_night_tutorial_seen()
+	)
 
 
 func on_td_combat_ended(result: Dictionary) -> String:
