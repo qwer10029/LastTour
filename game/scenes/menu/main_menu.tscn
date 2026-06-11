@@ -69,11 +69,11 @@ custom_minimum_size = Vector2(380, 58)
 layout_mode = 2
 text = "  ▶   继续游戏（无存档）"
 
-[node name="AchievementsButton" type="Button" parent="Overlay/MenuCenter/MenuList"]
+[node name="JournalButton" type="Button" parent="Overlay/MenuCenter/MenuList"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(380, 58)
 layout_mode = 2
-text = "  📝   写下留言"
+text = "  ◈   查看日志"
 
 [node name="SettingsButton" type="Button" parent="Overlay/MenuCenter/MenuList"]
 unique_name_in_owner = true

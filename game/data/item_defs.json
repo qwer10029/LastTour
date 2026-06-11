@@ -76,6 +76,84 @@
 			"stack_max": 1,
 			"color": "#9ec8f0",
 			"usable": false
+		},
+		"data_chip_kunlun_k142": {
+			"name": "昆仑基因备份数据片",
+			"desc": "熔炉死锁前吐出的错误日志与 K-142 基因备份登记摘录。",
+			"stack_max": 1,
+			"color": "#e8a0a0",
+			"usable": false
+		},
+		"data_chip_echo_operation": {
+			"name": "回响行动附件数据片",
+			"desc": "参谋-07 导出的《回响行动 · 附件-07：克隆体职能说明》完整日志。",
+			"stack_max": 1,
+			"color": "#88c8f0",
+			"usable": false
+		},
+		"quest:hologram_battery": {
+			"name": "全息发生器电池",
+			"desc": "指挥部东侧机柜里的备用电池，仍有余量。",
+			"stack_max": 1,
+			"color": "#a8d8f0",
+			"usable": true,
+			"restore_fuel": 180.0
+		},
+		"data_chip_tactical_map": {
+			"name": "战术坐标数据片",
+			"desc": "参谋-07 校准后写入的隐藏资源点坐标，已叠加至导航。",
+			"stack_max": 1,
+			"color": "#88c8f0",
+			"usable": false
+		},
+		"quest:radar_motor": {
+			"name": "电机组件",
+			"desc": "掩体后方设备箱取出的雷达旋转机构备用电机，轴封崭新。",
+			"stack_max": 1,
+			"color": "#b8c878",
+			"usable": false
+		},
+		"data_chip_radar_coords": {
+			"name": "雷达回波坐标数据片",
+			"desc": "AD-1 记录的异常金属结构回波坐标，已叠加至导航。",
+			"stack_max": 1,
+			"color": "#78d8a0",
+			"usable": false
+		},
+		"data_chip_radar_tower_mod": {
+			"name": "雷达防御加固模块",
+			"desc": "AD-1 写入的巡逻路线与干扰盲区数据，已合并至车载防御塔系统。",
+			"stack_max": 1,
+			"color": "#88e8b0",
+			"usable": false
+		},
+		"data_chip_clone_gene": {
+			"name": "克隆基因情报",
+			"desc": "玛丽安旧日记夹带的培育登记表：母本 M-142，克隆体 K-142。",
+			"stack_max": 1,
+			"color": "#e8c8a8",
+			"usable": false
+		},
+		"data_chip_marian_love": {
+			"name": "玛丽安留言数据片",
+			"desc": "残骸终端里她自己输入的一行话：复制品也要被爱。",
+			"stack_max": 1,
+			"color": "#d8a8b0",
+			"usable": false
+		},
+		"composite_armor_panel": {
+			"name": "复合装甲板",
+			"desc": "从不败之盾-雷霆残骸拆下的装甲片段，仍可焊接到车体。",
+			"stack_max": 99,
+			"color": "#a0a8b8",
+			"usable": false
+		},
+		"auto_turret_auth": {
+			"name": "自动炮塔授权码",
+			"desc": "雷霆单元死前未销毁的炮塔控制密钥，可写入夜间布防系统。",
+			"stack_max": 99,
+			"color": "#e8c060",
+			"usable": false
 		}
 	},
 	"loot_by_building": {
@@ -85,6 +163,8 @@
 		"archive": ["scrap", "supplies", "fuel"],
 		"elevator": ["parts", "scrap"],
 		"hub": ["supplies", "fuel", "scrap"],
+		"command": ["scrap", "parts", "supplies", "fuel"],
+		"radar": ["parts", "scrap", "fuel", "supplies"],
 		"default": ["wood", "parts", "supplies", "fuel"]
 	}
 }

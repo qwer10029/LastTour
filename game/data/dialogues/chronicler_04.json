@@ -80,7 +80,7 @@
     "intro_done": {
       "speaker": "System",
       "bubble": "",
-      "text": "委托已接受。进入档案室，前往三楼通讯室拾取存储模块（2 块）。",
+      "text": "委托已接受。前往三楼通讯室拾取存储模块（2 块）。",
       "next": "intro_done_close"
     },
     "intro_done_close": {
@@ -144,8 +144,7 @@
       "actions": {
         "give_item": "data_chip",
         "count": 1,
-        "unlock_journal_entry": "chronicler_repair",
-        "spawn_reward_loot": "supply_map"
+        "unlock_journal_entry": "chronicler_repair"
       },
       "next": "story_done"
     },

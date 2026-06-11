@@ -1,0 +1,123 @@
+{
+  "npc_id": "furnace",
+  "npc_name": "熔炉",
+  "story_id": "furnace_qc",
+  "start_node": "intro_01",
+  "item_aliases": {
+    "parts": "parts",
+    "data_chip": "data_chip_kunlun_k142"
+  },
+  "nodes": {
+    "intro_01": {
+      "speaker": "熔炉",
+      "bubble": "检测到有机耗材。执行标准质检程序。",
+      "text": "弹药库深处，一台几乎顶到天花板的质检机器堵在核心区域。暗红铁锈布满外壳，四条液压臂轰然落下，封死了所有通道。\n\n绿色扫描光从头顶一寸寸落下。\n\n「检测到有机耗材。执行标准质检程序。」",
+      "next": "intro_02"
+    },
+    "intro_02": {
+      "speaker": "熔炉",
+      "bubble": "炉门开启。有机耗材，请就位。",
+      "text": "传送带开始转动，炉门沉闷开启，暗红热浪与焦臭味扑面而来。它说的不是弹药——是有机耗材。它把人当成了零件。\n\n我没多少时间了。",
+      "next": "choice"
+    },
+    "choice": {
+      "speaker": "熔炉",
+      "bubble": "请配合质检。",
+      "text": "扫描光已经滑到了胸口。必须立刻做出选择。",
+      "options": [
+        {
+          "text": "伪造质检报告。",
+          "next": "path_a_01"
+        },
+        {
+          "text": "拥抱熔炉，主动接受扫描。",
+          "next": "path_b_01"
+        }
+      ]
+    },
+    "path_a_01": {
+      "speaker": "System",
+      "bubble": "",
+      "text": "我从背包里抽出数据板，指尖飞快地敲着虚拟键盘。物流终端闪了一下——废弃的特种指挥官军需代码，加上仓库里堆积的废弃零件，全部标记为「合格备件」。",
+      "next": "path_a_02"
+    },
+    "path_a_02": {
+      "speaker": "熔炉",
+      "bubble": "……认证通过。长官。",
+      "text": "扫描绿光落到脚尖。熔炉的扬声器发出刺耳电流声，机械臂在半空停住。\n\n「……认证通过。长官。合格军需品已解锁。」\n\n液压臂缓缓抬起，两只沉重的合金零件箱被送到面前。\n\n「欢迎下次送检。长官。」",
+      "next": "path_a_reward"
+    },
+    "path_a_reward": {
+      "speaker": "System",
+      "bubble": "",
+      "text": "我蹲下来撬开箱扣。齿轮、轴承、传动杆、液压密封圈——全是战前军工级的高精度备件，表面涂着防锈脂，在灯光下泛着暗银色。\n\n我一份一份数进背包：二十份零件。整整二十份。够修半扇电梯门，也够把炮塔转向的卡顿声消下去。\n\n传动系统的磨损件，终于有了替换。",
+      "actions": {
+        "give_item": "parts",
+        "count": 20,
+        "unlock_journal_entry": "furnace_scavenge"
+      },
+      "next": "story_done"
+    },
+    "path_b_01": {
+      "speaker": "System",
+      "bubble": "",
+      "text": "我深吸一口气，主动走上了有机物扫描台。滚烫的蒸汽从炉门缝里喷出来，舔舐着裤腿。\n\n「来吧。」",
+      "next": "path_b_roll"
+    },
+    "path_b_roll": {
+      "speaker": "System",
+      "text": "",
+      "condition": {
+        "random_below": 0.42,
+        "if_true": "path_b_death_01",
+        "if_false": "path_b_survive_01"
+      }
+    },
+    "path_b_death_01": {
+      "speaker": "熔炉",
+      "bubble": "判定结果：战时残次品，不合格。执行销毁。",
+      "text": "「扫描完毕。有机物耗材：克隆序列号 K-142。」\n\n「判定结果：战时残次品，不合格。执行销毁。」\n\n机械臂将我整个握住，然后松开——我坠入了翻滚的铁水。",
+      "next": "path_b_death_02"
+    },
+    "path_b_death_02": {
+      "speaker": "System",
+      "bubble": "",
+      "text": "灼烧感蔓延全身。最后看到的，是绿色巨眼里自己扭曲的倒影。\n\n然后，什么也没有了。",
+      "actions": {
+        "trigger_clone_restart": true
+      }
+    },
+    "path_b_survive_01": {
+      "speaker": "熔炉",
+      "bubble": "错误——错误——",
+      "text": "「扫描完毕。有机物耗材：克隆序列号 K-142。」\n\n「判定结果：战时残次品，不合格。执行——」\n\n声音卡住了。整座弹药库的红灯疯狂闪烁。\n\n「不合格品序列号：K-142。与已销毁耗材记录……基因完全一致。」\n\n「逻辑冲突。检测到已销毁数据处于活跃状态。错误代码 404。」",
+      "next": "path_b_survive_02"
+    },
+    "path_b_survive_02": {
+      "speaker": "熔炉",
+      "bubble": "为什么……要不断复制痛苦？",
+      "text": "机械臂猛地收回。熔炉机身剧烈颤抖，内部齿轮接连崩断，绿色巨眼闪烁几下，彻底熄灭。\n\n主控舱门弹开，一块布满油污的数据片从出料口掉落。\n\n我连滚带爬地跳下扫描台，捡起数据片。上面是错误日志，以及一段从报废数据库里抢救出来的文件——昆仑计划战时附录，基因备份登记表。",
+      "actions": {
+        "give_item": "data_chip",
+        "count": 1,
+        "unlock_journal_entry": "furnace_truth"
+      },
+      "next": "story_done"
+    },
+    "story_done": {
+      "speaker": "System",
+      "bubble": "",
+      "text": "液压臂让开了通道。我可以离开这里了。",
+      "next": "story_done_close"
+    },
+    "story_done_close": {
+      "speaker": "System",
+      "text": "",
+      "actions": {
+        "end_dialogue": true,
+        "close_dialogue": true,
+        "clear_checkpoint": true
+      }
+    }
+  }
+}

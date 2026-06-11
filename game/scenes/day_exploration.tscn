@@ -21,7 +21,7 @@ vehicle_scene = ExtResource("4_vehicle")
 [node name="TimeSystem" type="Node" parent="Systems"]
 script = ExtResource("6_time")
 auto_start = false
-day_duration_sec = 180.0
+day_duration_sec = 90.0
 evening_warning_sec = 25.0
 
 [node name="NightDefenseSystem" type="Node" parent="Systems"]
@@ -256,7 +256,7 @@ text = "下车探索(E)"
 text = "返回车辆(E)"
 
 [node name="RepairButton" type="Button" parent="HUD/ActionPanel/MarginContainer/VBoxContainer/ActionButtons"]
-text = "修复电梯(R)"
+text = "修复电梯(F)"
 
 [node name="BackTrackButton" type="Button" parent="HUD/ActionPanel/MarginContainer/VBoxContainer/ActionButtons"]
 visible = false

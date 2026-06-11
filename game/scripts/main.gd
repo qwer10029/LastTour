@@ -6,8 +6,10 @@ const EndingOutcomeOverlayScript = preload("res://scripts/ui/ending_outcome_over
 const DayTopdownRender = preload("res://scripts/day_topdown_render.gd")
 const RunStateClass = preload("res://scripts/run_state.gd")
 const NpcDialogueRunnerScript = preload("res://scripts/story/npc_dialogue_runner.gd")
+const StoryDialogueUIScene = preload("res://scenes/ui/story_dialogue_ui.tscn")
 const FINAL_TERMINAL_WAVE_PATH := "res://data/night_td/waves/night_wave_final_terminal.json"
 const FUEL_EMPTY_EPSILON := 0.001
+const THUNDER_LEITING_WAVE_PATH := "res://data/night_td/waves/night_wave_thunder_leiting.json"
 var _building_pick_index: int = 0
 var _foot_local_pos: Vector2 = Vector2.ZERO
 var _foot_move_dir: Vector2 = Vector2.UP
@@ -71,6 +73,10 @@ var _last_draw_evening_tint: float = -1.0
 var _last_foot_draw_pos: Vector2 = Vector2(-99999.0, -99999.0)
 var _last_foot_walk_phase_draw: float = -999.0
 var _foot_ui_accum: float = 0.0
+var _drive_ui_accum: float = 0.0
+const UI_REFRESH_INTERVAL := 0.16
+var _ui_refresh_scheduled := false
+var _last_pda_entries_sig := ""
 var _foot_layout_cache: Dictionary = {}
 var _world_map_overlay: WorldMapOverlay
 var _drive_exit_locked: bool = false  ## 到岔口后须先松开方向键，再按一次才选路
@@ -80,6 +86,8 @@ var _run_ended := false
 var _run_end_reason := ""
 var _final_choice_id := ""
 var _final_defense_cleared := false
+var _thunder_leiting_defeated := false
+var _pending_thunder_district := -1
 var _run_end_overlay: CanvasLayer
 var _communication_terminal: CanvasLayer
 var _ending_outcome_overlay: CanvasLayer
@@ -145,14 +153,9 @@ var _night_result_applied := false
 @onready var action_buttons_row: HBoxContainer = $HUD/ActionPanel/MarginContainer/VBoxContainer/ActionButtons
 
 var _last_dialogue_options_key: String = ""
-var _story_choice_overlay: CanvasLayer
-var _story_choice_panel: PanelContainer
-var _story_choice_title: Label
-var _story_choice_title_scroll: ScrollContainer
-var _story_choice_hint: Label
-var _story_choice_box_scroll: ScrollContainer
-var _story_choice_box: VBoxContainer
+var _story_dialogue_ui: StoryDialogueUI
 var _story_choice_overlay_key: String = ""
+var _clone_restart_overlay: CanvasLayer
 
 func _ready() -> void:
 	night_td = get_node_or_null("NightTd") as NightTdController  # 主场景有，子场景可能无
@@ -162,10 +165,11 @@ func _ready() -> void:
 	if road_render_settings == null:
 		road_render_settings = RoadRenderSettings.new()
 	DayTopdownRender.apply_settings(road_render_settings)
-	DayTopdownRender.reload_road_textures()
-	DayTopdownRender.reload_prop_textures()
-	DayTopdownRender.preload_wilderness_noise()
-	DayTopdownRender.preload_interior_textures()
+	if not _run_bootstrap_textures_ready():
+		DayTopdownRender.reload_road_textures()
+		DayTopdownRender.reload_prop_textures()
+		DayTopdownRender.preload_wilderness_noise()
+		DayTopdownRender.preload_interior_textures()
 	if enable_road_tuning_panel:
 		_setup_road_tuning_panel()
 	_ensure_input_actions()
@@ -196,6 +200,15 @@ func _ready() -> void:
 	_sync_day_entity_visibility()
 	_refresh_ui()
 	queue_redraw()
+	if GameManager.should_dismiss_enter_overlay():
+		call_deferred("_dismiss_enter_overlay")
+
+
+func _dismiss_enter_overlay() -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if GameManager.should_dismiss_enter_overlay():
+		await GameManager.dismiss_enter_overlay()
 
 
 func _setup_road_tuning_panel() -> void:
@@ -215,65 +228,126 @@ func _setup_hud_theme() -> void:
 
 
 func _setup_story_choice_overlay() -> void:
-	if is_instance_valid(_story_choice_overlay) and is_instance_valid(_story_choice_box_scroll):
+	if is_instance_valid(_story_dialogue_ui):
 		return
-	if is_instance_valid(_story_choice_overlay):
-		_story_choice_overlay.queue_free()
-		_story_choice_overlay = null
-		_story_choice_panel = null
-		_story_choice_box = null
-	_story_choice_overlay = CanvasLayer.new()
-	_story_choice_overlay.name = "StoryChoiceOverlay"
-	_story_choice_overlay.layer = 80
-	add_child(_story_choice_overlay)
-	_story_choice_panel = PanelContainer.new()
-	_story_choice_panel.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	_story_choice_panel.offset_left = 72.0
-	_story_choice_panel.offset_top = -420.0
-	_story_choice_panel.offset_right = -72.0
-	_story_choice_panel.offset_bottom = -HudTheme.SAFE_MARGIN
-	HudTheme.apply_panel_container(_story_choice_panel)
-	_story_choice_overlay.add_child(_story_choice_panel)
-	var margin := MarginContainer.new()
-	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override("margin_left", 16)
-	margin.add_theme_constant_override("margin_top", 14)
-	margin.add_theme_constant_override("margin_right", 16)
-	margin.add_theme_constant_override("margin_bottom", 14)
-	_story_choice_panel.add_child(margin)
-	var root := VBoxContainer.new()
-	root.add_theme_constant_override("separation", 10)
-	margin.add_child(root)
-	_story_choice_title_scroll = ScrollContainer.new()
-	_story_choice_title_scroll.custom_minimum_size = Vector2(0, 88)
-	_story_choice_title_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_story_choice_title_scroll.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	_story_choice_title_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_story_choice_title_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-	root.add_child(_story_choice_title_scroll)
-	_story_choice_title = Label.new()
-	_story_choice_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_story_choice_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	HudTheme.apply_label(_story_choice_title)
-	_story_choice_title_scroll.add_child(_story_choice_title)
-	_story_choice_hint = Label.new()
-	_story_choice_hint.text = "点下方按钮选择"
-	_story_choice_hint.add_theme_color_override("font_color", Color("#9eb4c8"))
-	HudTheme.apply_compact_label(_story_choice_hint)
-	_story_choice_hint.set_meta("hud_compact", true)
-	root.add_child(_story_choice_hint)
-	_story_choice_box_scroll = ScrollContainer.new()
-	_story_choice_box_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_story_choice_box_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_story_choice_box_scroll.custom_minimum_size = Vector2(0, 140)
-	_story_choice_box_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_story_choice_box_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-	root.add_child(_story_choice_box_scroll)
-	_story_choice_box = VBoxContainer.new()
-	_story_choice_box.add_theme_constant_override("separation", 8)
-	_story_choice_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_story_choice_box_scroll.add_child(_story_choice_box)
-	_story_choice_overlay.visible = false
+	_story_dialogue_ui = StoryDialogueUIScene.instantiate() as StoryDialogueUI
+	_story_dialogue_ui.name = "StoryDialogueUI"
+	add_child(_story_dialogue_ui)
+	_story_dialogue_ui.choice_pressed.connect(_on_story_dialogue_choice_pressed)
+	_story_dialogue_ui.advance_requested.connect(_on_story_dialogue_advance_requested)
+	_story_dialogue_ui.hide_dialogue()
+
+
+func _on_story_dialogue_advance_requested() -> void:
+	_try_advance_story_dialogue()
+
+
+func _try_story_e_action_overlay() -> bool:
+	if _mode == TravelMode.DRIVE and _try_enter_interior_at_drive_gate():
+		return true
+	if not _is_story_dialogue_visible() or not is_instance_valid(_story_dialogue_ui):
+		return false
+	var key := _story_choice_overlay_key
+	if _story_dialogue_ui.is_choice_mode():
+		if key.begins_with("gate|") or key.begins_with("disembark|"):
+			_confirm_story_action_overlay(0)
+			return true
+		return false
+	if key.begins_with("disembark|") or key.begins_with("thunder|") or key.begins_with("foot_return|"):
+		_confirm_story_action_overlay(0)
+		return true
+	return false
+
+
+func _try_enter_interior_at_drive_gate() -> bool:
+	if _mode != TravelMode.DRIVE or _segment_target_index >= 0 or _is_night_phase():
+		return false
+	if not is_instance_valid(_story_controller):
+		return false
+	var buildings := _get_enterable_buildings()
+	if buildings.is_empty():
+		return false
+	var district_index := _selected_enterable_district()
+	if district_index < 0:
+		return false
+	var story_id := _story_controller.story_id_of_district(district_index)
+	if story_id == "" or not StoryData.is_interior_encounter(story_id):
+		return false
+	if _story_controller.is_thunder_blocking_district(district_index):
+		return false
+	if not _can_enter_district(district_index):
+		return false
+	_story_controller.suspend_interior_dialogue_for_drive(story_id)
+	_hide_story_choice_overlay()
+	_enter_selected_building()
+	return true
+
+
+func _confirm_story_action_overlay(index: int) -> void:
+	_on_story_dialogue_choice_pressed(index)
+
+
+func _try_advance_story_dialogue() -> bool:
+	if _try_story_e_action_overlay():
+		return true
+	if not _is_story_dialogue_visible() or not is_instance_valid(_story_dialogue_ui):
+		return false
+	if _story_dialogue_ui.is_choice_mode():
+		return false
+	if _story_dialogue_ui.try_advance_page():
+		return true
+	if _mode == TravelMode.FOOT and is_instance_valid(_story_controller):
+		var npc := _story_controller.npc_dialogue
+		if npc != null and npc.is_active() and npc.phase == NpcDialogueRunnerScript.Phase.LINE:
+			npc.advance_line()
+			_refresh_ui()
+			return true
+	if _mode == TravelMode.DRIVE and is_instance_valid(_story_controller):
+		if _story_controller.advance_active_drive_dialogue():
+			_refresh_ui()
+			return true
+	return false
+
+
+func _on_story_dialogue_choice_pressed(index: int) -> void:
+	if not is_instance_valid(_story_controller):
+		return
+	if _story_choice_overlay_key.begins_with("gate|"):
+		if index == 0:
+			_on_story_accept_pressed()
+		else:
+			_on_story_decline_pressed()
+	elif _story_choice_overlay_key.begins_with("disembark|"):
+		if index == 0:
+			_on_disembark_pressed()
+		elif index == 1:
+			_on_return_pressed()
+	elif _story_choice_overlay_key.begins_with("reward|"):
+		_on_story_reward_pressed(index)
+	elif _story_choice_overlay_key.begins_with("thunder|"):
+		_on_disembark_pressed()
+	elif _story_choice_overlay_key.begins_with("foot_return|"):
+		_story_controller.try_interior_story_interact(_current_district_index, _foot_local_pos)
+	else:
+		_story_controller.choose_dialogue_option(index)
+	_hide_story_choice_overlay()
+	_schedule_refresh_ui()
+
+
+func _current_dialogue_speaker() -> String:
+	if not is_instance_valid(_story_controller):
+		return ""
+	var npc := _story_controller.npc_dialogue
+	if npc != null and npc.is_active() and npc.current_speaker.strip_edges() != "":
+		return npc.current_speaker
+	var story_id := _story_controller.story_id_at_node(_current_node_index)
+	if story_id != "":
+		return StoryData.title_of(story_id)
+	return ""
+
+
+func _is_story_dialogue_visible() -> bool:
+	return is_instance_valid(_story_dialogue_ui) and _story_dialogue_ui.visible
 
 
 func _setup_pda_hud() -> void:
@@ -588,15 +662,34 @@ func _on_repair_option_pressed(material: String) -> void:
 	_repair_with_material(material)
 
 
+func _run_bootstrap_textures_ready() -> bool:
+	return GameManager.run_bootstrap_textures_preloaded()
+
+
+func _apply_pregenerated_map(bootstrap: Dictionary) -> void:
+	var map: Variant = bootstrap.get("map")
+	if map is WorldMapData:
+		_map = map
+	_current_layer = maxi(int(bootstrap.get("current_layer", 1)), 1)
+	_elevator_repair_progress = 0
+	_current_district_index = -1
+	_apply_overworld_biome_for_layer()
+
+
 func _start_new_run() -> void:
 	_run_ended = false
 	_run_end_reason = ""
 	_final_choice_id = ""
 	_final_defense_cleared = false
+	_thunder_leiting_defeated = false
+	_pending_thunder_district = -1
 	_run_journal = RunJournal.new()
 	_story_controller.reset_for_new_run()
 	_init_player_loadout()
-	_generate_layer_map()
+	if GameManager.has_run_bootstrap():
+		_apply_pregenerated_map(GameManager.consume_run_bootstrap())
+	else:
+		_generate_layer_map()
 	_fuel = fuel_max
 	_reset_vehicle_hp_for_new_run()
 	_spawn_resources()
@@ -703,8 +796,16 @@ func _spawn_resources() -> void:
 			node.queue_free()
 	_resource_nodes.clear()
 	for district_index in _map.district_indices:
+		if _map.is_tactical_dormant(district_index):
+			continue
 		var cell := _map.get_cell(district_index)
+		if str(cell.get("story_id", "")) != "":
+			continue
+		_map.ensure_resource_spawn_collected_state(district_index)
 		for spawn_data in cell.get("resource_spawns", []):
+			var spawn_key := _map.resource_spawn_key(spawn_data)
+			if spawn_key != "" and _map.is_resource_spawn_collected(district_index, spawn_key):
+				continue
 			var spawn_position := Vector2.ZERO
 			var loot_id := "scrap"
 			if spawn_data is Dictionary:
@@ -715,11 +816,18 @@ func _spawn_resources() -> void:
 			var pickup := resource_scene.instantiate()
 			add_child(pickup)
 			pickup.visible = false
+			pickup.monitorable = false
+			pickup.monitoring = false
+			var collision := pickup.get_node_or_null("CollisionShape2D") as CollisionShape2D
+			if is_instance_valid(collision):
+				collision.disabled = true
 			pickup.position = _map.cell_rect(district_index).position + spawn_position
 			pickup.set_meta("district_index", district_index)
 			pickup.set_meta("item_id", loot_id)
 			if loot_id.begins_with("evidence:"):
 				pickup.set_meta("skip_map_resource", true)
+			if spawn_key != "":
+				pickup.set_meta("spawn_key", spawn_key)
 			if pickup.has_method("setup_loot"):
 				pickup.setup_loot(loot_id)
 			if pickup.has_signal("collected"):
@@ -762,7 +870,10 @@ func _process(_delta: float) -> void:
 	if _run_ended or _game_paused or _backpack_open:
 		return
 	if Input.is_action_just_pressed("enter_defense_mode"):
-		_try_enter_defense_mode()
+		if _mode == TravelMode.FOOT:
+			_try_foot_console_interact()
+		else:
+			_try_enter_defense_mode()
 
 
 func _physics_process(delta: float) -> void:
@@ -797,10 +908,20 @@ func _physics_process(delta: float) -> void:
 	_check_player_vitals_failure()
 
 	if Input.is_action_just_pressed("interact"):
-		if _mode == TravelMode.FOOT:
-			_handle_foot_interact()
+		if _try_story_e_action_overlay():
+			pass
+		elif _mode == TravelMode.FOOT:
+			if not _try_foot_return_to_vehicle():
+				_handle_foot_interact()
 		elif _mode == TravelMode.DRIVE and _segment_target_index < 0:
-			if _story_controller.handle_drive_interact(_current_node_index):
+			if _try_advance_story_dialogue():
+				pass
+			elif (
+				is_instance_valid(_story_controller)
+				and _story_controller.advance_active_drive_dialogue()
+			):
+				_refresh_ui()
+			elif _story_controller.handle_drive_interact(_current_node_index):
 				_refresh_ui()
 			elif not _get_enterable_buildings().is_empty():
 				var district_index := _selected_enterable_district()
@@ -822,11 +943,8 @@ func _physics_process(delta: float) -> void:
 		)
 		if not gate_active:
 			_try_begin_drive_from_input()
-	if Input.is_action_just_pressed("repair"):
-		if _can_use_kunlun_control():
-			_attempt_kunlun_terminal()
-		else:
-			_attempt_repair_elevator()
+	if Input.is_action_just_pressed("repair") and _mode == TravelMode.FOOT:
+		_try_foot_console_interact()
 
 	match _mode:
 		TravelMode.DRIVE:
@@ -834,16 +952,22 @@ func _physics_process(delta: float) -> void:
 		TravelMode.FOOT:
 			_process_foot(delta)
 
+	if is_instance_valid(_story_controller):
+		_story_controller.tick_prop_dig_fx(delta)
+
 	_sync_view_cameras()
 	_refresh_focus()
 	if _mode == TravelMode.FOOT:
 		_foot_ui_accum += delta
-		if _foot_ui_accum >= 0.18:
+		if _foot_ui_accum >= UI_REFRESH_INTERVAL:
 			_foot_ui_accum = 0.0
-			_refresh_ui()
+			_schedule_refresh_ui()
 	else:
 		_foot_ui_accum = 0.0
-		_refresh_ui()
+		_drive_ui_accum += delta
+		if _drive_ui_accum >= UI_REFRESH_INTERVAL:
+			_drive_ui_accum = 0.0
+			_schedule_refresh_ui()
 	_request_overworld_redraw_if_needed()
 
 func _request_overworld_redraw_if_needed() -> void:
@@ -1008,6 +1132,9 @@ func _process_drive(delta: float) -> void:
 func _process_foot(delta: float) -> void:
 	if _current_district_index < 0:
 		return
+	if is_instance_valid(_story_controller) and _story_controller.blocks_foot_exit(_current_district_index):
+		_foot_is_walking = false
+		return
 	var foot_area := _map.get_foot_area_rect(_current_district_index)
 	if foot_area.size == Vector2.ZERO:
 		return
@@ -1037,16 +1164,25 @@ func _try_collect_interior_pickups() -> void:
 	if _current_district_index < 0:
 		return
 	var player_world := _map.get_foot_origin(_current_district_index) + _foot_local_pos
+	var pickup_radius := 30.0
+	var best_pickup: Area2D = null
+	var best_distance := pickup_radius
 	for node in _resource_nodes:
 		if not is_instance_valid(node):
 			continue
+		if bool(node.get_meta("picked_up", false)):
+			continue
 		if int(node.get_meta("district_index", -1)) != _current_district_index:
 			continue
-		if node.global_position.distance_to(player_world) > 28.0:
+		var dist := node.global_position.distance_to(player_world)
+		if dist > pickup_radius:
 			continue
-		var loot_id := str(node.get_meta("item_id", "scrap"))
-		if node.has_signal("collected"):
-			node.collected.emit(loot_id, node)
+		if dist < best_distance:
+			best_distance = dist
+			best_pickup = node
+	if best_pickup != null and best_pickup.has_signal("collected"):
+		var loot_id := str(best_pickup.get_meta("item_id", "scrap"))
+		best_pickup.collected.emit(loot_id, best_pickup)
 	if is_instance_valid(_story_controller):
 		_story_controller.try_collect_foot_loot(_current_district_index, _foot_local_pos)
 
@@ -1068,40 +1204,61 @@ func _input(event: InputEvent) -> void:
 			_toggle_backpack()
 			get_viewport().set_input_as_handled()
 			return
-		if not _game_paused and not _backpack_open and _mode == TravelMode.DRIVE and _segment_target_index < 0:
-			var story_id := _story_controller.story_id_at_node(_current_node_index) if is_instance_valid(_story_controller) else ""
-			if story_id != "" and is_instance_valid(_story_controller):
-				var npc := _story_controller.npc_dialogue
-				if npc != null and npc.is_active() and npc.phase == NpcDialogueRunnerScript.Phase.OPTIONS:
-					var option_count := npc.get_option_labels().size()
-					for i in range(mini(9, option_count)):
-						var reward_key := Key.KEY_1 + i
-						if event.keycode == reward_key or event.physical_keycode == reward_key:
-							_story_controller.choose_dialogue_option(i)
-							get_viewport().set_input_as_handled()
-							return
-				var gate := _story_controller.gate_dialogue
-				if gate != null and story_id != "" and gate.phase == StoryGateDialogue.Phase.REWARD_CHOICE:
-					var choice_count := StoryData.reward_choice_count(story_id)
-					for i in range(mini(9, choice_count)):
-						var reward_key := Key.KEY_1 + i
-						if event.keycode == reward_key or event.physical_keycode == reward_key:
-							_story_controller.choose_reward_index(i)
-							get_viewport().set_input_as_handled()
-							return
-			var buildings := _get_enterable_buildings()
-			for i in range(mini(9, buildings.size())):
-				var key := Key.KEY_1 + i
-				if event.keycode == key or event.physical_keycode == key:
-					_building_pick_index = i
-					_mark_overworld_dirty()
-					var district_index := int(buildings[i].get("district_index", -1))
-					if not _can_enter_district(district_index):
-						_story_controller.try_enter_district(district_index)
-					else:
-						_enter_selected_building()
-					get_viewport().set_input_as_handled()
-					return
+		if not _game_paused and not _backpack_open and _segment_target_index < 0:
+			if _is_story_dialogue_visible() and _story_dialogue_ui.is_choice_mode():
+				var choice_count := _story_dialogue_ui.get_choice_count()
+				for i in range(mini(9, choice_count)):
+					var overlay_key := Key.KEY_1 + i
+					if event.keycode == overlay_key or event.physical_keycode == overlay_key:
+						_on_story_dialogue_choice_pressed(i)
+						get_viewport().set_input_as_handled()
+						return
+			if _mode == TravelMode.FOOT and _current_district_index >= 0 and is_instance_valid(_story_controller):
+				var foot_story_id := _story_controller.story_id_of_district(_current_district_index)
+				if foot_story_id != "":
+					var foot_npc := _story_controller.npc_dialogue
+					if foot_npc != null and foot_npc.is_active() and foot_npc.phase == NpcDialogueRunnerScript.Phase.OPTIONS:
+						var foot_option_count := foot_npc.get_option_labels().size()
+						for i in range(mini(9, foot_option_count)):
+							var foot_key := Key.KEY_1 + i
+							if event.keycode == foot_key or event.physical_keycode == foot_key:
+								_story_controller.choose_dialogue_option(i)
+								get_viewport().set_input_as_handled()
+								return
+			if _mode == TravelMode.DRIVE:
+				var story_id := _story_controller.story_id_at_node(_current_node_index) if is_instance_valid(_story_controller) else ""
+				if story_id != "" and is_instance_valid(_story_controller):
+					var npc := _story_controller.npc_dialogue
+					if npc != null and npc.is_active() and npc.phase == NpcDialogueRunnerScript.Phase.OPTIONS:
+						var option_count := npc.get_option_labels().size()
+						for i in range(mini(9, option_count)):
+							var reward_key := Key.KEY_1 + i
+							if event.keycode == reward_key or event.physical_keycode == reward_key:
+								_story_controller.choose_dialogue_option(i)
+								get_viewport().set_input_as_handled()
+								return
+					var gate := _story_controller.gate_dialogue
+					if gate != null and story_id != "" and gate.phase == StoryGateDialogue.Phase.REWARD_CHOICE:
+						var choice_count := StoryData.reward_choice_count(story_id)
+						for i in range(mini(9, choice_count)):
+							var reward_key := Key.KEY_1 + i
+							if event.keycode == reward_key or event.physical_keycode == reward_key:
+								_story_controller.choose_reward_index(i)
+								get_viewport().set_input_as_handled()
+								return
+				var buildings := _get_enterable_buildings()
+				for i in range(mini(9, buildings.size())):
+					var key := Key.KEY_1 + i
+					if event.keycode == key or event.physical_keycode == key:
+						_building_pick_index = i
+						_mark_overworld_dirty()
+						var district_index := int(buildings[i].get("district_index", -1))
+						if not _can_enter_district(district_index):
+							_story_controller.try_enter_district(district_index)
+						else:
+							_enter_selected_building()
+						get_viewport().set_input_as_handled()
+						return
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -1376,6 +1533,8 @@ func _get_enterable_buildings() -> Array:
 	if not _map.is_drive_node(_current_node_index):
 		return result
 	for district_index in _map.get_roadside_districts(_current_node_index):
+		if _map.is_tactical_dormant(district_index):
+			continue
 		var cell := _map.get_cell(district_index)
 		result.append({
 			"district_index": district_index,
@@ -1399,6 +1558,9 @@ func _begin_foot_mode(district_index: int = -1) -> void:
 	if district_index < 0:
 		district_index = _current_district_index
 	if district_index < 0 or not _map.is_district(district_index):
+		return
+	if is_instance_valid(_story_controller) and _story_controller.is_thunder_blocking_district(district_index):
+		_story_controller.begin_thunder_gate_encounter(district_index)
 		return
 	if not _can_enter_district(district_index):
 		return
@@ -1424,22 +1586,42 @@ func _begin_foot_mode(district_index: int = -1) -> void:
 	for node in _resource_nodes:
 		if is_instance_valid(node):
 			node.visible = false
-	_story_controller.on_entered_district_foot(_current_district_index)
+	call_deferred("_on_foot_district_entered", _current_district_index)
 	_cache_foot_layout_data(_current_district_index)
 	_mark_overworld_dirty()
 	_last_foot_draw_pos = Vector2(-99999.0, -99999.0)
-	_refresh_ui()
+	_drive_ui_accum = 0.0
+	_schedule_refresh_ui()
 	call_deferred("_deferred_foot_enter_setup", _current_district_index)
+
+func _on_foot_district_entered(district_index: int) -> void:
+	if _mode != TravelMode.FOOT or _current_district_index != district_index:
+		return
+	if is_instance_valid(_story_controller):
+		_story_controller.on_entered_district_foot(district_index)
 
 func _deferred_foot_enter_setup(district_index: int) -> void:
 	if _mode != TravelMode.FOOT or _current_district_index != district_index:
 		return
-	_fix_district_pickup_positions(district_index)
-	_story_controller.fix_foot_loot_positions(district_index)
-	_refresh_ui()
-	_mark_overworld_dirty()
+	if is_instance_valid(_story_controller):
+		var sid := _story_controller.story_id_of_district(district_index)
+		if sid != "" and _story_controller.run_state.is_quest_active(sid):
+			_fix_district_pickup_positions(district_index)
+			_story_controller.fix_foot_loot_positions(district_index)
+	_schedule_refresh_ui()
 
 func _return_to_vehicle() -> void:
+	if _mode == TravelMode.FOOT and is_instance_valid(_story_controller) and _current_district_index >= 0:
+		var exit_story_id := _story_controller.story_id_of_district(_current_district_index)
+		if exit_story_id != "":
+			_story_controller.suspend_interior_dialogue_for_drive(exit_story_id)
+			_hide_story_choice_overlay()
+	if (
+		_mode == TravelMode.FOOT
+		and is_instance_valid(_story_controller)
+		and _story_controller.blocks_foot_exit(_current_district_index)
+	):
+		return
 	if _story_controller.on_exited_district_to_drive(_current_district_index):
 		_mode = TravelMode.DRIVE
 		_current_district_index = -1
@@ -1457,7 +1639,8 @@ func _return_to_vehicle() -> void:
 				node.visible = false
 		if _current_node_index >= 0:
 			_halt_at_node(_current_node_index)
-		_refresh_ui()
+		_foot_ui_accum = 0.0
+		_schedule_refresh_ui()
 		return
 	_mode = TravelMode.DRIVE
 	if is_instance_valid(_player):
@@ -1474,9 +1657,40 @@ func _return_to_vehicle() -> void:
 			node.visible = false
 	if _current_node_index >= 0:
 		_halt_at_node(_current_node_index)
+	_foot_ui_accum = 0.0
+	_schedule_refresh_ui()
+
+func _schedule_refresh_ui() -> void:
+	if _ui_refresh_scheduled:
+		return
+	_ui_refresh_scheduled = true
+	call_deferred("_run_scheduled_refresh_ui")
+
+
+func _run_scheduled_refresh_ui() -> void:
+	if not _ui_refresh_scheduled:
+		return
+	_ui_refresh_scheduled = false
+	_refresh_ui()
+
+
+func _pda_entries_signature(entries: Array) -> String:
+	var parts: PackedStringArray = []
+	for entry_var in entries:
+		if typeof(entry_var) != TYPE_DICTIONARY:
+			continue
+		var entry: Dictionary = entry_var
+		parts.append("%s:%d" % [str(entry.get("id", "")), int(entry.get("count", 0))])
+	return "|".join(parts)
+
 
 func _on_disembark_pressed() -> void:
+	if _try_enter_interior_at_drive_gate():
+		return
 	if is_instance_valid(_story_controller):
+		if _story_controller.advance_active_drive_dialogue():
+			_refresh_ui()
+			return
 		var npc := _story_controller.npc_dialogue
 		if npc != null and npc.is_active():
 			if npc.phase == NpcDialogueRunnerScript.Phase.OPTIONS:
@@ -1499,10 +1713,11 @@ func _on_disembark_pressed() -> void:
 			if not run_state.is_completed(story_id):
 				var need := int(StoryData.quest_def(story_id).get("collect_count", 0))
 				var collected := run_state.get_collect_count(story_id)
-				if not run_state.is_quest_active(story_id) or collected >= need:
-					_story_controller.start_story_talk(story_id)
-					_refresh_ui()
-					return
+				if not StoryData.is_interior_encounter(story_id):
+					if not run_state.is_quest_active(story_id) or collected >= need:
+						_story_controller.start_story_talk(story_id)
+						_refresh_ui()
+						return
 	if _mode == TravelMode.DRIVE and not _get_enterable_buildings().is_empty():
 		var district_index := _selected_enterable_district()
 		if not _can_enter_district(district_index):
@@ -1521,17 +1736,20 @@ func _on_return_pressed() -> void:
 			_refresh_ui()
 
 func _on_repair_pressed() -> void:
-	if _can_use_kunlun_control():
-		_attempt_kunlun_terminal()
-	else:
-		_attempt_repair_elevator()
+	_try_foot_console_interact()
 
 func _can_disembark() -> bool:
 	if _mode != TravelMode.DRIVE or _segment_target_index >= 0:
 		return false
 	if _get_enterable_buildings().is_empty():
 		return false
-	return _can_enter_district(_selected_enterable_district())
+	var district_index := _selected_enterable_district()
+	if (
+		is_instance_valid(_story_controller)
+		and _story_controller.is_thunder_blocking_district(district_index)
+	):
+		return true
+	return _can_enter_district(district_index)
 
 
 func _sync_day_entity_visibility() -> void:
@@ -1641,9 +1859,13 @@ func _attempt_repair_elevator() -> void:
 func _attempt_kunlun_terminal() -> void:
 	if not _can_use_kunlun_control() or not _is_near_kunlun_console():
 		return
+	if not _thunder_leiting_defeated:
+		return
 	_request_terminal_access()
 
 func _on_resource_collected(district_index: int, item_id: String, pickup: Area2D) -> void:
+	if is_instance_valid(pickup) and bool(pickup.get_meta("picked_up", false)):
+		return
 	var loot_id := str(item_id)
 	if loot_id == "":
 		loot_id = "scrap"
@@ -1656,14 +1878,33 @@ func _on_resource_collected(district_index: int, item_id: String, pickup: Area2D
 			pickup.queue_free()
 		return
 	var skip_map := is_instance_valid(pickup) and bool(pickup.get_meta("skip_map_resource", false))
-	if not skip_map and not _map.collect_resource(district_index):
+	var spawn_key := str(pickup.get_meta("spawn_key", "")) if is_instance_valid(pickup) else ""
+	if not skip_map and spawn_key != "" and _map.is_resource_spawn_collected(district_index, spawn_key):
 		return
 	var added := _backpack.add(loot_id, 1)
+	if added <= 0:
+		return
+	if not skip_map:
+		if spawn_key != "":
+			if not _map.mark_resource_spawn_collected(district_index, spawn_key):
+				return
+		elif not _map.collect_resource(district_index):
+			return
 	if added > 0:
 		_refresh_ui()
 		_refresh_backpack_if_open()
 		if _mode == TravelMode.FOOT:
 			_mark_overworld_dirty()
+	if is_instance_valid(pickup):
+		if skip_map:
+			pickup.queue_free()
+		else:
+			pickup.set_meta("picked_up", true)
+			pickup.visible = false
+			var pickup_label := pickup.get_node_or_null("Label") as Label
+			if is_instance_valid(pickup_label):
+				pickup_label.visible = false
+			_refresh_resource_pickups()
 
 
 func _refresh_backpack_if_open() -> void:
@@ -1969,7 +2210,7 @@ func _consume_repair_material() -> bool:
 
 func _repair_button_label() -> String:
 	if _backpack.has("parts", ItemDefs.REPAIR_PARTS_EACH) or _backpack.has("scrap", ItemDefs.REPAIR_SCRAP_EACH) or (_backpack.has("wood", ItemDefs.REPAIR_WOOD_EACH) and _backpack.has("scrap", ItemDefs.REPAIR_SCRAP_ALT_EACH)):
-		return "修复电梯 (R · 自选材料)"
+		return "修复电梯 (F · 自选材料)"
 	return "修复电梯 (材料不足)"
 
 
@@ -2187,10 +2428,9 @@ func _begin_final_ceremony() -> void:
 func _request_terminal_access() -> void:
 	if _run_ended:
 		return
-	if _final_defense_cleared:
-		_open_communication_terminal()
+	if not _thunder_leiting_defeated:
 		return
-	_start_final_terminal_defense()
+	_open_communication_terminal()
 
 
 func _final_terminal_session_options() -> Dictionary:
@@ -2200,6 +2440,85 @@ func _final_terminal_session_options() -> Dictionary:
 		"phase_title": "顶层终端防线",
 		"no_day_advance": true,
 	}
+
+
+func _on_thunder_boss_requested(district_index: int) -> void:
+	_pending_thunder_district = district_index
+	_start_thunder_leiting_boss()
+
+
+func _thunder_leiting_session_options() -> Dictionary:
+	return {
+		"kind": "thunder_leiting_boss",
+		"wave_plan_path": THUNDER_LEITING_WAVE_PATH,
+		"phase_title": "不败之盾-雷霆",
+		"no_day_advance": true,
+	}
+
+
+func _start_thunder_leiting_boss() -> void:
+	DayTopdownRender.reload_thunder_boss_sprites()
+	_hide_exploration_story_ui()
+	_force_return_to_vehicle_for_night()
+	if is_instance_valid(time_system):
+		time_system.pause()
+	if is_instance_valid(evening_notice) and evening_notice.has_method("hide_notice"):
+		evening_notice.hide_notice()
+	var snapshot: Dictionary = {}
+	if is_instance_valid(_backpack) and _backpack.has_method("to_dictionary"):
+		snapshot = _backpack.to_dictionary().duplicate()
+	var options := _thunder_leiting_session_options()
+	if is_instance_valid(night_defense) and is_instance_valid(night_td):
+		_night_result_applied = false
+		night_defense.start_td_session(
+			_backpack.total_count(),
+			GameManager.difficulty,
+			time_system.day_index if is_instance_valid(time_system) else 1,
+			true,
+			_vehicle_hp,
+			_vehicle_hp_max,
+			snapshot,
+			options,
+		)
+		_refresh_ui()
+		return
+	var rs = export_run_state()
+	rs.backpack_dict = snapshot
+	rs.night_context = "thunder_leiting_boss"
+	rs.night_session_options = options
+	GameManager.request_night_defense(rs, options)
+
+
+func _apply_thunder_leiting_victory() -> void:
+	_thunder_leiting_defeated = true
+	_final_defense_cleared = true
+	_backpack.add("composite_armor_panel", 3)
+	_backpack.add("auto_turret_auth", 3)
+	var recognition := "enemy"
+	if is_instance_valid(_story_controller):
+		recognition = _story_controller.run_state.get_variable(
+			"thunder_leiting",
+			"thunder_recognition",
+			"enemy",
+		)
+	var encounter_id := (
+		"thunder_leiting_victory_ally"
+		if str(recognition) == "ally"
+		else "thunder_leiting_victory_enemy"
+	)
+	var day_n := time_system.day_index if is_instance_valid(time_system) else 1
+	if _run_journal.add_story_outcome(encounter_id, _current_layer, day_n):
+		_on_journal_entry_added(encounter_id)
+	_refresh_backpack_if_open()
+
+
+func _trigger_thunder_defeat_end() -> void:
+	if _run_ended:
+		return
+	_run_ended = true
+	_run_end_reason = "thunder_leiting"
+	_freeze_run_for_end()
+	_show_run_summary()
 
 
 func _start_final_terminal_defense() -> void:
@@ -2319,6 +2638,10 @@ func _show_run_summary() -> void:
 			title = "本局结算 · 归档完成"
 		"strike":
 			title = "本局结束 · 通讯被打击"
+		"furnace_consumed":
+			title = "本局结束 · 熔炉销毁"
+		"thunder_leiting":
+			title = "游戏结束 · 最后的防线"
 		_:
 			title = "本局结算"
 	var summary_data := _build_run_summary_data(title)
@@ -2365,6 +2688,20 @@ func _build_run_summary_data(title: String) -> Dictionary:
 	elif _run_end_reason == "strike":
 		log_lines.append("通讯终端身份验证未通过，昆仑程序对本次勘探实施打击。")
 		log_lines.append("本局失败；与终端的接触已被记录，新的克隆体即将被派遣。")
+	elif _run_end_reason == "furnace_consumed":
+		log_lines.append("熔炉判定你为战时残次品，执行了销毁程序。")
+	elif _run_end_reason == "thunder_leiting":
+		var recognition := "enemy"
+		if is_instance_valid(_story_controller):
+			recognition = str(
+				_story_controller.run_state.get_variable("thunder_leiting", "thunder_recognition", "enemy")
+			)
+		if recognition == "ally":
+			log_lines.append("你倒在不败之盾面前。它最后说：「你是个好兵。但规矩……就是规矩。」")
+		else:
+			log_lines.append("你倒在不败之盾面前。它最后说：「敌人。这就是结局。」")
+		log_lines.append("它会记住你，像它记住那道永远不会来的指令一样。")
+		log_lines.append("昆仑程序已记录本次勘探失败，正在培育下一名克隆体。")
 	elif _run_end_reason == "reached_top":
 		log_lines.append("你已抵达顶层并完成归档仪式。")
 		if _final_choice_id != "":
@@ -2379,7 +2716,14 @@ func _build_run_summary_data(title: String) -> Dictionary:
 			"fake_success":
 				log_lines.append("虚假成功信号已注入。循环以讽刺的方式停摆。")
 
-	var is_failure := _run_end_reason in ["vehicle_destroyed", "player_collapsed", "out_of_fuel", "strike"]
+	var is_failure := _run_end_reason in [
+		"vehicle_destroyed",
+		"player_collapsed",
+		"out_of_fuel",
+		"strike",
+		"furnace_consumed",
+		"thunder_leiting",
+	]
 	return {
 		"title": title,
 		"is_failure": is_failure,
@@ -2457,6 +2801,7 @@ func init_from_run_state(rs) -> void:
 	_run_difficulty_name = rs.run_difficulty_name
 	_run_squad_name = rs.run_squad_name
 	_final_defense_cleared = rs.final_defense_cleared
+	_thunder_leiting_defeated = rs.thunder_leiting_defeated
 	GameManager.difficulty = rs.difficulty
 	GameManager.squad_id = rs.squad_id
 	_apply_run_config_from_manager()
@@ -2489,6 +2834,7 @@ func export_run_state():
 	rs.run_difficulty_name = _run_difficulty_name
 	rs.run_squad_name = _run_squad_name
 	rs.final_defense_cleared = _final_defense_cleared
+	rs.thunder_leiting_defeated = _thunder_leiting_defeated
 	rs.last_night_losses.clear()
 	for s in _last_night_losses:
 		rs.last_night_losses.append(s)
@@ -2527,6 +2873,7 @@ func capture_save_data() -> Dictionary:
 			"current_layer": _current_layer,
 			"elevator_repair_progress": _elevator_repair_progress,
 			"final_defense_cleared": _final_defense_cleared,
+			"thunder_leiting_defeated": _thunder_leiting_defeated,
 			"run_ended": _run_ended,
 			"run_end_reason": _run_end_reason,
 			"final_choice_id": _final_choice_id,
@@ -2575,8 +2922,12 @@ func _apply_save_data(data: Dictionary) -> void:
 
 	var layer: Dictionary = data.get("layer", {})
 	_current_layer = int(layer.get("current_layer", 1))
+	StoryData.ensure_story_districts(_map, _current_layer)
 	_elevator_repair_progress = int(layer.get("elevator_repair_progress", 0))
 	_final_defense_cleared = bool(layer.get("final_defense_cleared", false))
+	_thunder_leiting_defeated = bool(layer.get("thunder_leiting_defeated", false))
+	if _final_defense_cleared and not _thunder_leiting_defeated:
+		_thunder_leiting_defeated = true
 	_run_ended = bool(layer.get("run_ended", false))
 	_run_end_reason = str(layer.get("run_end_reason", ""))
 	_final_choice_id = str(layer.get("final_choice_id", ""))
@@ -2638,6 +2989,14 @@ func _restore_foot_mode_from_save(foot: Dictionary) -> void:
 		if is_instance_valid(node):
 			node.visible = int(node.get_meta("district_index", -1)) == _current_district_index
 	_sync_day_entity_visibility()
+	if is_instance_valid(_story_controller):
+		var sid := _story_controller.story_id_of_district(_current_district_index)
+		if sid == "" or (
+			not _story_controller.run_state.is_quest_active(sid)
+			and not _story_controller.run_state.is_completed(sid)
+		):
+			_story_controller.ensure_interior_encounter_at(_current_district_index)
+	_refresh_ui()
 
 
 func _restore_drive_state_after_load() -> void:
@@ -2696,11 +3055,10 @@ func _refresh_resource_pickups() -> void:
 		if not is_instance_valid(node) or not node.has_meta("district_index"):
 			continue
 		var district_index := int(node.get_meta("district_index"))
-		var remaining := _map.sector_resource_remaining(district_index)
 		var show_map_loot := (
 			_mode == TravelMode.FOOT
 			and district_index == _current_district_index
-			and remaining > 0
+			and not bool(node.get_meta("picked_up", false))
 			and not (
 				is_instance_valid(_story_controller)
 				and _story_controller.should_hide_map_loot(district_index)
@@ -2724,7 +3082,7 @@ func _refresh_resource_pickups() -> void:
 func _should_show_loot_label_at(local_pos: Vector2) -> bool:
 	if Input.is_key_pressed(KEY_ALT):
 		return true
-	return local_pos.distance_to(_foot_local_pos) <= 72.0
+	return local_pos.distance_to(_foot_local_pos) <= 40.0
 
 
 func _save_and_exit_to_menu() -> void:
@@ -2865,6 +3223,22 @@ func _on_night_td_finished(result: Dictionary) -> void:
 			time_system.pause()
 		_refresh_ui()
 		call_deferred("_open_communication_terminal")
+		return
+	if kind == "thunder_leiting_boss":
+		var outcome := str(result.get("outcome", "success"))
+		if outcome == "success":
+			_apply_thunder_leiting_victory()
+			if is_instance_valid(time_system):
+				time_system.resume()
+			var district := _pending_thunder_district
+			_pending_thunder_district = -1
+			_refresh_ui()
+			_mark_overworld_dirty()
+			if district >= 0:
+				call_deferred("_begin_foot_mode", district)
+		else:
+			_pending_thunder_district = -1
+			_trigger_thunder_defeat_end()
 		return
 	if is_instance_valid(time_system):
 		time_system.finish_night_and_advance_day()
@@ -3122,11 +3496,19 @@ func _refresh_ui() -> void:
 	_refresh_resource_pickups()
 
 	if is_instance_valid(_pda_panel):
-		_pda_panel.refresh({
-			"entries": _backpack.get_sorted_entries(),
-			"backpack_open": _backpack_open,
-			"backpack_enabled": _is_exploration_allowed(),
-		})
+		var entries := _backpack.get_sorted_entries()
+		var pda_sig := "%s|%s|%s" % [
+			_pda_entries_signature(entries),
+			_backpack_open,
+			_is_exploration_allowed(),
+		]
+		if pda_sig != _last_pda_entries_sig:
+			_last_pda_entries_sig = pda_sig
+			_pda_panel.refresh({
+				"entries": entries,
+				"backpack_open": _backpack_open,
+				"backpack_enabled": _is_exploration_allowed(),
+			})
 	if is_instance_valid(status_label):
 		status_label.visible = false
 	if is_instance_valid(map_info_label):
@@ -3138,7 +3520,25 @@ func _refresh_ui() -> void:
 
 var _last_reward_story_id: String = ""
 
+func _hide_exploration_story_ui() -> void:
+	_hide_story_choice_overlay()
+	if has_node("HUD/ActionPanel"):
+		$HUD/ActionPanel.visible = false
+	if is_instance_valid(prompt_label):
+		prompt_label.text = ""
+		prompt_label.visible = false
+	if is_instance_valid(disembark_button):
+		disembark_button.visible = false
+	if is_instance_valid(return_button):
+		return_button.visible = false
+	if is_instance_valid(repair_button):
+		repair_button.visible = false
+
+
 func _update_prompts() -> void:
+	if is_instance_valid(night_td) and night_td.visible:
+		_hide_exploration_story_ui()
+		return
 	prompt_label.text = ""
 	prompt_label.visible = false
 	_set_story_choice_buttons_visible(false)
@@ -3153,7 +3553,13 @@ func _update_prompts() -> void:
 	if is_instance_valid(back_track_button):
 		back_track_button.visible = false
 	_sync_junction_buttons()
-	var overlay_active := _update_story_gate_prompts()
+	var overlay_active := _update_foot_story_prompts()
+	if not overlay_active:
+		overlay_active = _update_thunder_dialogue_prompts()
+	if not overlay_active:
+		overlay_active = _update_thunder_gate_prompts()
+	if not overlay_active:
+		overlay_active = _update_story_gate_prompts()
 	if not overlay_active:
 		_hide_story_choice_overlay()
 	_update_foot_prompts()
@@ -3165,12 +3571,134 @@ func _update_foot_prompts() -> void:
 		return
 	if _game_paused or _backpack_open:
 		return
+	if is_instance_valid(_story_controller) and _story_controller._any_dialogue_active():
+		return
+	if is_instance_valid(_story_dialogue_ui) and _story_dialogue_ui.visible:
+		return
 	if (_can_repair_elevator() and _is_near_elevator_console()) or (_can_use_kunlun_control() and _is_near_kunlun_console()):
 		return
 	# 返回提示画在门口世界坐标，底部 ActionPanel 不再重复显示
 	prompt_label.text = ""
 	prompt_label.visible = false
 	$HUD/ActionPanel.visible = false
+
+
+func _update_foot_story_prompts() -> bool:
+	if _mode != TravelMode.FOOT or _current_district_index < 0 or _is_night_phase():
+		return false
+	if not is_instance_valid(_story_controller):
+		return false
+	var story_id := _story_controller.story_id_of_district(_current_district_index)
+	if story_id == "":
+		return false
+	var prompt: Dictionary = _story_controller.build_prompt(story_id)
+	if (
+		StoryData.is_interior_encounter(story_id)
+		and _story_controller.run_state.is_quest_active(story_id)
+	):
+		var need := int(StoryData.quest_def(story_id).get("collect_count", 0))
+		if _story_controller.run_state.get_collect_count(story_id) >= need:
+			if not (_story_controller.npc_dialogue != null and _story_controller.npc_dialogue.is_active()):
+				if _story_controller.is_near_interior_npc(
+					story_id, _current_district_index, _foot_local_pos
+				):
+					var return_text := StoryData.prompt_return(story_id)
+					return _show_story_e_action_overlay(
+						return_text,
+						_clean_action_button_label(return_text),
+						"foot_return",
+					)
+	if bool(prompt.get("show_dialogue_options", false)):
+		var option_labels: Array[String] = []
+		for opt_var in prompt.get("dialogue_options", []):
+			option_labels.append(str(opt_var))
+		return _show_story_choice_overlay(str(prompt.get("text", "")), option_labels, "dialogue")
+	if str(prompt.get("continue_hint", "")) != "":
+		return _show_story_narrative_overlay(str(prompt.get("text", "")), str(prompt.get("continue_hint", "")))
+	return false
+
+
+func _show_story_narrative_overlay(body: String, hint: String) -> bool:
+	if not is_instance_valid(_story_dialogue_ui):
+		_setup_story_choice_overlay()
+	if not is_instance_valid(_story_dialogue_ui):
+		return false
+	var overlay_key := "narrative|%s|%s" % [body, hint]
+	if overlay_key == _story_choice_overlay_key and _story_dialogue_ui.visible:
+		return true
+	_story_choice_overlay_key = overlay_key
+	var speaker := _current_dialogue_speaker()
+	var show_triangle := hint.contains("E") or hint.contains("继续")
+	_story_dialogue_ui.show_narrative(body, speaker, show_triangle)
+	if has_node("HUD/ActionPanel"):
+		$HUD/ActionPanel.visible = false
+	return true
+
+
+func _show_story_e_action_overlay(body: String, action_label: String, mode: String) -> bool:
+	if not is_instance_valid(_story_dialogue_ui):
+		_setup_story_choice_overlay()
+	if not is_instance_valid(_story_dialogue_ui):
+		return false
+	var clean_action := _clean_action_button_label(action_label)
+	var e_hint := "按 E %s" % clean_action
+	var text := body.strip_edges()
+	var overlay_key := "%s|%s|%s" % [mode, text, clean_action]
+	if overlay_key == _story_choice_overlay_key and _story_dialogue_ui.visible:
+		return true
+	_story_choice_overlay_key = overlay_key
+	if text != "" and not text.contains(e_hint):
+		text = "%s\n%s" % [text, e_hint]
+	_story_dialogue_ui.show_narrative(text, _current_dialogue_speaker(), false)
+	if has_node("HUD/ActionPanel"):
+		$HUD/ActionPanel.visible = false
+	return true
+
+
+func _update_thunder_dialogue_prompts() -> bool:
+	if _mode != TravelMode.DRIVE or _segment_target_index >= 0 or _is_night_phase():
+		return false
+	if not is_instance_valid(_story_controller):
+		return false
+	var npc := _story_controller.npc_dialogue
+	if npc == null or not npc.is_active() or npc.story_id != "thunder_leiting":
+		return false
+	var prompt: Dictionary = _story_controller.build_prompt("thunder_leiting")
+	if str(prompt.get("continue_hint", "")) != "":
+		return _show_story_narrative_overlay(
+			str(prompt.get("text", "")),
+			str(prompt.get("continue_hint", "")),
+		)
+	return false
+
+
+func _update_thunder_gate_prompts() -> bool:
+	if _mode != TravelMode.DRIVE or _segment_target_index >= 0 or _is_night_phase():
+		return false
+	if not is_instance_valid(_story_controller):
+		return false
+	if (
+		_story_controller.npc_dialogue != null
+		and _story_controller.npc_dialogue.is_active()
+	):
+		return false
+	var district_index := _selected_enterable_district()
+	if not _story_controller.is_thunder_blocking_district(district_index):
+		return false
+	var ready_for_battle := false
+	if is_instance_valid(_story_controller):
+		var rs := _story_controller.run_state
+		var checkpoint := str(rs.get_dialogue_node("thunder_leiting"))
+		ready_for_battle = bool(
+			rs.get_variable("thunder_leiting", "pre_battle_done", false)
+		) or checkpoint in ["combat_ready", "combat_start"]
+	if ready_for_battle:
+		return _show_story_e_action_overlay("战前交涉已结束。", "进入布防战", "thunder")
+	return _show_story_e_action_overlay(
+		"昆仑控制中心门口被「不败之盾-雷霆」封锁。",
+		"接战",
+		"thunder",
+	)
 
 
 func _update_story_gate_prompts() -> bool:
@@ -3201,27 +3729,68 @@ func _update_story_gate_prompts() -> bool:
 			option_labels.append(str(opt_var))
 		return _show_story_choice_overlay(str(prompt.get("text", "")), option_labels, "dialogue")
 	if bool(prompt.get("show_reward_choice", false)):
-		$HUD/ActionPanel.visible = true
-		prompt_label.text = str(prompt.get("text", ""))
-		prompt_label.visible = not prompt_label.text.strip_edges().is_empty()
-		_show_story_reward_choices(story_id)
-		return false
+		var reward_labels := _reward_choice_labels(story_id)
+		if reward_labels.is_empty():
+			return false
+		return _show_story_choice_overlay(
+			str(prompt.get("text", "")),
+			reward_labels,
+			"reward",
+		)
 	if str(prompt.get("continue_hint", "")) != "":
-		$HUD/ActionPanel.visible = true
-		var body := str(prompt.get("text", "")).strip_edges()
-		prompt_label.text = "%s\n\n[%s]" % [body, str(prompt.get("continue_hint", ""))]
-		prompt_label.visible = true
-		return false
-	$HUD/ActionPanel.visible = true
-	prompt_label.text = str(prompt.get("text", ""))
-	prompt_label.visible = true
+		return _show_story_narrative_overlay(
+			str(prompt.get("text", "")),
+			str(prompt.get("continue_hint", "")),
+		)
+	if bool(prompt.get("show_disembark", false)) and bool(prompt.get("show_decline", false)):
+		var action_labels := _disembark_choice_labels(prompt)
+		if action_labels.is_empty():
+			return false
+		return _show_story_choice_overlay(
+			str(prompt.get("text", "")),
+			action_labels,
+			"disembark",
+		)
 	if bool(prompt.get("show_disembark", false)):
-		disembark_button.text = str(prompt.get("disembark", "确认"))
-		disembark_button.visible = true
-	if bool(prompt.get("show_decline", false)):
-		return_button.text = str(prompt.get("decline", "取消"))
-		return_button.visible = true
+		return _show_story_e_action_overlay(
+			str(prompt.get("text", "")),
+			str(prompt.get("disembark", "确认")),
+			"disembark",
+		)
 	return false
+
+
+func _clean_action_button_label(text: String) -> String:
+	var label := text.strip_edges()
+	label = label.replace(" (E)", "").replace("(E)", "")
+	if label.begins_with("E "):
+		label = label.substr(2).strip_edges()
+	if label.begins_with("按 E "):
+		label = label.substr(4).strip_edges()
+	return label if label != "" else "确认"
+
+
+func _disembark_choice_labels(prompt: Dictionary) -> Array[String]:
+	var labels: Array[String] = []
+	if bool(prompt.get("show_disembark", false)):
+		labels.append(_clean_action_button_label(str(prompt.get("disembark", "确认"))))
+	if bool(prompt.get("show_decline", false)):
+		labels.append(_clean_action_button_label(str(prompt.get("decline", "取消"))))
+	return labels
+
+
+func _reward_choice_labels(story_id: String) -> Array[String]:
+	var labels: Array[String] = []
+	for choice_var in StoryData.reward_choices(story_id):
+		if typeof(choice_var) != TYPE_DICTIONARY:
+			continue
+		var choice: Dictionary = choice_var
+		var title := str(choice.get("prompt", choice.get("label", ""))).strip_edges()
+		var desc := str(choice.get("description", "")).strip_edges()
+		if title == "":
+			continue
+		labels.append(title if desc.is_empty() else "%s — %s" % [title, desc])
+	return labels
 
 
 func _set_story_choice_buttons_visible(visible: bool) -> void:
@@ -3235,9 +3804,9 @@ func _hide_action_button_row() -> void:
 
 
 func _show_story_choice_overlay(title: String, options: Array, mode: String = "dialogue") -> bool:
-	if not is_instance_valid(_story_choice_overlay):
+	if not is_instance_valid(_story_dialogue_ui):
 		_setup_story_choice_overlay()
-	if not is_instance_valid(_story_choice_box):
+	if not is_instance_valid(_story_dialogue_ui):
 		return false
 	var labels: Array[String] = []
 	for opt_var in options:
@@ -3247,95 +3816,34 @@ func _show_story_choice_overlay(title: String, options: Array, mode: String = "d
 	if labels.is_empty():
 		return false
 	var overlay_key := "%s|%s|%s" % [mode, title, "|".join(labels)]
-	if overlay_key == _story_choice_overlay_key and _story_choice_overlay.visible:
+	if overlay_key == _story_choice_overlay_key and _story_dialogue_ui.visible:
 		return true
 	_story_choice_overlay_key = overlay_key
-	for child in _story_choice_box.get_children():
-		child.queue_free()
-	_story_choice_title.text = title.strip_edges()
-	call_deferred("_sync_story_choice_title_size")
-	if is_instance_valid(_story_choice_hint):
-		if labels.size() <= 1:
-			_story_choice_hint.text = "按 1 选择，或点下方按钮"
-		elif labels.size() == 2:
-			_story_choice_hint.text = "按 1 / 2 选择，或点下方按钮"
+	var hint := ""
+	if labels.size() <= 1:
+		hint = "按 1 或 E 选择"
+	elif labels.size() == 2:
+		if mode in ["gate", "disembark"]:
+			hint = "按 1 或 E 选第一项，2 选第二项"
 		else:
-			_story_choice_hint.text = "按 1～%d 选择，或点下方按钮" % labels.size()
-	if is_instance_valid(_story_choice_title_scroll):
-		_story_choice_title_scroll.custom_minimum_size.y = 72.0 if labels.size() >= 3 else 96.0
-	var accents: Array[Color] = [
-		Color("#7ec8a0"),
-		Color("#c8a080"),
-		Color("#8ec8e8"),
-		Color("#bb8fce"),
-	]
-	for i in range(labels.size()):
-		var btn := Button.new()
-		btn.custom_minimum_size = Vector2(0, 56)
-		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		btn.text = "%d · %s" % [i + 1, labels[i]]
-		btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		btn.disabled = false
-		btn.mouse_filter = Control.MOUSE_FILTER_STOP
-		HudTheme.apply_choice_button(btn, accents[i % accents.size()])
-		if mode == "gate":
-			btn.pressed.connect(_on_story_overlay_gate_pressed.bind(i))
-		else:
-			btn.pressed.connect(_on_story_overlay_dialogue_pressed.bind(i))
-		_story_choice_box.add_child(btn)
-	call_deferred("_sync_story_choice_box_size")
+			hint = "按 1 / 2 选择"
+	else:
+		hint = "按 1～%d 选择" % labels.size()
+	_story_dialogue_ui.show_choices(
+		title.strip_edges(),
+		labels,
+		_current_dialogue_speaker(),
+		hint,
+	)
 	if has_node("HUD/ActionPanel"):
 		$HUD/ActionPanel.visible = false
-	_story_choice_overlay.visible = true
 	return true
-
-
-func _sync_story_choice_title_size() -> void:
-	if not is_instance_valid(_story_choice_title) or not is_instance_valid(_story_choice_title_scroll):
-		return
-	var scroll_width := maxf(_story_choice_title_scroll.size.x - 8.0, 320.0)
-	_story_choice_title.custom_minimum_size = Vector2(
-		scroll_width,
-		maxf(_story_choice_title.get_minimum_size().y, 1.0),
-	)
-
-
-func _sync_story_choice_box_size() -> void:
-	if not is_instance_valid(_story_choice_box) or not is_instance_valid(_story_choice_box_scroll):
-		return
-	var scroll_width := maxf(_story_choice_box_scroll.size.x - 8.0, 320.0)
-	_story_choice_box.custom_minimum_size = Vector2(
-		scroll_width,
-		_story_choice_box.get_minimum_size().y,
-	)
 
 
 func _hide_story_choice_overlay() -> void:
 	_story_choice_overlay_key = ""
-	if is_instance_valid(_story_choice_box):
-		for child in _story_choice_box.get_children():
-			child.queue_free()
-	if is_instance_valid(_story_choice_overlay):
-		_story_choice_overlay.visible = false
-
-
-func _on_story_overlay_dialogue_pressed(index: int) -> void:
-	if not is_instance_valid(_story_controller):
-		return
-	_story_controller.choose_dialogue_option(index)
-	_hide_story_choice_overlay()
-	_refresh_ui()
-
-
-func _on_story_overlay_gate_pressed(index: int) -> void:
-	if not is_instance_valid(_story_controller):
-		return
-	if index == 0:
-		_on_story_accept_pressed()
-	else:
-		_on_story_decline_pressed()
-	_hide_story_choice_overlay()
-	_refresh_ui()
+	if is_instance_valid(_story_dialogue_ui):
+		_story_dialogue_ui.hide_dialogue()
 
 
 func _on_journal_entry_added(encounter_id: String) -> void:
@@ -3347,6 +3855,25 @@ func _on_journal_entry_added(encounter_id: String) -> void:
 			"「%s」已写入本局日记。\n按 B 打开背包，切到「勘探日记」查看。" % title,
 			6.0,
 		)
+
+
+func _on_tactical_sites_revealed(source_id: String = "") -> void:
+	_spawn_resources()
+	_mark_overworld_dirty()
+	queue_redraw()
+	if is_instance_valid(minimap_view):
+		minimap_view.queue_redraw()
+	_sync_world_map_overlay()
+	if is_instance_valid(evening_notice) and evening_notice.has_method("show_message"):
+		var title := "战术坐标已更新"
+		var body := "地图上出现 3 处隐藏物资点。"
+		if source_id == "ad_1_radar":
+			title = "雷达回波坐标已更新"
+			body = "地图上出现 3 处雷达扫描到的隐藏建筑。"
+		elif source_id == "chronicler_04":
+			title = "物资登记坐标已更新"
+			body = "数据片写入两处隐藏仓库坐标，已叠加至导航。"
+		evening_notice.show_message(title, body)
 
 
 func _clear_story_reward_buttons() -> void:
@@ -3489,11 +4016,15 @@ func _sync_action_panel_visibility() -> void:
 	if not has_node("HUD/ActionPanel"):
 		return
 	if is_instance_valid(night_td) and night_td.visible:
-		return
-	if _mode == TravelMode.FOOT or _is_night_phase():
-		$HUD/ActionPanel.visible = false
+		_hide_exploration_story_ui()
 		return
 	var panel: Panel = $HUD/ActionPanel
+	if _mode == TravelMode.FOOT:
+		panel.visible = false
+		return
+	if _is_night_phase():
+		panel.visible = false
+		return
 	var has_content := false
 	if is_instance_valid(prompt_label) and not prompt_label.text.strip_edges().is_empty():
 		has_content = true
@@ -3505,9 +4036,9 @@ func _sync_action_panel_visibility() -> void:
 		has_content = true
 	if is_instance_valid(story_reward_buttons) and story_reward_buttons.visible:
 		has_content = true
-	if is_instance_valid(_story_choice_overlay) and _story_choice_overlay.visible:
+	if is_instance_valid(_story_dialogue_ui) and _story_dialogue_ui.visible:
 		has_content = true
-	panel.visible = has_content and not (is_instance_valid(_story_choice_overlay) and _story_choice_overlay.visible)
+	panel.visible = has_content and not _is_story_dialogue_visible()
 
 
 func _enterable_hotkey_map() -> Dictionary:
@@ -3729,6 +4260,14 @@ func _overworld_road_lit(explored: bool, in_viewport: bool) -> bool:
 	return not war_fog_enabled or explored or in_viewport
 
 
+func _district_visible_through_fog(district_index: int) -> bool:
+	if not war_fog_enabled:
+		return true
+	if _map.is_tactical_revealed(district_index):
+		return true
+	return bool(_map.get_cell(district_index).get("explored", false))
+
+
 func _draw_day_overworld() -> void:
 	var view_rect := _camera_world_view_rect().grow(280.0)
 	var world_bounds := Rect2(Vector2.ZERO, _map.get_world_size())
@@ -3787,14 +4326,16 @@ func _draw_day_overworld() -> void:
 	)
 
 	for district_index in _map.district_indices:
+		if _map.is_tactical_dormant(district_index):
+			continue
 		var dcell := _map.get_cell(district_index)
 		var drect := _map.cell_rect(district_index)
 		if not view_rect.intersects(drect):
 			continue
-		if war_fog_enabled and not bool(dcell.get("explored", false)):
+		if war_fog_enabled and not _district_visible_through_fog(district_index):
 			draw_rect(drect, Color("#06080c"), true)
 			continue
-		var d_explored := bool(dcell.get("explored", false)) or not war_fog_enabled
+		var d_explored := _district_visible_through_fog(district_index)
 		var d_seed := int(dcell.get("seed", district_index + 1))
 		DayTopdownRender.draw_ruin_cell(self, drect, "empty", d_explored, d_seed)
 
@@ -3848,6 +4389,8 @@ func _draw_day_overworld() -> void:
 		if not view_rect.intersects(road_rect):
 			continue
 		for district_index in _map.get_roadside_districts(index):
+			if _map.is_tactical_dormant(district_index):
+				continue
 			if war_fog_enabled and not bool(_map.get_cell(district_index).get("explored", false)):
 				_map.mark_explored(district_index)
 			var side := _map.cell_center(district_index) - _map.cell_center(index)
@@ -3878,9 +4421,38 @@ func _draw_day_overworld() -> void:
 					str(hotkey_map[district_index]),
 					highlight,
 				)
+			var story_id := str(dcell.get("story_id", ""))
+			var toward_road := _map.district_toward_road_vector(district_index)
+			if (
+				is_instance_valid(_story_controller)
+				and _story_controller.should_show_thunder_gate_boss(district_index)
+			):
+				DayTopdownRender.draw_thunder_gate_boss(self, entrance, 1.0, toward_road)
+			elif (
+				is_instance_valid(_story_controller)
+				and _story_controller.should_show_gate_npc(story_id)
+			):
+				DayTopdownRender.draw_gate_npc(self, entrance, story_id, 1.0, toward_road)
 			if highlight:
 				draw_circle(entrance, 32.0, Color("#f0c168", 0.28))
 				draw_arc(entrance, 32.0, 0.0, TAU, 32, Color("#f0c168"), 4.0)
+			elif _map.is_tactical_revealed(district_index):
+				draw_arc(entrance, 36.0, 0.0, TAU, 28, Color("#68b0ff", 0.65), 2.5)
+
+	for district_index in _map.district_indices:
+		if not _map.is_tactical_revealed(district_index):
+			continue
+		if bool(_map.get_cell(district_index).get("explored", false)):
+			continue
+		var pin_rect := _map.cell_rect(district_index)
+		if not view_rect.intersects(pin_rect):
+			continue
+		var pin_center := pin_rect.position + pin_rect.size * 0.5
+		draw_circle(pin_center, 14.0, Color("#68b0ff", 0.18))
+		draw_arc(pin_center, 14.0, 0.0, TAU, 24, Color("#88c8ff", 0.85), 2.0)
+		var pin_label := _map.building_label(district_index)
+		if pin_label != "":
+			HudTheme.draw_string(self, pin_center + Vector2(-40.0, -22.0), pin_label, 11, Color("#a8d8ff"))
 
 	var vpos := _vehicle_world_position()
 	if _segment_target_index < 0 and view_rect.has_point(vpos):
@@ -3920,6 +4492,8 @@ func _draw_world_speech_bubble(anchor: Vector2, text: String, fill: Color, borde
 func _draw_door_exit_hint(door_rect: Rect2) -> void:
 	if _current_district_index < 0 or _mode != TravelMode.FOOT:
 		return
+	if _is_story_dialogue_visible():
+		return
 	if door_rect.size.x <= 0.0 or door_rect.size.y <= 0.0:
 		return
 	var text := _story_controller.foot_door_hint(_current_district_index) if is_instance_valid(_story_controller) else "E 返回车辆"
@@ -3933,12 +4507,53 @@ func _draw_door_exit_hint(door_rect: Rect2) -> void:
 
 
 func _handle_foot_interact() -> void:
+	if _try_advance_story_dialogue():
+		return
+	if is_instance_valid(_story_controller):
+		if _story_controller.try_interact_foot_loot(_current_district_index, _foot_local_pos):
+			queue_redraw()
+			return
+	if is_instance_valid(_story_controller):
+		if _story_controller.try_interior_story_interact(_current_district_index, _foot_local_pos):
+			_refresh_ui()
+			return
+	if is_instance_valid(_story_controller) and _story_controller.blocks_foot_exit(_current_district_index):
+		var npc_retry := _story_controller.npc_dialogue
+		if npc_retry == null or not npc_retry.is_active():
+			_story_controller.ensure_interior_encounter_at(_current_district_index)
+			_refresh_ui()
+			return
+		if is_instance_valid(evening_notice) and evening_notice.has_method("show_message"):
+			evening_notice.show_message("先完成抉择，才能离开。")
+		return
+
+
+func _try_foot_console_interact() -> bool:
 	if _is_near_kunlun_console():
 		_attempt_kunlun_terminal()
-	elif _is_near_elevator_console():
+		return true
+	if _is_near_elevator_console():
 		_attempt_repair_elevator()
-	else:
-		_return_to_vehicle()
+		return true
+	return false
+
+
+func _try_foot_return_to_vehicle() -> bool:
+	if _mode != TravelMode.FOOT:
+		return false
+	if not _is_near_foot_door():
+		return false
+	if is_instance_valid(_story_controller) and _story_controller.blocks_foot_exit(_current_district_index):
+		var npc_retry := _story_controller.npc_dialogue
+		if npc_retry == null or not npc_retry.is_active():
+			_story_controller.ensure_interior_encounter_at(_current_district_index)
+			_refresh_ui()
+			return true
+		if is_instance_valid(evening_notice) and evening_notice.has_method("show_message"):
+			evening_notice.show_message("先完成抉择，才能离开。")
+		return true
+	_return_to_vehicle()
+	return true
 
 
 func _foot_tile_panel_rect(district_index: int, tile: Vector2i) -> Rect2:
@@ -3999,7 +4614,7 @@ func _elevator_console_hint_text() -> String:
 	var needed := _current_repair_cost() - _elevator_repair_progress
 	if needed <= 0:
 		return "电梯已就绪"
-	return "E 修复电梯 · %d/%d" % [_elevator_repair_progress, _current_repair_cost()]
+	return "F 修复电梯 · %d/%d" % [_elevator_repair_progress, _current_repair_cost()]
 
 
 func _draw_elevator_console_hint(console_rect: Rect2) -> void:
@@ -4011,17 +4626,26 @@ func _draw_elevator_console_hint(console_rect: Rect2) -> void:
 func _draw_kunlun_console_hint(console_rect: Rect2) -> void:
 	if not _can_use_kunlun_control() or not _is_near_kunlun_console():
 		return
-	_draw_interior_console_hint(console_rect, "E 启动通信终端", Color("#6eb8ff"))
+	_draw_interior_console_hint(console_rect, "F 启动通信终端", Color("#6eb8ff"))
 
 
 func _draw_interior_console_hint(console_rect: Rect2, text: String, accent: Color) -> void:
+	_draw_interior_console_hint_on_canvas(self, console_rect, text, accent)
+
+
+func _draw_interior_console_hint_on_canvas(
+	canvas: CanvasItem,
+	console_rect: Rect2,
+	text: String,
+	accent: Color,
+) -> void:
 	var center := console_rect.position + console_rect.size * 0.5
 	var bubble_w := maxf(96.0, float(text.length()) * 7.0 + 16.0)
 	var bubble_h := 16.0
 	var bubble_pos := Vector2(center.x - bubble_w * 0.5, console_rect.position.y - 22.0)
-	draw_rect(Rect2(bubble_pos, Vector2(bubble_w, bubble_h)), Color(0.05, 0.09, 0.13, 0.78), true)
-	draw_rect(Rect2(bubble_pos, Vector2(bubble_w, bubble_h)), accent, false, 1.0)
-	HudTheme.draw_string(self, bubble_pos + Vector2(8.0, 12.0), text, 10, Color("#f8ecd8"))
+	canvas.draw_rect(Rect2(bubble_pos, Vector2(bubble_w, bubble_h)), Color(0.05, 0.09, 0.13, 0.78), true)
+	canvas.draw_rect(Rect2(bubble_pos, Vector2(bubble_w, bubble_h)), accent, false, 1.0)
+	HudTheme.draw_string(canvas, bubble_pos + Vector2(8.0, 12.0), text, 10, Color("#f8ecd8"))
 
 
 func _draw_interior_building_label(panel: Rect2, title: String) -> void:
@@ -4106,6 +4730,7 @@ func _draw_foot_interior_static_layer(canvas: CanvasItem, district_index: int, p
 	var tile_px := panel.size.x / float(cols)
 	var tile_py := panel.size.y / float(rows)
 	var building_type := str(_map.get_cell(district_index).get("building_type", ""))
+	var story_id := str(_map.get_cell(district_index).get("story_id", ""))
 	DayTopdownRender.draw_interior_floor_grid(canvas, panel, cols, rows, floor_seed, building_type)
 	var has_console := (
 		building_type == "elevator"
@@ -4114,8 +4739,11 @@ func _draw_foot_interior_static_layer(canvas: CanvasItem, district_index: int, p
 		or _map.district_has_kunlun_control(district_index)
 	)
 	var console_tile := _map.get_foot_console_tile(district_index)
+	var skip_obstacle_tiles := story_id == "marian_k142"
 	for gx in range(cols):
 		for gy in range(rows):
+			if skip_obstacle_tiles:
+				continue
 			if not blocked_set.has(Vector2i(gx, gy)):
 				continue
 			var tile := Vector2i(gx, gy)
@@ -4130,6 +4758,52 @@ func _draw_foot_interior_static_layer(canvas: CanvasItem, district_index: int, p
 	DayTopdownRender.draw_interior_door(canvas, door_rect, true)
 	canvas.draw_rect(panel, Color("#4a6070"), false, 2.0)
 	_draw_interior_building_label(panel, _map.building_label(district_index))
+	if story_id == "furnace_qc":
+		DayTopdownRender.draw_furnace_machine(canvas, panel, true)
+	elif story_id == "chronicler_04":
+		DayTopdownRender.draw_chronicler_archive(canvas, panel, true)
+	elif story_id == "staff_officer_07":
+		DayTopdownRender.draw_tactical_hologram(canvas, panel, true)
+	elif story_id == "ad_1_radar":
+		DayTopdownRender.draw_radar_ad1(canvas, panel, true)
+		if is_instance_valid(_story_controller):
+			var npc_hint := _story_controller.interior_npc_interact_hint(
+				story_id, district_index, _foot_local_pos
+			)
+			if not npc_hint.is_empty():
+				var hint_center := panel.position + panel.size * Vector2(0.5, 0.34)
+				_draw_interior_console_hint_on_canvas(
+					canvas,
+					Rect2(hint_center - Vector2(48.0, 24.0), Vector2(96.0, 48.0)),
+					str(npc_hint.get("text", "E 交谈")),
+					Color("#88ffb0"),
+				)
+	elif story_id == "marian_k142":
+		DayTopdownRender.draw_marian_room(canvas, panel, true)
+
+
+func _draw_interior_story_quest_prop(
+	canvas: CanvasItem,
+	district_index: int,
+	story_id: String,
+) -> void:
+	if not is_instance_valid(_story_controller):
+		return
+	var prop := _story_controller.interior_quest_prop_display(story_id, district_index)
+	if prop.is_empty():
+		return
+	var prop_local: Vector2 = prop.get("local", Vector2.ZERO)
+	var prop_panel := _foot_local_to_panel(prop_local, district_index)
+	var interact_hint := _story_controller.quest_interact_hint(district_index, _foot_local_pos)
+	var show_hint := not interact_hint.is_empty()
+	var hint_text := str(interact_hint.get("text", "")) if show_hint else ""
+	DayTopdownRender.draw_interior_quest_prop(
+		canvas,
+		prop_panel,
+		str(prop.get("prop", "rubble_pile")),
+		show_hint,
+		hint_text,
+	)
 
 
 func _foot_door_panel_rect_for_panel(district_index: int, panel: Rect2) -> Rect2:
@@ -4193,6 +4867,8 @@ func _draw_foot_interior() -> void:
 		for node in _resource_nodes:
 			if not is_instance_valid(node):
 				continue
+			if bool(node.get_meta("picked_up", false)):
+				continue
 			if int(node.get_meta("district_index", -1)) != _current_district_index:
 				continue
 			var loot_local := node.global_position - foot_origin
@@ -4218,13 +4894,32 @@ func _draw_interior_story_loot(tile_px: float, tile_py: float) -> void:
 		var loot_id := str(node.get_meta("item_id", "scrap"))
 		var show_loot_name := _should_show_loot_label_at(loot_local)
 		var label_text := _story_controller.foot_loot_label(node)
+		var prop_id := _story_controller.foot_loot_prop_id(node)
+		if prop_id != "":
+			continue
+		else:
+			DayTopdownRender.draw_loot_pickup(
+				self,
+				loot_panel,
+				loot_id,
+				loot_radius,
+				show_loot_name,
+				label_text,
+			)
+	var story_id := _story_controller.story_id_of_district(_current_district_index)
+	if story_id != "":
+		_draw_interior_story_quest_prop(self, _current_district_index, story_id)
+	var dig_fx := _story_controller.get_prop_dig_fx(_current_district_index)
+	if not dig_fx.is_empty():
+		var dig_panel := _foot_local_to_panel(dig_fx.get("local", Vector2.ZERO), _current_district_index)
+		var dig_item := str(dig_fx.get("item_id", "scrap"))
 		DayTopdownRender.draw_loot_pickup(
 			self,
-			loot_panel,
-			loot_id,
+			dig_panel,
+			dig_item,
 			loot_radius,
-			show_loot_name,
-			label_text,
+			true,
+			ItemIconFactory.loot_display_name(dig_item),
 		)
 
 func _draw_night_camp_background() -> void:
@@ -4252,6 +4947,7 @@ func _setup_story_controller() -> void:
 	add_child(_story_controller)
 	_story_controller.setup(self)
 	_story_controller.ui_refresh_requested.connect(_on_story_ui_refresh)
+	_story_controller.thunder_boss_requested.connect(_on_thunder_boss_requested)
 
 
 var _story_refresh_guard := false
@@ -4260,13 +4956,80 @@ func _on_story_ui_refresh() -> void:
 	if _story_refresh_guard:
 		return
 	_story_refresh_guard = true
-	_refresh_ui()
+	_schedule_refresh_ui()
 	_refresh_backpack_if_open()
 	_story_refresh_guard = false
 
 
 func _story_blocks_ui() -> bool:
 	return is_instance_valid(_story_controller) and _story_controller.is_ui_locked()
+
+
+func _trigger_clone_restart() -> void:
+	if _run_ended:
+		return
+	_run_ended = true
+	_run_end_reason = "furnace_consumed"
+	_hide_story_choice_overlay()
+	if is_instance_valid(_story_controller):
+		if is_instance_valid(_story_controller.npc_dialogue):
+			_story_controller.npc_dialogue.reset_session()
+		_story_controller._ui_locked = false
+	if is_instance_valid(_player):
+		_player.set_active(false)
+	if is_instance_valid(_vehicle):
+		_vehicle.set_active(false)
+	_show_clone_restart_overlay()
+
+
+func _show_clone_restart_overlay() -> void:
+	if is_instance_valid(_clone_restart_overlay):
+		_clone_restart_overlay.queue_free()
+	_clone_restart_overlay = CanvasLayer.new()
+	_clone_restart_overlay.layer = 140
+	add_child(_clone_restart_overlay)
+	var dim := ColorRect.new()
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.color = Color(0.02, 0.04, 0.08, 0.92)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	_clone_restart_overlay.add_child(dim)
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_clone_restart_overlay.add_child(center)
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(560, 220)
+	HudTheme.apply_panel_container(panel)
+	center.add_child(panel)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 24)
+	margin.add_theme_constant_override("margin_top", 20)
+	margin.add_theme_constant_override("margin_right", 24)
+	margin.add_theme_constant_override("margin_bottom", 20)
+	panel.add_child(margin)
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 12)
+	margin.add_child(vbox)
+	var title := Label.new()
+	title.text = "我死了。"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	HudTheme.apply_label(title)
+	vbox.add_child(title)
+	var body := Label.new()
+	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body.text = "昆仑程序已记录本次勘探失败。正在培育下一名克隆体。\n\n新局将在 10 秒后开始……"
+	body.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	HudTheme.apply_label(body)
+	vbox.add_child(body)
+	get_tree().create_timer(10.0).timeout.connect(_on_clone_restart_timer_done)
+
+
+func _on_clone_restart_timer_done() -> void:
+	if is_instance_valid(_clone_restart_overlay):
+		_clone_restart_overlay.queue_free()
+		_clone_restart_overlay = null
+	if SaveManager.has_save():
+		SaveManager.delete_save()
+	_start_new_run()
 
 
 func _selected_enterable_district() -> int:
@@ -4318,11 +5081,12 @@ func _generate_layer_map() -> void:
 		_current_layer >= total_layers,
 		debug_start_near_special,
 	)
-	StoryData.ensure_story_districts(_map)
-	if StoryData.any_story_spawns_near_start():
-		StoryData.set_debug_start_near_story(_map)
-	elif debug_start_near_special:
+	StoryData.ensure_story_districts(_map, _current_layer)
+	StoryData.setup_tactical_hidden_sites(_map, _current_layer)
+	if debug_start_near_special:
 		_map.set_start_near_special_building(_current_layer >= total_layers)
+	elif StoryData.any_story_spawns_near_start():
+		StoryData.set_debug_start_near_story(_map)
 	elif debug_start_at_story:
 		StoryData.set_debug_start_near_story(_map)
 	_elevator_repair_progress = 0

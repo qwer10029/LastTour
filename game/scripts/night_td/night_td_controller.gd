@@ -1,6 +1,8 @@
 extends Node2D
 class_name NightTdController
 
+const NightTdSpritesScript = preload("res://scripts/night_td/night_td_sprites.gd")
+
 signal session_finished(result: Dictionary)
 signal enemy_breached(enemy_type: String, pos: Vector2)
 
@@ -94,6 +96,7 @@ var _session_paused := false             # 由 GameManager / 父场景控制暂�
 var _breach_losses: Dictionary = {}      # 突破被拖走的物资 item_id -> count（夜末汇报）
 var _combat_tower_ids: Array[int] = []   # 进入战斗时的塔 id 快照（排除布防阶段已撤销的塔）
 var _redraw_frame := 0                   # 帧计数器，用于节流 queue_redraw
+var _occupied_cells: Dictionary = {}     # 已占格子缓存，避免每次点击/绘制重建
 var _session_options: Dictionary = {}
 var _session_kind: String = "normal"
 var _phase_title_override: String = ""
@@ -214,8 +217,10 @@ func start_session(
 	placement_remaining = placement_time_sec if allow_placement else 0.0
 	_selected_tower = "jammer"
 	_towers.clear()
+	_occupied_cells.clear()
 	_enemies.clear()
 	_projectiles.clear()
+	NightTdSpritesScript.preload_all_towers()
 	if _flow == null:
 		_flow = NightTdFlowField.new()
 	if _influence == null:
@@ -255,7 +260,10 @@ func start_session(
 	show_overlay = false   # 覆盖层默认关闭，玩家可通过按钮开启
 	visible = true
 	if is_instance_valid(hud):
+		if not hud.intro_finished.is_connected(_on_hud_intro_finished):
+			hud.intro_finished.connect(_on_hud_intro_finished, CONNECT_ONE_SHOT)
 		hud.show_session_ui()
+		_sync_vehicle_durability_hud(false)
 		_refresh_resource_hud()
 		if phase == Phase.PLACE:
 			hud.set_place_mode(true)
@@ -283,30 +291,42 @@ func start_session(
 	_play_music_cue("night_setup" if phase == Phase.PLACE else "night_combat", 0.8)
 
 
+const DEBUG_SKIP_SESSION_KINDS := ["final_terminal_defense", "thunder_leiting_boss"]
+
+
 func _debug_skip_available() -> bool:
-	return OS.is_debug_build()
+	return OS.is_debug_build() or Engine.is_editor_hint()
+
+
+func _supports_debug_skip() -> bool:
+	return _session_kind in DEBUG_SKIP_SESSION_KINDS
 
 
 func _notify_debug_skip_available() -> void:
-	if _session_kind != "final_terminal_defense" or not _debug_skip_available():
+	if not _supports_debug_skip() or not _debug_skip_available():
 		return
 	if is_instance_valid(hud):
-		hud.append_log("[调试] 按 F9 跳过 Boss 战，直接进入终端剧情")
+		var hint := "[调试] 按 F9 跳过 Boss 战"
+		if _session_kind == "final_terminal_defense":
+			hint = "[调试] 按 F9 跳过 Boss 战，直接进入终端剧情"
+		elif _session_kind == "thunder_leiting_boss":
+			hint = "[调试] 按 F9 跳过 Boss 战，解锁指挥中心"
+		hud.append_log(hint)
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not _debug_skip_available() or not visible or _session_kind != "final_terminal_defense":
+	if not _debug_skip_available() or not visible or not _supports_debug_skip():
 		return
 	if not event is InputEventKey or not event.pressed or event.is_echo():
 		return
 	if event.keycode != KEY_F9 and event.physical_keycode != KEY_F9:
 		return
-	debug_skip_final_terminal_boss()
+	debug_skip_boss_fight()
 	get_viewport().set_input_as_handled()
 
 
-func debug_skip_final_terminal_boss() -> void:
-	if _session_kind != "final_terminal_defense" or not visible:
+func debug_skip_boss_fight() -> void:
+	if not visible or not _supports_debug_skip():
 		return
 	if phase == Phase.RESULT and not _last_result.is_empty():
 		_finish_session()
@@ -324,10 +344,20 @@ func debug_skip_final_terminal_boss() -> void:
 	_last_result["inventory_loss"] = 0
 	_last_result["breach_losses"] = {}
 	_last_result["breach_total"] = 0
-	_last_result["message"] = "【调试跳过】顶层终端防线已清除。"
+	match _session_kind:
+		"final_terminal_defense":
+			_last_result["message"] = "【调试跳过】顶层终端防线已清除。"
+		"thunder_leiting_boss":
+			_last_result["message"] = "【调试跳过】不败之盾-雷霆已击败。"
+		_:
+			_last_result["message"] = "【调试跳过】Boss 战已结束。"
 	if is_instance_valid(hud):
 		hud.append_log("【调试】已跳过 Boss 战")
 	_finish_session()
+
+
+func debug_skip_final_terminal_boss() -> void:
+	debug_skip_boss_fight()
 
 
 func _session_phase_title(suffix: String) -> String:
@@ -410,6 +440,8 @@ func _process_place(delta: float) -> void:
 	if is_instance_valid(hud):
 		hud.set_placement_timer(placement_remaining)
 		_refresh_fuel_boost_hud()
+	if _display_influence_dirty and show_overlay:
+		_ensure_display_influence_fresh()
 	if placement_remaining <= 0.0:
 		_begin_combat()
 
@@ -482,6 +514,8 @@ func _process_combat(delta: float) -> void:
 	if _combat_done:
 		return
 	_combat_time += delta
+	if _display_influence_dirty and show_overlay:
+		_ensure_display_influence_fresh()
 	_flow_rebuild_cooldown = maxf(_flow_rebuild_cooldown - delta, 0.0)
 	if _wave_scheduler != null:
 		for spec in _wave_scheduler.tick(delta):
@@ -560,6 +594,8 @@ func _spawn_from_spec(spec: Dictionary) -> void:
 		"color": def.get("color", Color.WHITE),
 		"radius": float(def.get("radius", 10)),
 		"move_dir": Vector2.LEFT,
+		"walk_phase": 0.0,
+		"is_walking": false,
 		"faction": "enemy",
 		"hacked_by": -1,
 		"is_shepherd": bool(def.get("is_shepherd", false)),
@@ -787,12 +823,23 @@ func _update_enemies(delta: float) -> void:
 			flow_dir = _flow_dir_at(pos, base_pos)
 		var sep_dir := _separation_dir(i, pos, float(enemy["radius"]) * 2.2)
 		var move_dir := flow_dir + sep_dir * SEPARATION_WEIGHT
+		var prev_pos := pos
 		if move_dir.length_squared() > 0.0001:
 			move_dir = move_dir.normalized()
 			pos += move_dir * float(enemy["speed"]) * slow * delta
 			enemy["pos"] = pos
 			enemy["move_dir"] = move_dir
 			cell = field.world_to_cell(pos)
+		if str(enemy.get("type", "")) == "thunder_leiting":
+			var moved := pos.distance_squared_to(prev_pos) > 0.04
+			var wants_move := move_dir.length_squared() > 0.0001 and slow > 0.05
+			var walking := moved or wants_move
+			enemy["is_walking"] = walking
+			if walking:
+				var rate := DayTopdownRender.THUNDER_WALK_ANIM_FPS if moved else DayTopdownRender.THUNDER_WALK_BLOCKED_FPS
+				enemy["walk_phase"] = float(enemy.get("walk_phase", 0.0)) + delta * rate
+			else:
+				enemy["is_walking"] = false
 		# 攻坚组贴到目标塔格/邻格时，对该塔施加近战伤害（P3.2：敌人能打塔）。
 		if _commander != null:
 			var atk_cell := _commander.attack_target_cell(enemy)
@@ -810,6 +857,7 @@ func _update_enemies(delta: float) -> void:
 			backpack_remaining = maxi(backpack_remaining - loss, 0)
 			_steal_resources(enemy)
 			base_hp = maxf(base_hp - _breach_damage_for(enemy), 0.0)
+			_sync_vehicle_durability_hud()
 			_enemies_reached += 1
 			to_remove.append(i)
 			_on_enemy_breached(enemy, pos)
@@ -905,17 +953,23 @@ func _update_towers(delta: float) -> void:
 		var scale := float(tower.get("power_scale", 1.0))
 		if scale <= 0.05:
 			continue  # 断电塔停摆（其威胁场也已归零 → 敌人会重新涌入）
-		tower["cooldown"] = maxf(float(tower["cooldown"]) - delta, 0.0)
-		if float(tower["cooldown"]) > 0.0:
-			continue
+		# 用稳健的 eid 锁定系统选目标：锁定目标仍在射程内则保持，否则重新选取最近敌人。
 		var enemy := _locked_enemy_for_tower(tower, range_px)
 		if enemy.is_empty():
 			var target_eid := _find_enemy_in_range(tower["world_pos"], range_px)
 			if target_eid < 0:
 				tower["target_eid"] = -1
-				continue
-			tower["target_eid"] = target_eid
-			enemy = _enemy_by_eid(target_eid)
+			else:
+				tower["target_eid"] = target_eid
+				enemy = _enemy_by_eid(target_eid)
+		# 朝向目标（即使在冷却中也持续转向，供炮塔贴图旋转使用）。
+		if not enemy.is_empty():
+			var to_target: Vector2 = (enemy["pos"] as Vector2) - (tower["world_pos"] as Vector2)
+			if to_target.length_squared() > 0.0001:
+				tower["face_dir"] = to_target.normalized()
+		tower["cooldown"] = maxf(float(tower["cooldown"]) - delta, 0.0)
+		if float(tower["cooldown"]) > 0.0:
+			continue
 		if enemy.is_empty():
 			continue
 		var curve: Dictionary = tdef.get("power_curve", {})
@@ -1019,6 +1073,73 @@ func _damage_tower(tower: Dictionary, amount: float) -> void:
 func _mark_flow_dirty() -> void:
 	_flow_dirty = true
 	_mark_display_influence_dirty()
+
+
+func get_occupied_cells() -> Dictionary:
+	return _occupied_cells
+
+
+func _rebuild_occupied_cells() -> void:
+	_occupied_cells.clear()
+	for tower in _towers:
+		if tower.get("removed", false):
+			continue
+		_occupied_cells[tower["cell"]] = true
+
+
+func _threat_entry_for_tower(tower: Dictionary) -> Dictionary:
+	var tdef: Dictionary = NightTdDefs.get_tower_def(str(tower.get("type", "")))
+	var tile := field.get_layout_tile_size() if is_instance_valid(field) else 48.0
+	if tile <= 0.0:
+		tile = 48.0
+	var range_px := float(tdef.get("range", 0.0))
+	var fire_interval := float(tdef.get("fire_interval", 1.0))
+	var damage := float(tdef.get("damage", 0.0))
+	if range_px <= 0.0 or damage <= 0.0 or fire_interval <= 0.0:
+		return {}
+	var power_scale := float(tower.get("power_scale", 1.0))
+	return {
+		"cell": tower["cell"],
+		"range_cells": range_px / tile,
+		"dps": (damage / fire_interval) * power_scale,
+	}
+
+
+func _ensure_display_influence_initialized() -> void:
+	if _display_influence == null:
+		_display_influence = NightTdInfluence.new()
+	if _display_influence.cols != field.grid_cols or _display_influence.rows != field.grid_rows:
+		_display_influence.rebuild(field.grid_cols, field.grid_rows, [])
+
+
+func _mark_tower_placed(tower: Dictionary) -> void:
+	_rebuild_occupied_cells()
+	if phase == Phase.PLACE:
+		if show_overlay:
+			_ensure_display_influence_initialized()
+			var entry := _threat_entry_for_tower(tower)
+			if not entry.is_empty():
+				_display_influence.stamp_threat_entry(entry)
+		_request_field_redraw()
+		return
+	_mark_flow_dirty()
+
+
+func _mark_tower_removed() -> void:
+	_rebuild_occupied_cells()
+	if phase == Phase.PLACE:
+		if show_overlay:
+			_mark_display_influence_dirty()
+		_request_field_redraw()
+		return
+	_mark_flow_dirty()
+
+
+func _request_field_redraw() -> void:
+	_redraw_frame = 0
+	if is_instance_valid(field):
+		field.queue_redraw()
+	queue_redraw()
 
 
 ## 重建流场（P1.3）：目标=车辆格；路障作为软性高代价格（见 _build_flow_extra_cost）。
@@ -1259,10 +1380,22 @@ func _on_overlay_toggled(state: bool) -> void:
 		field.queue_redraw()
 
 
+func _on_hud_intro_finished() -> void:
+	if not is_instance_valid(field):
+		return
+	var core := field.get_defence_core_visual()
+	if core != null:
+		core.play_shield_activate()
+
+
+func _sync_vehicle_durability_hud(animate: bool = true) -> void:
+	if is_instance_valid(hud):
+		hud.set_vehicle_durability(base_hp, base_max_hp, animate)
+
+
 ## 获取热力图数据（供 field 绘制）：{cols, rows, threat:PackedFloat32Array, max_threat:float}
 func get_influence_display_data() -> Dictionary:
-	_ensure_display_influence_fresh()
-	if _display_influence == null:
+	if _display_influence == null or _display_influence_dirty:
 		return {}
 	var threat := _display_influence.get_threat_array()
 	return {
@@ -1490,11 +1623,7 @@ func _on_cell_clicked(cell: Vector2i) -> void:
 		if is_instance_valid(hud):
 			hud.append_log("资源不足，无法部署 %s（需 %s）" % [tdef.get("name", ""), _cost_label(tdef)])
 		return
-	var occupied: Dictionary = {}
-	for tower in _towers:
-		if not tower.get("removed", false):
-			occupied[tower["cell"]] = true
-	if not field.can_place_tower(cell, occupied):
+	if not field.can_place_tower(cell, _occupied_cells):
 		if is_instance_valid(hud):
 			hud.append_log("该格无法部署（车辆/占用/越界）")
 		return
@@ -1502,7 +1631,7 @@ func _on_cell_clicked(cell: Vector2i) -> void:
 	resources_spent += cost
 	var tower_id := _next_tower_id
 	_next_tower_id += 1
-	_towers.append({
+	var tower := {
 		"id": tower_id,
 		"type": _selected_tower,
 		"cell": cell,
@@ -1512,12 +1641,13 @@ func _on_cell_clicked(cell: Vector2i) -> void:
 		"hp": float(tdef.get("hp", 30)),
 		"removed": false,
 		"power_scale": 1.0,
-	})
+	}
+	_towers.append(tower)
 	# 耗电塔登记进能源系统（额定功率 1.0）。upkeep=0 的塔登记后不影响电池。
 	if _energy != null and float(tdef.get("upkeep", 0.0)) > 0.0:
 		_energy.register_tower(tower_id, 1.0)
 	_mark_tower_cache_dirty()
-	_mark_flow_dirty()
+	_mark_tower_placed(tower)
 	if is_instance_valid(hud):
 		_refresh_resource_hud()
 		hud.append_log("已部署 %s" % tdef.get("name", ""))
@@ -1550,7 +1680,7 @@ func _remove_tower_at_cell(cell: Vector2i) -> String:
 		tower["removed"] = true
 		tower["target_eid"] = -1
 		_mark_tower_cache_dirty()
-		_mark_flow_dirty()
+		_mark_tower_removed()
 		return str(tdef.get("name", tower["type"]))
 	return ""
 

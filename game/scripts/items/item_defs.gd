@@ -219,7 +219,7 @@ static func get_repair_requirement_text(inventory: InventoryData) -> String:
 			inventory.count("wood"),
 		])
 		if can_repair_with_inventory(inventory):
-			lines.append("✓ 材料足够，可按 R 或按钮修复")
+			lines.append("✓ 材料足够，可按 F 或按钮修复")
 		else:
 			lines.append("✗ 材料不足，请继续探索收集")
 	return "\n".join(lines)

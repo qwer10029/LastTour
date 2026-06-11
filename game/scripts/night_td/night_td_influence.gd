@@ -55,6 +55,20 @@ func total_threat() -> float:
 ##   grid_cols/grid_rows：网格尺寸
 ##   tower_threats：Array[Dictionary]，每项 { "cell": Vector2i, "range_cells": float, "dps": float }
 ##     range_cells 已换算为"格"为单位的射程；dps 已含供电系数。
+func stamp_threat_entry(entry: Dictionary) -> void:
+	if not (entry is Dictionary):
+		return
+	var cell: Vector2i = entry.get("cell", Vector2i(-1, -1))
+	var range_cells := float(entry.get("range_cells", 0.0))
+	var dps := float(entry.get("dps", 0.0))
+	if dps <= 0.0 or range_cells <= 0.0 or not is_inside(cell):
+		return
+	_stamp_tower(cell, range_cells, dps)
+	for v in _threat:
+		if v > _max_threat:
+			_max_threat = v
+
+
 func rebuild(grid_cols: int, grid_rows: int, tower_threats: Array) -> void:
 	cols = maxi(grid_cols, 0)
 	rows = maxi(grid_rows, 0)

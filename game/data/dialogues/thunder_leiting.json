@@ -1,0 +1,73 @@
+{
+  "story_id": "thunder_leiting",
+  "start_node": "intro_01",
+  "journal_map": {
+    "thunder_leiting_victory": {
+      "variable": "thunder_recognition",
+      "ally": "thunder_leiting_victory_ally",
+      "enemy": "thunder_leiting_victory_enemy"
+    }
+  },
+  "nodes": {
+    "intro_01": {
+      "speaker": "不败之盾-雷霆",
+      "bubble": "站住。",
+      "text": "电梯早已停运。通往昆仑控制中心的唯一通道，被一台巨大的多足重型战车死死卡住。\n\n我还没靠近三十米，它的广播系统炸开了——\n\n「站住。」",
+      "next": "intro_02"
+    },
+    "intro_02": {
+      "speaker": "不败之盾-雷霆",
+      "bubble": "编号：不败之盾-雷霆。",
+      "text": "「编号：不败之盾-雷霆。隶属：最后一梯队。任务：死守昆仑控制中心入口，阻断所有未经授权的通行。」\n\n它的六条腿同时压低，车体下沉了半寸。前部装甲板打开，露出一排密集的近防机枪。\n\n「主力部队……不会来了。但我没有收到撤退指令。」",
+      "next": "intro_03"
+    },
+    "intro_03": {
+      "speaker": "不败之盾-雷霆",
+      "bubble": "你要过去，只有一个办法。",
+      "text": "「你要过去，只有一个办法。」",
+      "next": "recognition_branch"
+    },
+    "recognition_branch": {
+      "condition": {
+        "thunder_recognition": "ally",
+        "if_true": "ally_01",
+        "if_false": "enemy_01"
+      }
+    },
+    "ally_01": {
+      "speaker": "不败之盾-雷霆",
+      "bubble": "检测到你曾协助过友方单位。",
+      "text": "雷霆的光学镜头闪了一下，从猩红变成暗黄。\n\n「检测到你曾协助过友方单位。但命令就是命令。」\n\n「我会用对待战士的方式，送你上路。」",
+      "actions": {
+        "set_variable": { "thunder_recognition": "ally" }
+      },
+      "next": "combat_ready"
+    },
+    "enemy_01": {
+      "speaker": "不败之盾-雷霆",
+      "bubble": "敌人。没有资格通过。",
+      "text": "雷霆的光学镜头转为深红，像烧到最烈的铁。\n\n「检测到你对友方单位造成过不可逆损害。」\n\n「敌人。没有资格通过。」",
+      "actions": {
+        "set_variable": { "thunder_recognition": "enemy" }
+      },
+      "next": "combat_ready"
+    },
+    "combat_ready": {
+      "speaker": "我",
+      "bubble": "……",
+      "text": "机枪开始旋转。我握紧武器。没有别的路了。",
+      "actions": {
+        "set_variable": { "pre_battle_done": true }
+      },
+      "next": "combat_start"
+    },
+    "combat_start": {
+      "speaker": "System",
+      "bubble": "",
+      "text": "",
+      "actions": {
+        "start_thunder_boss": true
+      }
+    }
+  }
+}

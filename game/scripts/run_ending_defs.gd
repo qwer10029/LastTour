@@ -21,8 +21,8 @@ const FINAL_CHOICES := {
 		"summary": "向昆仑程序发送停机指令，结束克隆循环。",
 	},
 	"message_only": {
-		"title": "不上报停机，仅归档",
-		"summary": "日记已上传；程序继续派遣下一名克隆人。",
+		"title": "仅归档，不发停机",
+		"summary": "勘探日记已上传；程序继续派遣下一名克隆人。",
 	},
 	"fake_success": {
 		"title": "伪造「勘探成功」",
@@ -70,13 +70,6 @@ const TERMINAL_AUDIT_PASS_TEXT := """【验证结果】
 人类指挥部信号源已不存在，最高权限正在移交……"""
 
 const TERMINAL_TRANSFER_TEXT := "【权限移交完成】\n您已获得对昆仑中继的最高控制权。"
-
-const MESSAGE_PRESETS := [
-	{"id": "hope", "text": "如果你读到这里，请继续向上。不要停下。"},
-	{"id": "warning", "text": "夜晚务必布防。物资比想象掉得更快。"},
-	{"id": "truth", "text": "我们不是第一批。程序也不会停。"},
-	{"id": "custom", "text": "（自定义留言）"},
-]
 
 const CREDITS_LINES := [
 	"—— 制作名单 ——",

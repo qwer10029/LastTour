@@ -29,7 +29,8 @@ TARGET = 64
 def is_outer_black(r: int, g: int, b: int, a: int) -> bool:
     if a < 8:
         return True
-    return r <= 20 and g <= 20 and b <= 20
+    # Only remove near-pure backdrop black connected to edges, not object shadows.
+    return r <= 4 and g <= 4 and b <= 4
 
 
 def strip_outer_black(img: Image.Image) -> Image.Image:

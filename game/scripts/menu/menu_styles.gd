@@ -15,23 +15,21 @@ const BUTTON_SELECTED := Color("#2d4a3a")
 const MENU_BUTTON_SIZE := Vector2(380, 58)
 
 
-## 从磁盘直接读取 PNG，绕过损坏的 .import 缓存。
+## 从磁盘直接读取图片，绕过损坏/错后缀的 .import 缓存。
 static func load_menu_texture(resource_path: String) -> Texture2D:
 	if resource_path.is_empty():
 		return null
-	var abs_path := ProjectSettings.globalize_path(resource_path)
-	if not abs_path.is_empty():
-		var image := Image.new()
-		if image.load(abs_path) == OK and not image.is_empty():
-			return ImageTexture.create_from_image(image)
+	var tex := ArtAssetLoader.load_texture_from_disk(resource_path)
+	if tex != null and tex.get_width() > 16:
+		return tex
 	if ResourceLoader.exists(resource_path):
 		var resource: Resource = ResourceLoader.load(
 			resource_path, "", ResourceLoader.CACHE_MODE_IGNORE
 		)
 		if resource is Texture2D:
-			var tex := resource as Texture2D
-			if tex.get_width() > 16:
-				return tex
+			var fallback := resource as Texture2D
+			if fallback.get_width() > 16:
+				return fallback
 	return null
 
 
@@ -144,28 +142,28 @@ static func style_continue_button(button: Button, enabled: bool = true) -> void:
 	_set_button_styles(button, normal, hover, pressed, disabled, Color("#6a7480"), Color("#8a94a0"), Color("#4e5660"))
 
 
-static func style_message_button(button: Button) -> void:
-	_apply_button_base(button, 18)
-	var border := Color("#8a6840")
-	var normal := StyleBoxFlat.new()
-	normal.bg_color = Color("#c4a574")
-	normal.border_color = border
-	normal.set_border_width_all(2)
-	normal.set_corner_radius_all(10)
-	normal.content_margin_left = 20
-	normal.content_margin_right = 20
-	normal.content_margin_top = 12
-	normal.content_margin_bottom = 12
-	normal.shadow_color = Color(0.0, 0.0, 0.0, 0.22)
-	normal.shadow_size = 3
+static func style_journal_button(button: Button) -> void:
+	_apply_button_base(button)
+	var accent := Color("#6eb8ff")
+	var normal := _glow_button_style(
+		Color(0.05, 0.09, 0.14, 0.94),
+		accent,
+		Color(accent.r, accent.g, accent.b, 0.28),
+		10,
+		2,
+	)
 	var hover := normal.duplicate() as StyleBoxFlat
-	hover.bg_color = Color("#d4b584")
-	hover.border_color = Color("#9a7850")
-	var pressed := normal.duplicate() as StyleBoxFlat
-	pressed.bg_color = Color("#b49564")
+	hover.bg_color = Color(0.08, 0.13, 0.20, 0.98)
+	hover.border_color = Color("#8ed0ff")
+	hover.shadow_size = 8
+	hover.shadow_color = Color("#6eb8ff", 0.38)
+	var pressed := hover.duplicate() as StyleBoxFlat
+	pressed.bg_color = Color(0.04, 0.07, 0.11, 1.0)
 	var disabled := normal.duplicate() as StyleBoxFlat
-	disabled.bg_color = Color("#8a7a64", 0.72)
-	_set_button_styles(button, normal, hover, pressed, disabled, Color("#3a2818"), Color("#2a1810"), Color("#5a4a38"))
+	disabled.bg_color = Color(0.06, 0.08, 0.11, 0.72)
+	disabled.border_color = Color("#3a4a58", 0.45)
+	disabled.shadow_size = 0
+	_set_button_styles(button, normal, hover, pressed, disabled, Color("#e4eef8"), Color("#ffffff"), Color("#5a6878"))
 
 
 static func style_settings_button(button: Button) -> void:

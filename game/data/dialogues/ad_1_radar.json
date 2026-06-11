@@ -1,0 +1,225 @@
+{
+  "npc_id": "AD-1",
+  "npc_name": "防空雷达 AD-1",
+  "story_id": "ad_1_radar",
+  "start_node": "intro_01",
+  "item_aliases": {
+    "motor": "quest:radar_motor",
+    "radar_coords": "data_chip_radar_coords",
+    "tower_mod": "data_chip_radar_tower_mod"
+  },
+  "nodes": {
+    "intro_01": {
+      "speaker": "AD-1",
+      "bubble": "来访者，请确认身份。",
+      "text": "掩体终端亮着绿光，扫描线一圈圈画圆。\n\n「来访者，请确认身份。」\n「此处为第3层防空雷达站，编号 AD-1。职责：空域监视、目标识别、航迹追踪。」",
+      "next": "intro_02"
+    },
+    "intro_02": {
+      "speaker": "AD-1",
+      "bubble": "旋转机构已经磨损了。",
+      "text": "「旋转机构磨损了，见笑。」扫描线顿了一下。\n\n「早几年，这个圆里满是光点——飞机、导弹、无人机。现在只剩一条绿线在转。」",
+      "next": "intro_02b"
+    },
+    "intro_02b": {
+      "speaker": "AD-1",
+      "bubble": "但我还留着最后一批航迹。",
+      "text": "「但我缓存里还留着最后一批航迹。」",
+      "next": "intro_03"
+    },
+    "intro_03": {
+      "speaker": "AD-1",
+      "bubble": "电机组件被碎石埋了。",
+      "text": "「电机最多还能转四十七天。备用组件在掩体后面——塌方把它埋了。我不能离开底座超过三米。」\n\n「若您愿意帮我挖出来，我可以给报酬：燃料、数据，或升级您的防御塔。」",
+      "next": "intro_04"
+    },
+    "intro_04": {
+      "speaker": "AD-1",
+      "bubble": "约一点七米。",
+      "text": "门外塌方的碎石下，露出一角锈红的铁皮箱。\n\n「埋了多深？」\n「约一点七米。碎石为主。」",
+      "next": "gate_choice"
+    },
+    "gate_choice": {
+      "speaker": "AD-1",
+      "bubble": "您愿意帮忙吗？",
+      "text": "终端上的光标一卡一卡地闪，像在等一个答案。",
+      "options": [
+        {
+          "text": "我去掩体后面挖。",
+          "next": "gate_accept"
+        },
+        {
+          "text": "帮不了你。",
+          "next": "gate_decline"
+        }
+      ]
+    },
+    "gate_decline": {
+      "speaker": "AD-1",
+      "bubble": "……明白了。我会继续转。",
+      "text": "「……明白了。我会继续执行监视协议。」\n\n扫描线还在转。尖啸声一点也没轻。",
+      "next": "gate_decline_done"
+    },
+    "gate_decline_done": {
+      "speaker": "System",
+      "text": "",
+      "actions": {
+        "close_dialogue": true,
+        "clear_checkpoint": true
+      }
+    },
+    "gate_accept": {
+      "speaker": "AD-1",
+      "bubble": "掩体后方，设备箱在塌方碎石下。",
+      "text": "「掩体后方，设备箱在塌方碎石下。我会在这里等您。」",
+      "actions": {
+        "trigger_quest": true,
+        "open_gate": true,
+        "set_variable": { "ad_1_outcome": "help" }
+      },
+      "next": "intro_done"
+    },
+    "intro_done": {
+      "speaker": "System",
+      "bubble": "",
+      "text": "委托已接受。绕到掩体后方，找到塌方碎石并按 E 挖掘电机组件。",
+      "next": "intro_done_close"
+    },
+    "intro_done_close": {
+      "speaker": "System",
+      "text": "",
+      "actions": {
+        "close_dialogue": true,
+        "clear_checkpoint": true
+      }
+    },
+    "quest_remind": {
+      "speaker": "AD-1",
+      "bubble": "掩体后方，设备箱在塌方碎石下。",
+      "text": "「掩体后方。设备箱还在碎石下面。」",
+      "next": ""
+    },
+    "return_start": {
+      "speaker": "AD-1",
+      "bubble": "检测到电机组件？",
+      "text": "我把组件放在终端边的地上。屏幕闪了一下。\n\n「检测到电机组件。状态：可用。」\n\nAD-1 的声音里出现了一段超出常规的静默。\n\n「——谢谢。」",
+      "options": [
+        {
+          "text": "把电机组件装上去。",
+          "condition_check": { "has_item": "motor", "count": 1 },
+          "next": "repair_01"
+        },
+        {
+          "text": "还没准备好，稍后再说。",
+          "next": "return_wait"
+        }
+      ]
+    },
+    "return_wait": {
+      "speaker": "AD-1",
+      "bubble": "我会继续等。",
+      "text": "「我会继续等。电机撑不了太久了。」",
+      "actions": {
+        "close_dialogue": true
+      }
+    },
+    "repair_01": {
+      "speaker": "System",
+      "bubble": "",
+      "text": "组件卡进旋转机构的槽位。尖啸声轻了一些。天线还在转——一圈，又一圈。\n\n屏幕切回协议界面。\n\n「按约定，以下三项报酬，任选其一。」",
+      "actions": {
+        "remove_item": "motor",
+        "count": 1
+      },
+      "next": "reward_choice"
+    },
+    "reward_choice": {
+      "speaker": "AD-1",
+      "bubble": "任选其一。",
+      "text": "终端列出三项报酬：燃料储备、雷达回波坐标、防御塔加固数据。",
+      "options": [
+        {
+          "text": "A · 五桶燃料",
+          "next": "path_a_01"
+        },
+        {
+          "text": "B · 隐藏建筑坐标",
+          "next": "path_b_01"
+        },
+        {
+          "text": "C · 防御塔系统升级",
+          "next": "path_c_01"
+        }
+      ]
+    },
+    "path_a_01": {
+      "speaker": "AD-1",
+      "bubble": "掩体北侧储备间，柜号 AD-1-SUP-04。",
+      "text": "「掩体北侧储备间，柜号 AD-1-SUP-04。军用高能量燃料，密封完好，战后从未启封。」",
+      "next": "path_a_02"
+    },
+    "path_a_02": {
+      "speaker": "System",
+      "bubble": "",
+      "text": "北侧储备间的滑轨门锈住了。我踹了两脚才推开。\n\n里头码着五个银灰色的密封桶，标签发黄，但封口完好。\n\n五桶燃料堆上车厢，悬架沉了一截。\n\n够跑很远。",
+      "actions": {
+        "give_item": "fuel",
+        "count": 5,
+        "set_variable": { "ad_1_outcome": "fuel" },
+        "unlock_journal_entry": "ad_1_radar_fuel"
+      },
+      "next": "story_done"
+    },
+    "path_b_01": {
+      "speaker": "AD-1",
+      "bubble": "晴朗天气里的雷达回波记录。",
+      "text": "屏幕弹出一组数据。二十几个坐标点——AD-1 在晴朗天气里用雷达回波扫描到的大型金属结构，大部分被植被或瓦砾掩盖。\n\n「我在高处看了几十年。天气好的时候，雷达波能穿透薄层植被识别大型金属结构。这些坐标不在任何地图上。」",
+      "next": "path_b_02"
+    },
+    "path_b_02": {
+      "speaker": "System",
+      "bubble": "",
+      "text": "数据片插进车载终端。地图上亮起一片新标记——最近的不到两公里，一座半埋的仓库。远处还有几处——车库、档案站——全都不在任何地图上。\n\n路标好了。什么时候路过，可以进去看看。",
+      "actions": {
+        "give_item": "radar_coords",
+        "count": 1,
+        "set_variable": { "ad_1_outcome": "coords" },
+        "unlock_journal_entry": "ad_1_radar_coords"
+      },
+      "next": "story_done"
+    },
+    "path_c_01": {
+      "speaker": "AD-1",
+      "bubble": "干扰盲区与巡逻路线，我都记得。",
+      "text": "「哪条路线上自动武器最密集、哪个方向夜间的回收巡逻最松散、干扰信号的覆盖盲区在哪里——我都记得。」\n\n「把数据片给我，我把这些信息写入加固模块。夜间布防范围会扩大，脉冲护盾的触发阈值会降低。」\n\n「当年这些数据是用来保护人类的。现在人类不在了。给你。」",
+      "next": "path_c_02"
+    },
+    "path_c_02": {
+      "speaker": "System",
+      "bubble": "",
+      "text": "数据片插进终端接口。屏幕闪了几下。绿色的扫描线停了，然后重新开始转——比之前快了一点。\n\n「数据写入完成。你的防御塔现在能看得更远了。脉冲护盾会在无人机靠近两秒前触发——而不是撞上之后。」\n\n系统提示：**防御塔系统已升级**。",
+      "actions": {
+        "give_item": "tower_mod",
+        "count": 1,
+        "set_variable": { "ad_1_outcome": "tower", "radar_defense_upgraded": true },
+        "unlock_journal_entry": "ad_1_radar_tower"
+      },
+      "next": "story_done"
+    },
+    "story_done": {
+      "speaker": "AD-1",
+      "bubble": "暂时还不会停。",
+      "text": "天线还在转。一圈。又一圈。\n\nAD-1 没有说话。屏幕上的扫描线继续画着那个绿色的圆——空的。\n\n但圆还在。\n\n「暂时还不会停。」它说。",
+      "next": "story_done_close"
+    },
+    "story_done_close": {
+      "speaker": "System",
+      "text": "",
+      "actions": {
+        "end_dialogue": true,
+        "close_dialogue": true,
+        "clear_checkpoint": true
+      }
+    }
+  }
+}

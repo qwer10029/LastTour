@@ -2,6 +2,7 @@ extends Node2D
 class_name NightTdField
 
 const DayTopdownRender = preload("res://scripts/day_topdown_render.gd")
+const NightTdSprites = preload("res://scripts/night_td/night_td_sprites.gd")
 
 signal cell_clicked(cell: Vector2i)
 signal cell_right_clicked(cell: Vector2i)
@@ -20,6 +21,7 @@ var vehicle_cells: Array[Vector2i] = [Vector2i(13, 8), Vector2i(14, 8), Vector2i
 var base_local_pos: Vector2 = Vector2.ZERO
 var _layout_tile_size: float = 48.0
 var _controller: NightTdController
+var _defence_core_visual: NightTdDefenceCoreVisual
 var _last_view_size: Vector2 = Vector2.ZERO
 
 # Tower selection (P5): multiple towers selectable via click or box-drag
@@ -35,6 +37,9 @@ var _font: Font = null
 
 func _ready() -> void:
 	_controller = get_parent() as NightTdController
+	_defence_core_visual = get_node_or_null("DefenceCoreVisual") as NightTdDefenceCoreVisual
+	if _defence_core_visual != null:
+		_defence_core_visual.bind_field(self)
 	set_process_unhandled_input(true)
 	z_index = 1
 	_font = ThemeDB.fallback_font
@@ -198,6 +203,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if _controller.phase == NightTdController.Phase.PLACE:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			cell_clicked.emit(cell)
+			queue_redraw()
 			get_viewport().set_input_as_handled()
 		elif event.button_index == MOUSE_BUTTON_RIGHT:
 			cell_right_clicked.emit(cell)
@@ -265,11 +271,6 @@ func _draw() -> void:
 		draw_rect(rect, Color("#203144", 0.35), true)
 		draw_rect(rect, Color("#ffcc6f", 0.55), false, 2.0)
 
-	var veh_center := get_vehicle_center_local()
-	var veh_scale := (_layout_tile_size * 2.28) / maxf(DayTopdownRender.vehicle_display_width(), 1.0)
-	DayTopdownRender.draw_vehicle_marker(self, veh_center, veh_scale, "", Vector2.UP)
-	draw_string(_font, veh_center + Vector2(-22, -36), "防守核心", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#ffb1a8", 0.9))
-
 	if _controller != null:
 		if _controller.show_overlay:
 			_draw_influence_heatmap()
@@ -284,7 +285,6 @@ func _draw() -> void:
 		_draw_placed_towers()
 		_draw_combat_entities()
 		_draw_placement_preview()
-		_draw_vehicle_hp_bar()
 		_draw_breach_flashes()
 		if _is_dragging:
 			_draw_selection_rect()
@@ -480,32 +480,63 @@ func _draw_combat_entities() -> void:
 		return
 	for enemy in _controller._enemies:
 		var local_pos := to_local(enemy["pos"])
+		var enemy_type := str(enemy.get("type", ""))
 		var radius: float = maxf(float(enemy.get("radius", 10.0)), 12.0)
 		var color: Color = enemy.get("color", Color.WHITE)
-		var edef: Dictionary = NightTdDefs.get_enemy_def(str(enemy.get("type", "")))
+		var edef: Dictionary = NightTdDefs.get_enemy_def(enemy_type)
 		var label: String = str(edef.get("name", "敌")).left(2)
 		var is_ally := str(enemy.get("faction", "enemy")) == "ally"
 		var is_hacked := int(enemy.get("hacked_by", -1)) >= 0
-		var halo := Color(0.35, 0.95, 0.7, 0.35) if is_ally else Color(1.0, 0.35, 0.35, 0.35)
 		var ring := Color("#5ce0a8") if is_ally else Color("#ff8b7a")
 		if is_hacked and not is_ally:
 			ring = Color("#5ac8e0")
-		draw_circle(local_pos, radius + 6.0, halo)
-		draw_circle(local_pos, radius + 3.0, Color("#ffffff"))
-		draw_circle(local_pos, radius, color)
-		draw_arc(local_pos, radius + 5.0, 0.0, TAU, 32, ring, 2.5)
-		if is_ally:
-			label = "友" + label.left(1)
-		draw_string(_font, local_pos + Vector2(-14, -20), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#fff8f8"))
-		# 牧羊者：金色指挥光环
+		var used_boss_sprite := false
+		if enemy_type == "thunder_leiting" and not is_ally:
+			used_boss_sprite = DayTopdownRender.draw_thunder_boss_enemy(
+				self,
+				local_pos,
+				enemy.get("move_dir", Vector2.ZERO),
+				float(enemy.get("walk_phase", 0.0)),
+				1.18,
+				bool(enemy.get("is_walking", false)),
+			)
+		if not used_boss_sprite:
+			var enemy_tex := NightTdSprites.enemy_texture(enemy_type)
+			var body_diameter := radius * 2.35
+			var body_modulate := Color.WHITE
+			if is_ally:
+				body_modulate = Color(0.82, 1.0, 0.88)
+			elif is_hacked:
+				body_modulate = Color(0.78, 0.95, 1.0)
+			var move_dir: Vector2 = enemy.get("move_dir", Vector2.ZERO)
+			var art_face := NightTdSprites.enemy_art_face_dir(enemy_type)
+			var drew_sprite := NightTdSprites.draw_entity_sprite(
+				self,
+				local_pos,
+				enemy_tex,
+				body_diameter,
+				body_modulate,
+				move_dir,
+				art_face,
+			)
+			if not drew_sprite:
+				draw_circle(local_pos, radius + 3.0, Color("#ffffff"))
+				draw_circle(local_pos, radius, color)
+				draw_string(_font, local_pos + Vector2(-14, -20), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#fff8f8"))
+			elif is_ally or is_hacked:
+				draw_arc(local_pos, radius + 5.0, 0.0, TAU, 24, ring, 2.0)
+			if is_ally:
+				label = "友" + label.left(1)
 		if bool(enemy.get("is_shepherd", false)) and not is_ally:
 			draw_arc(local_pos, radius + 10.0, 0.0, TAU, 40, Color(1.0, 0.82, 0.29, 0.7), 2.0)
 		if float(enemy.get("heal_radius", 0.0)) > 0.0 and not is_ally:
 			draw_arc(local_pos, radius + 9.0, 0.0, TAU, 36, Color("#64dca0", 0.72), 2.0)
 			draw_string(_font, local_pos + Vector2(-10, 32), "修", HORIZONTAL_ALIGNMENT_CENTER, -1, 9, Color("#c8ffe0"))
 		if bool(enemy.get("hack_immune", false)) and not is_ally:
-			draw_arc(local_pos, radius + 13.0, 0.0, TAU, 44, Color("#ff3658", 0.78), 2.5)
-			draw_string(_font, local_pos + Vector2(-12, -42), "免疫", HORIZONTAL_ALIGNMENT_CENTER, -1, 9, Color("#ffd0d8"))
+			var immune_r := radius + (18.0 if used_boss_sprite else 13.0)
+			draw_arc(local_pos, immune_r, 0.0, TAU, 44, Color("#ff3658", 0.78), 2.5)
+			var immune_y := -62.0 if used_boss_sprite else -42.0
+			draw_string(_font, local_pos + Vector2(-12, immune_y), "免疫", HORIZONTAL_ALIGNMENT_CENTER, -1, 9, Color("#ffd0d8"))
 		# 战斗中显示指挥官分配的组标签
 		if _controller.phase == NightTdController.Phase.COMBAT:
 			var goal_key: String = str(enemy.get("goal_key", ""))
@@ -517,14 +548,11 @@ func _draw_combat_entities() -> void:
 				draw_string(_font, local_pos + Vector2(-10, -32),
 					"佯攻", HORIZONTAL_ALIGNMENT_CENTER, -1, 8,
 					Color(0.6, 0.5, 0.9, 0.8))
-		if _controller.phase == NightTdController.Phase.COMBAT:
-			var move_dir: Vector2 = enemy.get("move_dir", Vector2.ZERO)
-			if move_dir.length_squared() > 0.0001:
-				var arrow_tip := local_pos + move_dir * (radius + 14.0)
-				_draw_arrow_head(arrow_tip, move_dir, 11.0, Color(1.0, 0.45, 0.35, 0.95))
 		var hp_ratio: float = clampf(float(enemy["hp"]) / maxf(float(enemy["max_hp"]), 1.0), 0.0, 1.0)
-		draw_rect(Rect2(local_pos.x - 18, local_pos.y - 28, 36, 5), Color(0.05, 0.05, 0.05, 0.95), true)
-		draw_rect(Rect2(local_pos.x - 18, local_pos.y - 28, 36 * hp_ratio, 5), Color("#ff5f57"), true)
+		var bar_w := 58.0 if used_boss_sprite else 36.0
+		var bar_y := local_pos.y - (64.0 if used_boss_sprite else 28.0)
+		draw_rect(Rect2(local_pos.x - bar_w * 0.5, bar_y, bar_w, 5), Color(0.05, 0.05, 0.05, 0.95), true)
+		draw_rect(Rect2(local_pos.x - bar_w * 0.5, bar_y, bar_w * hp_ratio, 5), Color("#ff5f57"), true)
 
 	for projectile in _controller._projectiles:
 		var from_pos := to_local(projectile["from"])
@@ -541,31 +569,14 @@ func _draw_placement_preview() -> void:
 	var hover: Vector2i = world_to_cell(get_global_mouse_position())
 	if not is_inside_grid(hover):
 		return
-	var occupied: Dictionary = {}
-	for tower in _controller._towers:
-		if not tower.get("removed", false):
-			occupied[tower["cell"]] = true
 	var build_rect := Rect2(field_origin + Vector2(hover.x * _layout_tile_size, hover.y * _layout_tile_size), Vector2(_layout_tile_size, _layout_tile_size))
-	if can_place_tower(hover, occupied):
+	if can_place_tower(hover, _controller.get_occupied_cells()):
 		draw_rect(build_rect, Color(0.43, 0.82, 0.55, 0.42), true)
 		draw_rect(build_rect, Color("#ffffff"), false, 2.5)
 		draw_string(_font, build_rect.position + Vector2(6, 18), "可放置", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#f1fff3"))
 	else:
 		draw_rect(build_rect, Color(0.95, 0.35, 0.35, 0.28), true)
 		draw_rect(build_rect, Color(1.0, 0.8, 0.8, 0.8), false, 2.0)
-
-
-func _draw_vehicle_hp_bar() -> void:
-	if _controller == null:
-		return
-	var bar_rect := get_field_rect_local()
-	var bar_w: float = bar_rect.size.x
-	var bar_x: float = bar_rect.position.x
-	var bar_y: float = bar_rect.end.y + 12.0
-	var ratio: float = clampf(_controller.base_hp / _controller.base_max_hp, 0.0, 1.0)
-	draw_rect(Rect2(bar_x, bar_y, bar_w, 12), Color("#1a2533"), true)
-	draw_rect(Rect2(bar_x, bar_y, bar_w * ratio, 12), Color("#d89246"), true)
-	draw_string(_font, Vector2(bar_x, bar_y - 18), "车辆耐久", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#d8e4f0"))
 
 
 func play_breach_flash(world_pos: Vector2) -> void:
@@ -616,6 +627,113 @@ func _draw_selection_rect() -> void:
 	draw_rect(r, Color("#ffcc6f", 0.8), false, 2.0)
 
 
+func _draw_tower_sprite(
+	local_pos: Vector2,
+	tower_type: String,
+	radius: float,
+	power_scale: float,
+	tower: Dictionary,
+	tdef: Dictionary,
+) -> bool:
+	var tex := NightTdSprites.tower_texture(tower_type)
+	var modulate := Color.WHITE
+	if power_scale < 0.95:
+		modulate = Color(0.55, 0.55, 0.55)
+	var face_dir: Vector2 = tower.get("face_dir", Vector2.ZERO)
+	return NightTdSprites.draw_entity_sprite(
+		self,
+		local_pos,
+		tex,
+		radius * 2.2,
+		modulate,
+		face_dir,
+		NightTdSprites.tower_art_face_dir(tower_type),
+	)
+
+
+func _range_arc_segments() -> int:
+	if _controller != null and _controller.phase == NightTdController.Phase.PLACE:
+		return 20
+	return 48
+
+
+func _draw_tower_range_fx(
+	local_pos: Vector2,
+	tower_type: String,
+	tower: Dictionary,
+	tdef: Dictionary,
+	radius: float,
+) -> void:
+	var arc_seg := _range_arc_segments()
+	match tower_type:
+		"jammer":
+			draw_arc(local_pos, float(tdef.get("range", 100)), 0.0, TAU, arc_seg, Color(0.43, 0.82, 0.55, 0.22), 2.0)
+		"cryo_beacon":
+			draw_circle(local_pos, float(tdef.get("range", 130)), Color(0.52, 0.85, 1.0, 0.08))
+			draw_arc(local_pos, float(tdef.get("range", 130)), 0.0, TAU, arc_seg, Color(0.52, 0.85, 1.0, 0.24), 2.0)
+		"hacker":
+			draw_arc(local_pos, float(tdef.get("range", 150)), 0.0, TAU, arc_seg, Color(0.35, 0.78, 0.88, 0.18), 2.0)
+			if _controller.phase == NightTdController.Phase.COMBAT and int(tower.get("id", -1)) == _controller._selected_hacker_id:
+				draw_arc(local_pos, radius + 6.0, 0.0, TAU, 40, Color("#9af0ff"), 2.5)
+			var prog := float(tower.get("hack_progress", 0.0))
+			if prog > 0.0:
+				var ratio := clampf(prog / 100.0, 0.0, 1.0)
+				draw_rect(Rect2(local_pos.x - 16, local_pos.y - 24, 32, 4), Color(0.05, 0.1, 0.12, 0.9), true)
+				draw_rect(Rect2(local_pos.x - 16, local_pos.y - 24, 32 * ratio, 4), Color("#5ac8e0"), true)
+			var teid := int(tower.get("target_eid", -1))
+			if teid >= 0:
+				for e in _controller._enemies:
+					if int(e.get("eid", -1)) == teid:
+						draw_line(local_pos, to_local(e["pos"]), Color(0.35, 0.82, 0.95, 0.6), 2.0)
+						break
+		"sniper":
+			var sniper_seg := arc_seg if _controller.phase == NightTdController.Phase.PLACE else 64
+			draw_arc(local_pos, float(tdef.get("range", 220)), 0.0, TAU, sniper_seg, Color(0.48, 0.65, 1.0, 0.18), 1.5)
+		"splash":
+			var splash_r := float(tdef.get("splash_radius", 56.0))
+			draw_circle(local_pos, splash_r, Color(0.88, 0.64, 0.23, 0.10))
+			draw_arc(local_pos, splash_r, 0.0, TAU, arc_seg, Color(0.88, 0.64, 0.23, 0.28), 1.5)
+			draw_arc(local_pos, float(tdef.get("range", 120)), 0.0, TAU, arc_seg, Color(0.88, 0.64, 0.23, 0.22), 2.0)
+
+
+func _draw_tower_body_fallback(local_pos: Vector2, tower_type: String, tdef: Dictionary, radius: float) -> void:
+	match tower_type:
+		"jammer":
+			draw_circle(local_pos, radius, tdef.get("color", Color.WHITE))
+			draw_rect(Rect2(local_pos.x - 14, local_pos.y - 22, 28, 4), Color("#6ed08b"), true)
+		"barrier":
+			var barrier_rect := Rect2(local_pos.x - 16, local_pos.y - 14, 32, 28)
+			draw_rect(barrier_rect, tdef.get("color", Color.WHITE), true)
+			draw_rect(barrier_rect, Color("#f2e2c8"), false, 2.0)
+		"trap":
+			var points := PackedVector2Array([
+				local_pos + Vector2(0, -15),
+				local_pos + Vector2(14, 12),
+				local_pos + Vector2(-14, 12),
+			])
+			draw_colored_polygon(points, tdef.get("color", Color.WHITE))
+		"cryo_beacon":
+			var cryo_color: Color = tdef.get("color", Color("#83d8ff"))
+			draw_circle(local_pos, radius, cryo_color)
+			draw_circle(local_pos, radius * 0.45, Color("#092638"))
+			draw_line(local_pos + Vector2(-radius, 0), local_pos + Vector2(radius, 0), Color("#e8fbff"), 2.0)
+			draw_line(local_pos + Vector2(0, -radius), local_pos + Vector2(0, radius), Color("#e8fbff"), 2.0)
+		"hacker":
+			var hk_color: Color = tdef.get("color", Color("#5ac8e0"))
+			draw_circle(local_pos, radius, hk_color)
+			draw_circle(local_pos, radius * 0.5, Color("#0a2030"))
+		"sniper":
+			var sn_color: Color = tdef.get("color", Color("#7aa6ff"))
+			draw_circle(local_pos, radius, sn_color)
+			draw_circle(local_pos, radius * 0.35, Color("#0a1830"))
+		"splash":
+			var sp_color: Color = tdef.get("color", Color("#e0a23a"))
+			draw_circle(local_pos, radius, sp_color)
+			draw_circle(local_pos, radius * 0.45, Color("#1a0e00"))
+		_:
+			draw_circle(local_pos, radius, tdef.get("color", Color.WHITE))
+
+
 func _draw_placed_towers() -> void:
 	for tower in _controller._towers:
 		if tower.get("removed", false):
@@ -630,66 +748,10 @@ func _draw_placed_towers() -> void:
 			draw_circle(local_pos, radius + 6.0, Color(1.0, 0.7, 0.2, 0.25 * (power_scale - 1.0)))
 		elif power_scale < 0.95 and float(tdef.get("upkeep", 0.0)) > 0.0:
 			draw_circle(local_pos, radius + 4.0, Color(0.3, 0.3, 0.3, 0.4))
-		match str(tower["type"]):
-			"jammer":
-				draw_circle(local_pos, radius, tdef.get("color", Color.WHITE))
-				draw_arc(local_pos, float(tdef.get("range", 100)), 0.0, TAU, 48, Color(0.43, 0.82, 0.55, 0.22), 2.0)
-				draw_rect(Rect2(local_pos.x - 14, local_pos.y - 22, 28, 4), Color("#6ed08b"), true)
-			"barrier":
-				var barrier_rect := Rect2(local_pos.x - 16, local_pos.y - 14, 32, 28)
-				draw_rect(barrier_rect, tdef.get("color", Color.WHITE), true)
-				draw_rect(barrier_rect, Color("#f2e2c8"), false, 2.0)
-			"trap":
-				var points := PackedVector2Array([
-					local_pos + Vector2(0, -15),
-					local_pos + Vector2(14, 12),
-					local_pos + Vector2(-14, 12),
-				])
-				draw_colored_polygon(points, tdef.get("color", Color.WHITE))
-			"cryo_beacon":
-				var noise_color: Color = tdef.get("color", Color("#c6d65c"))
-				var range_r := float(tdef.get("range", 130))
-				draw_circle(local_pos, range_r, Color(0.76, 0.84, 0.36, 0.07))
-				for rr in [range_r * 0.45, range_r * 0.7, range_r]:
-					draw_arc(local_pos, rr, 0.0, TAU, 56, Color(0.76, 0.84, 0.36, 0.22), 1.7)
-				draw_circle(local_pos, radius, noise_color)
-				draw_circle(local_pos, radius * 0.45, Color("#1a2416"))
-				draw_line(local_pos + Vector2(-radius * 0.7, -radius * 0.2), local_pos + Vector2(-radius * 0.2, radius * 0.35), Color("#f5ffb8"), 2.0)
-				draw_line(local_pos + Vector2(-radius * 0.2, radius * 0.35), local_pos + Vector2(radius * 0.25, -radius * 0.35), Color("#f5ffb8"), 2.0)
-				draw_line(local_pos + Vector2(radius * 0.25, -radius * 0.35), local_pos + Vector2(radius * 0.72, radius * 0.2), Color("#f5ffb8"), 2.0)
-			"hacker":
-				var hk_color: Color = tdef.get("color", Color("#5ac8e0"))
-				draw_arc(local_pos, float(tdef.get("range", 150)), 0.0, TAU, 48, Color(0.35, 0.78, 0.88, 0.18), 2.0)
-				draw_circle(local_pos, radius, hk_color)
-				draw_circle(local_pos, radius * 0.5, Color("#0a2030"))
-				if _controller.phase == NightTdController.Phase.COMBAT and int(tower.get("id", -1)) == _controller._selected_hacker_id:
-					draw_arc(local_pos, radius + 6.0, 0.0, TAU, 40, Color("#9af0ff"), 2.5)
-				var prog := float(tower.get("hack_progress", 0.0))
-				if prog > 0.0:
-					var ratio := clampf(prog / 100.0, 0.0, 1.0)
-					draw_rect(Rect2(local_pos.x - 16, local_pos.y - 24, 32, 4), Color(0.05, 0.1, 0.12, 0.9), true)
-					draw_rect(Rect2(local_pos.x - 16, local_pos.y - 24, 32 * ratio, 4), Color("#5ac8e0"), true)
-				var teid := int(tower.get("target_eid", -1))
-				if teid >= 0:
-					for e in _controller._enemies:
-						if int(e.get("eid", -1)) == teid:
-							draw_line(local_pos, to_local(e["pos"]), Color(0.35, 0.82, 0.95, 0.6), 2.0)
-							break
-			"sniper":
-				var sn_color: Color = tdef.get("color", Color("#7aa6ff"))
-				draw_arc(local_pos, float(tdef.get("range", 220)), 0.0, TAU, 64, Color(0.48, 0.65, 1.0, 0.18), 1.5)
-				draw_circle(local_pos, radius, sn_color)
-				draw_circle(local_pos, radius * 0.35, Color("#0a1830"))
-			"splash":
-				var sp_color: Color = tdef.get("color", Color("#e0a23a"))
-				var splash_r := float(tdef.get("splash_radius", 56.0))
-				draw_circle(local_pos, splash_r, Color(0.88, 0.64, 0.23, 0.10))
-				draw_arc(local_pos, splash_r, 0.0, TAU, 48, Color(0.88, 0.64, 0.23, 0.28), 1.5)
-				draw_arc(local_pos, float(tdef.get("range", 120)), 0.0, TAU, 48, Color(0.88, 0.64, 0.23, 0.22), 2.0)
-				draw_circle(local_pos, radius, sp_color)
-				draw_circle(local_pos, radius * 0.45, Color("#1a0e00"))
-			_:
-				draw_circle(local_pos, radius, tdef.get("color", Color.WHITE))
+		var tower_type := str(tower["type"])
+		_draw_tower_range_fx(local_pos, tower_type, tower, tdef, radius)
+		if not _draw_tower_sprite(local_pos, tower_type, radius, power_scale, tower, tdef):
+			_draw_tower_body_fallback(local_pos, tower_type, tdef, radius)
 
 		# Tower HP bar + selection highlight
 		var tid := int(tower.get("id", -1))
@@ -714,6 +776,10 @@ func _draw_placed_towers() -> void:
 			draw_arc(local_pos, radius + 8.0, 0.0, TAU, 48, Color("#ffcc6f", 0.7 + pulse * 0.3), 3.0)
 			var bar_y := local_pos.y - radius - 10.0
 			draw_rect(Rect2(local_pos.x - 17.0, bar_y - 2.0, 34.0, 8.0), Color("#ffcc6f", 0.8), false, 2.5)
+
+
+func get_defence_core_visual() -> NightTdDefenceCoreVisual:
+	return _defence_core_visual
 
 
 func get_buildable_hint_cell(world_pos: Vector2) -> Vector2i:

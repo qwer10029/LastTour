@@ -86,7 +86,7 @@
 			"power_curve": {"damage_per_power": 0.0, "firerate_per_power": 0.0, "hackrate_per_power": 0.6}
 		},
 		"sniper": {
-			"name": "狙击信标",
+			"name": "炮塔",
 			"cost": 2,
 			"range": 220.0,
 			"damage": 40.0,
@@ -94,7 +94,7 @@
 			"hp": 30.0,
 			"color": "#7aa6ff",
 			"radius": 13.0,
-			"desc": "超远射程单体狙击，伤害极高但射速慢。适合点杀重甲或高价值目标。",
+			"desc": "超远射程单体炮击，伤害极高但射速慢。适合点杀重甲或高价值目标。",
 			"build_cost": {"parts": 2},
 			"salvage": {"parts": 1},
 			"is_hack_tower": false,

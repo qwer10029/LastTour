@@ -8,6 +8,9 @@ const INTERIOR_ROWS := 10
 const FOOT_ANCHOR_OBSTACLE := Vector2i(6, 4)
 const FOOT_ELEVATOR_CONSOLE_TILE := FOOT_ANCHOR_OBSTACLE
 const FOOT_DOOR_TILE := Vector2i(6, 9)
+const FOOT_DOOR_TILE_NORTH := Vector2i(6, 0)
+const SENTINEL_STORY_ID := "sentinel_s09"
+const MARIAN_STORY_ID := "marian_k142"
 
 const DIRECTIONS := {
 	"up": Vector2i(0, -1),
@@ -42,6 +45,7 @@ func generate(
 	rng_seed: int = 0,
 	is_final_layer: bool = false,
 	debug_near_spawn: bool = false,
+	on_progress: Callable = Callable(),
 ) -> void:
 	columns = new_columns
 	rows = new_rows
@@ -51,16 +55,22 @@ func generate(
 	hub_indices.clear()
 	start_node_index = -1
 
+	var report := func(ratio: float, label: String) -> void:
+		if on_progress.is_valid():
+			on_progress.call(clampf(ratio, 0.0, 1.0), label)
+
 	var rng := RandomNumberGenerator.new()
 	if rng_seed == 0:
 		rng.randomize()
 	else:
 		rng.seed = rng_seed
 
+	report.call(0.04, "铺设地表网格…")
 	for row in range(rows):
 		for column in range(columns):
 			cells.append(_create_empty_cell(Vector2i(column, row)))
 
+	report.call(0.12, "选址枢纽营地…")
 	var hub_coords: Array[Vector2i] = _pick_cells(rng, max(2, min(4, (columns + rows) / 4)))
 	for coord in hub_coords:
 		var index := index_from_coord(coord)
@@ -68,9 +78,12 @@ func generate(
 		cells[index]["building_type"] = "hub"
 		hub_indices.append(index)
 
+	report.call(0.18, "规划资源区…")
 	var district_coords: Array[Vector2i] = _pick_district_coords(
 		rng, max(8, min(16, (columns + rows) / 3)), hub_coords
 	)
+	var district_total := maxi(district_coords.size(), 1)
+	var district_step := 0
 	for coord in district_coords:
 		var index := index_from_coord(coord)
 		if index in hub_indices:
@@ -96,6 +109,10 @@ func generate(
 			rng, int(cells[index]["resource_total"]), building_type, foot_layout, foot_origin_offset
 		)
 		district_indices.append(index)
+		district_step += 1
+		if district_step % 2 == 0 or district_step == district_total:
+			var local := 0.18 + 0.52 * float(district_step) / float(district_total)
+			report.call(local, "建设资源区 %d/%d…" % [district_step, district_total])
 
 	if is_final_layer:
 		_ensure_kunlun_control_district()
@@ -104,16 +121,20 @@ func generate(
 
 	if district_indices.is_empty():
 		return
+	report.call(0.74, "连接道路网络…")
 	# 路在格与格之间的边沿：所有非建筑格（空地/hub）四向连通，建筑格本身不可通行
 	_link_traversable_grid()
 	_finalize_cell_kinds()
 	_setup_district_roadside(rng)
 	_finalize_cell_kinds()
+	report.call(0.86, "标记出发节点…")
 	_mark_start_node()
 	if debug_near_spawn:
 		_place_special_building_near_start(is_final_layer)
+	report.call(0.92, "散布地表细节…")
 	_place_terrain_scatter(rng)
 	_place_road_blockages(rng)
+	report.call(1.0, "世界地图生成完成")
 
 func get_world_size() -> Vector2:
 	return Vector2(columns * cell_size.x, rows * cell_size.y)
@@ -200,6 +221,69 @@ func get_building_entrance_world_pos(district_index: int) -> Vector2:
 	var facade_depth := unit * 0.14
 	var edge := road_center + side_dir * (unit * 0.32)
 	return edge + side_dir * (facade_depth * 0.42)
+
+
+func district_toward_road_vector(district_index: int) -> Vector2:
+	if not is_valid_index(district_index) or not is_district(district_index):
+		return Vector2.ZERO
+	var approach := int(cells[district_index].get("approach_road_index", -1))
+	if not is_valid_index(approach):
+		return Vector2.ZERO
+	return cell_center(approach) - cell_center(district_index)
+
+
+func clear_interior_obstacles(index: int) -> void:
+	if not is_valid_index(index) or not is_district(index):
+		return
+	ensure_foot_layout(index)
+	cells[index]["foot_blocked"] = []
+
+
+func uses_north_foot_door(cell: Dictionary) -> bool:
+	return str(cell.get("story_id", "")) == SENTINEL_STORY_ID
+
+
+func orient_district_door_north(district_index: int) -> bool:
+	if not is_valid_index(district_index) or not is_district(district_index):
+		return false
+	var north_index := -1
+	for candidate in _district_door_candidates(district_index):
+		if direction_between(district_index, candidate) == "up":
+			north_index = candidate
+			break
+	if north_index < 0:
+		return false
+	for neighbor in get_connected_indices(district_index).duplicate():
+		if is_district(neighbor):
+			_disconnect_cells(district_index, neighbor)
+	for direction in DIRECTIONS.keys():
+		var linked := int(cells[district_index]["connections"][direction])
+		if linked >= 0:
+			_disconnect_cells(district_index, linked)
+	cells[district_index]["connections"]["up"] = north_index
+	cells[north_index]["connections"]["down"] = district_index
+	cells[district_index]["approach_road_index"] = north_index
+	cells[district_index]["entry_from_road"] = "down"
+	cells[district_index]["door_facing"] = "up"
+	return true
+
+
+func pick_district_with_north_road(candidates: Array[int]) -> int:
+	for district_index in candidates:
+		for candidate in _district_door_candidates(district_index):
+			if direction_between(district_index, candidate) == "up":
+				return district_index
+	return -1
+
+
+func filter_districts_with_north_road(candidates: Array[int]) -> Array[int]:
+	var result: Array[int] = []
+	for district_index in candidates:
+		for candidate in _district_door_candidates(district_index):
+			if direction_between(district_index, candidate) == "up":
+				result.append(district_index)
+				break
+	return result
 
 
 func get_roadside_parking_world_pos(road_index: int, district_index: int) -> Vector2:
@@ -398,6 +482,81 @@ func explored_count() -> int:
 			total += 1
 	return total
 
+func resource_spawn_key(spawn: Variant) -> String:
+	if spawn is Dictionary:
+		return "%.1f,%.1f" % [float(spawn.get("x", 0.0)), float(spawn.get("y", 0.0))]
+	if spawn is Vector2:
+		var pos: Vector2 = spawn
+		return "%.1f,%.1f" % [pos.x, pos.y]
+	return ""
+
+
+func collected_resource_spawn_keys(index: int) -> Array:
+	if not is_valid_index(index):
+		return []
+	var raw: Variant = cells[index].get("collected_resource_spawns", [])
+	if typeof(raw) != TYPE_ARRAY:
+		return []
+	return raw.duplicate()
+
+
+func is_resource_spawn_collected(index: int, key: String) -> bool:
+	if key == "":
+		return false
+	return collected_resource_spawn_keys(index).has(key)
+
+
+func ensure_resource_spawn_collected_state(index: int) -> void:
+	if not is_valid_index(index):
+		return
+	var collected := collected_resource_spawn_keys(index)
+	if not collected.is_empty():
+		_sync_resource_remaining(index)
+		return
+	var total := int(cells[index].get("resource_total", 0))
+	var remaining := int(cells[index].get("resource_remaining", 0))
+	if total <= 0 or remaining >= total:
+		return
+	var spawns: Variant = cells[index].get("resource_spawns", [])
+	if typeof(spawns) != TYPE_ARRAY:
+		return
+	var to_mark := total - remaining
+	for i in range(mini(to_mark, (spawns as Array).size())):
+		var key := resource_spawn_key((spawns as Array)[i])
+		if key != "" and not collected.has(key):
+			collected.append(key)
+	cells[index]["collected_resource_spawns"] = collected
+	_sync_resource_remaining(index)
+
+
+func mark_resource_spawn_collected(index: int, key: String) -> bool:
+	if not is_valid_index(index) or key == "":
+		return false
+	if is_resource_spawn_collected(index, key):
+		return false
+	var collected := collected_resource_spawn_keys(index)
+	collected.append(key)
+	cells[index]["collected_resource_spawns"] = collected
+	_sync_resource_remaining(index)
+	return true
+
+
+func _sync_resource_remaining(index: int) -> void:
+	if not is_valid_index(index):
+		return
+	var spawns: Variant = cells[index].get("resource_spawns", [])
+	if typeof(spawns) != TYPE_ARRAY:
+		cells[index]["resource_remaining"] = 0
+		return
+	var collected := collected_resource_spawn_keys(index)
+	var uncollected := 0
+	for spawn_var in spawns as Array:
+		var key := resource_spawn_key(spawn_var)
+		if key == "" or not collected.has(key):
+			uncollected += 1
+	cells[index]["resource_remaining"] = uncollected
+
+
 func collect_resource(index: int) -> bool:
 	if not is_valid_index(index):
 		return false
@@ -409,9 +568,17 @@ func collect_resource(index: int) -> bool:
 func building_label(index: int) -> String:
 	if not is_valid_index(index):
 		return "未知建筑"
+	var tactical_label := str(cells[index].get("tactical_label", ""))
+	if tactical_label != "" and bool(cells[index].get("tactical_revealed", false)):
+		return tactical_label
 	var building_type := str(cells[index]["building_type"])
 	match building_type:
 		"warehouse":
+			var warehouse_story := str(cells[index].get("story_id", ""))
+			if warehouse_story != "" and StoryData.has_story(warehouse_story):
+				var warehouse_label := str(StoryData.get_story(warehouse_story).get("building_label", ""))
+				if warehouse_label != "":
+					return warehouse_label
 			return "仓库"
 		"elevator":
 			return "电梯楼"
@@ -435,6 +602,20 @@ func building_label(index: int) -> String:
 			return "档案站"
 		"hub":
 			return "枢纽"
+		"radar":
+			var radar_story := str(cells[index].get("story_id", ""))
+			if radar_story != "" and StoryData.has_story(radar_story):
+				var radar_label := str(StoryData.get_story(radar_story).get("building_label", ""))
+				if radar_label != "":
+					return radar_label
+			return "防空雷达站"
+		"market":
+			var market_story := str(cells[index].get("story_id", ""))
+			if market_story != "" and StoryData.has_story(market_story):
+				var market_label := str(StoryData.get_story(market_story).get("building_label", ""))
+				if market_label != "":
+					return market_label
+			return "集市"
 		_:
 			return "建筑群"
 
@@ -483,6 +664,7 @@ func _create_empty_cell(coord: Vector2i) -> Dictionary:
 		"resource_total": 0,
 		"resource_remaining": 0,
 		"resource_spawns": [],
+		"collected_resource_spawns": [],
 		"foot_grid_cols": 0,
 		"foot_grid_rows": 0,
 		"foot_blocked": [],
@@ -498,6 +680,11 @@ func _create_empty_cell(coord: Vector2i) -> Dictionary:
 		"special_encounter": "",
 		"terrain_props": [],
 		"road_blockages": {},
+		"tactical_hidden": false,
+		"tactical_revealed": false,
+		"tactical_building_type": "",
+		"tactical_label": "",
+		"tactical_source": "",
 	}
 
 func _pick_cells(rng: RandomNumberGenerator, count: int) -> Array[Vector2i]:
@@ -929,17 +1116,25 @@ func get_foot_door_tile(index: int) -> Vector2i:
 	var cols: int = maxi(int(cell.get("foot_grid_cols", 1)), 1)
 	var rows: int = maxi(int(cell.get("foot_grid_rows", 1)), 1)
 	var blocked: Array = cell.get("foot_blocked", [])
+	var door_seed := FOOT_DOOR_TILE_NORTH if uses_north_foot_door(cell) else FOOT_DOOR_TILE
 	var door_tile := Vector2i(
-		clampi(FOOT_DOOR_TILE.x, 0, cols - 1),
-		clampi(FOOT_DOOR_TILE.y, 0, rows - 1),
+		clampi(door_seed.x, 0, cols - 1),
+		clampi(door_seed.y, 0, rows - 1),
 	)
 	if _tile_blocked(door_tile, blocked):
 		door_tile = _pick_foot_spawn_tile(cols, rows, door_tile, blocked)
-	for row in range(door_tile.y, maxi(door_tile.y - 3, -1), -1):
-		var candidate := Vector2i(door_tile.x, row)
-		if not _tile_blocked(candidate, blocked):
-			door_tile = candidate
-			break
+	if uses_north_foot_door(cell):
+		for row in range(door_tile.y, mini(door_tile.y + 3, rows)):
+			var candidate := Vector2i(door_tile.x, row)
+			if not _tile_blocked(candidate, blocked):
+				door_tile = candidate
+				break
+	else:
+		for row in range(door_tile.y, maxi(door_tile.y - 3, -1), -1):
+			var candidate := Vector2i(door_tile.x, row)
+			if not _tile_blocked(candidate, blocked):
+				door_tile = candidate
+				break
 	return door_tile
 
 
@@ -1439,6 +1634,113 @@ func ensure_story_districts_from_data() -> void:
 	StoryData.ensure_story_districts(self)
 
 
+func is_tactical_dormant(index: int) -> bool:
+	if not is_valid_index(index):
+		return false
+	return bool(cells[index].get("tactical_hidden", false)) and not bool(cells[index].get("tactical_revealed", false))
+
+
+func is_tactical_revealed(index: int) -> bool:
+	if not is_valid_index(index):
+		return false
+	return bool(cells[index].get("tactical_revealed", false))
+
+
+func has_tactical_hidden_sites(source_id: String = "") -> bool:
+	for index in district_indices:
+		if not bool(cells[index].get("tactical_hidden", false)):
+			continue
+		if bool(cells[index].get("tactical_revealed", false)):
+			continue
+		if source_id != "" and str(cells[index].get("tactical_source", "")) != source_id:
+			continue
+		return true
+	return false
+
+
+func prepare_tactical_hidden_sites(site_defs: Array, source_id: String = "") -> void:
+	if site_defs.is_empty():
+		return
+	var candidates: Array[int] = []
+	for index in district_indices:
+		if not is_valid_index(index):
+			continue
+		var cell := cells[index]
+		if str(cell.get("story_id", "")) != "":
+			continue
+		if str(cell.get("special_encounter", "")) != "":
+			continue
+		if bool(cell.get("has_elevator", false)) or bool(cell.get("has_kunlun_control", false)):
+			continue
+		if bool(cell.get("tactical_hidden", false)):
+			continue
+		candidates.append(index)
+	if candidates.is_empty():
+		return
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	for i in range(candidates.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var tmp: int = candidates[i]
+		candidates[i] = candidates[j]
+		candidates[j] = tmp
+	var pick_count := mini(site_defs.size(), candidates.size())
+	for i in range(pick_count):
+		var index: int = candidates[i]
+		var def: Dictionary = site_defs[i] if typeof(site_defs[i]) == TYPE_DICTIONARY else {}
+		var building_type := str(def.get("building_type", "warehouse"))
+		var label := str(def.get("building_label", "隐藏物资点"))
+		cells[index]["tactical_hidden"] = true
+		cells[index]["tactical_revealed"] = false
+		cells[index]["tactical_building_type"] = building_type
+		cells[index]["tactical_label"] = label
+		cells[index]["tactical_source"] = source_id
+		cells[index]["building_type"] = ""
+		cells[index]["resource_total"] = 0
+		cells[index]["resource_remaining"] = 0
+		cells[index]["resource_spawns"] = []
+
+
+func reveal_tactical_hidden_sites(source_id: String = "") -> bool:
+	if not has_tactical_hidden_sites(source_id):
+		return false
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	var changed := false
+	for index in district_indices:
+		if not is_valid_index(index):
+			continue
+		if not bool(cells[index].get("tactical_hidden", false)):
+			continue
+		if bool(cells[index].get("tactical_revealed", false)):
+			continue
+		if source_id != "" and str(cells[index].get("tactical_source", "")) != source_id:
+			continue
+		var building_type := str(cells[index].get("tactical_building_type", "warehouse"))
+		if building_type == "":
+			building_type = "warehouse"
+		cells[index]["tactical_revealed"] = true
+		cells[index]["building_type"] = building_type
+		var resource_total := rng.randi_range(3, 5)
+		cells[index]["resource_total"] = resource_total
+		cells[index]["resource_remaining"] = resource_total
+		var foot_layout := {
+			"cols": int(cells[index].get("foot_grid_cols", INTERIOR_COLS)),
+			"rows": int(cells[index].get("foot_grid_rows", INTERIOR_ROWS)),
+			"blocked": cells[index].get("foot_blocked", []),
+		}
+		var foot_area := Vector2(
+			float(int(foot_layout["cols"]) * FOOT_TILE_SIZE),
+			float(int(foot_layout["rows"]) * FOOT_TILE_SIZE),
+		)
+		var foot_origin_offset := (Vector2(cell_size) - foot_area) * 0.5
+		cells[index]["resource_spawns"] = _generate_resource_spawns_on_walkable(
+			rng, resource_total, building_type, foot_layout, foot_origin_offset
+		)
+		changed = true
+	return changed
+
+
 func to_dictionary() -> Dictionary:
 	var serialized_cells: Array = []
 	for cell in cells:
@@ -1532,6 +1834,7 @@ func _serialize_cell(cell: Dictionary) -> Dictionary:
 		"resource_total": int(cell.get("resource_total", 0)),
 		"resource_remaining": int(cell.get("resource_remaining", 0)),
 		"resource_spawns": spawns,
+		"collected_resource_spawns": _serialize_string_array(cell.get("collected_resource_spawns", [])),
 		"foot_grid_cols": int(cell.get("foot_grid_cols", 0)),
 		"foot_grid_rows": int(cell.get("foot_grid_rows", 0)),
 		"foot_blocked": _serialize_foot_blocked(cell.get("foot_blocked", [])),
@@ -1544,7 +1847,34 @@ func _serialize_cell(cell: Dictionary) -> Dictionary:
 		"district_tag": str(cell.get("district_tag", "")),
 		"terrain_props": _serialize_terrain_props(cell.get("terrain_props", [])),
 		"road_blockages": _serialize_road_blockages(cell.get("road_blockages", {})),
+		"tactical_hidden": bool(cell.get("tactical_hidden", false)),
+		"tactical_revealed": bool(cell.get("tactical_revealed", false)),
+		"tactical_building_type": str(cell.get("tactical_building_type", "")),
+		"tactical_label": str(cell.get("tactical_label", "")),
+		"tactical_source": str(cell.get("tactical_source", "")),
 	}
+
+
+func _serialize_string_array(raw: Variant) -> Array:
+	var result: Array = []
+	if typeof(raw) != TYPE_ARRAY:
+		return result
+	for entry in raw:
+		var key := str(entry)
+		if key != "":
+			result.append(key)
+	return result
+
+
+func _deserialize_string_array(raw: Variant) -> Array:
+	var result: Array = []
+	if typeof(raw) != TYPE_ARRAY:
+		return result
+	for entry in raw:
+		var key := str(entry)
+		if key != "" and not result.has(key):
+			result.append(key)
+	return result
 
 
 func _serialize_terrain_props(raw_list: Array) -> Array:
@@ -1599,6 +1929,7 @@ func _deserialize_cell(data: Dictionary) -> Dictionary:
 		"resource_total": int(data.get("resource_total", 0)),
 		"resource_remaining": int(data.get("resource_remaining", 0)),
 		"resource_spawns": spawns,
+		"collected_resource_spawns": _deserialize_string_array(data.get("collected_resource_spawns", [])),
 		"foot_grid_cols": int(data.get("foot_grid_cols", 0)),
 		"foot_grid_rows": int(data.get("foot_grid_rows", 0)),
 		"foot_blocked": _deserialize_foot_blocked(data.get("foot_blocked", [])),
@@ -1611,6 +1942,11 @@ func _deserialize_cell(data: Dictionary) -> Dictionary:
 		"district_tag": str(data.get("district_tag", "")),
 		"terrain_props": _deserialize_terrain_props(data.get("terrain_props", [])),
 		"road_blockages": _deserialize_road_blockages(data.get("road_blockages", {})),
+		"tactical_hidden": bool(data.get("tactical_hidden", false)),
+		"tactical_revealed": bool(data.get("tactical_revealed", false)),
+		"tactical_building_type": str(data.get("tactical_building_type", "")),
+		"tactical_label": str(data.get("tactical_label", "")),
+		"tactical_source": str(data.get("tactical_source", "")),
 	}
 
 

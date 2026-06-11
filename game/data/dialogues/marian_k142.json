@@ -1,0 +1,153 @@
+{
+  "npc_id": "marian",
+  "npc_name": "玛丽安",
+  "story_id": "marian_k142",
+  "start_node": "intro_01",
+  "item_aliases": {
+    "clone_intel": "data_chip_clone_gene",
+    "marian_chip": "data_chip_marian_love",
+    "parts": "parts"
+  },
+  "nodes": {
+    "intro_01": {
+      "speaker": "System",
+      "bubble": "",
+      "text": "电梯门打开。走廊铺着暗红色地毯，有人打扫过。\n\n尽头亮着暖黄色的光。",
+      "next": "intro_02"
+    },
+    "intro_02": {
+      "speaker": "System",
+      "bubble": "",
+      "text": "我走过去。房间里站着一个女人——半边脸是仿生皮肤，半边脸是银色金属骨架。她抱着一个锈蚀的婴儿摇篮，轻轻摇晃。\n\n摇篮里没有婴儿。只有一个锈死的金属玩偶。",
+      "next": "intro_03"
+    },
+    "intro_03": {
+      "speaker": "玛丽安",
+      "bubble": "你回来了。你长高了。",
+      "text": "「你回来了。」她说，声音沙哑而温柔，「你长高了。」\n\n她的光学镜头对准我的脸，淡蓝色的光在聚焦。",
+      "next": "choice"
+    },
+    "choice": {
+      "speaker": "玛丽安",
+      "bubble": "……",
+      "text": "暖黄灯光把金属半边脸照出细密的划痕。摇篮吱呀作响。我必须回应她。",
+      "options": [
+        {
+          "text": "顺从——放下枪，走进房间。",
+          "next": "path_a_01"
+        },
+        {
+          "text": "告知真相——我不是你要等的人。",
+          "next": "path_b_01"
+        }
+      ]
+    },
+    "path_a_01": {
+      "speaker": "System",
+      "bubble": "",
+      "text": "我放下枪，走进房间。",
+      "next": "path_a_02"
+    },
+    "path_a_02": {
+      "speaker": "玛丽安",
+      "bubble": "你小时候最喜欢的。",
+      "text": "她给我倒水，用一只印着小熊的杯子。「你小时候最喜欢的。」她说。",
+      "next": "path_a_03"
+    },
+    "path_a_03": {
+      "speaker": "玛丽安",
+      "bubble": "明天再走。",
+      "text": "她给我铺了床，枕头旁边放着一只缺了眼睛的毛绒熊。「明天再走。」她说。",
+      "next": "path_a_04"
+    },
+    "path_a_04": {
+      "speaker": "System",
+      "bubble": "",
+      "text": "夜里我没睡着。听到她对着摇篮轻声说：「他的眼睛和他爸爸一模一样……他出去找药，再也没有回来。」",
+      "next": "path_a_05"
+    },
+    "path_a_05": {
+      "speaker": "System",
+      "bubble": "",
+      "text": "第二天早上她把毛绒熊塞进我包里。\n\n电梯门关上之前，她还站在那里，抱着摇篮，朝我微笑。",
+      "next": "path_a_06"
+    },
+    "path_a_06": {
+      "speaker": "System",
+      "bubble": "",
+      "text": "我翻开她塞给我的旧日记。里面夹着一张克隆体培育登记表——\n\n母本编号：M-142（玛丽安）\n克隆体序列号：K-142\n\n我的序列号。\n\n她等的人就是我。或者说，是上一个版本的我。",
+      "next": "path_a_reward"
+    },
+    "path_a_reward": {
+      "speaker": "System",
+      "bubble": "",
+      "text": "登记表被折得很旧，边角发脆。我把情报收进背包。",
+      "actions": {
+        "give_item": "clone_intel",
+        "count": 1,
+        "unlock_journal_entry": "marian_obey"
+      },
+      "next": "story_done"
+    },
+    "path_b_01": {
+      "speaker": "Player",
+      "bubble": "我不是你要等的人。他不回来了。战争结束了。",
+      "text": "「我不是你要等的人。」我说，「他不回来了。战争结束了。」",
+      "next": "path_b_02"
+    },
+    "path_b_02": {
+      "speaker": "玛丽安",
+      "bubble": "错误。逻辑错误。修复错误。",
+      "text": "玛丽安歪了歪头。\n\n「错误。」她的声音变成了尖锐的电子音，「逻辑错误。修复错误。」\n\n她的右臂折断，露出合金骨架，指尖弹出五把手术刀。",
+      "next": "path_b_03"
+    },
+    "path_b_03": {
+      "speaker": "System",
+      "bubble": "",
+      "text": "她朝我扑过来。\n\n我扔出手雷。走廊的玻璃全碎了。她跪在地上，半边身体被炸烂，但还是用仅剩的手臂撑着地面，朝我爬过来。",
+      "next": "path_b_04"
+    },
+    "path_b_04": {
+      "speaker": "玛丽安",
+      "bubble": "别跑了。妈妈在这里。",
+      "text": "「别跑了。」她说，「妈妈在这里。」\n\n她握住我的脚踝。力度很轻。\n\n光学镜头熄灭了。",
+      "next": "path_b_reward"
+    },
+    "path_b_reward": {
+      "speaker": "System",
+      "bubble": "",
+      "text": "我从她残骸里拆出两块零件和一块数据片。里面存着一条她自己输入的信息：\n\n「如果我的孩子有一天变成了复制品，我也要爱他。」",
+      "actions": {
+        "give_item": "parts",
+        "count": 2,
+        "unlock_journal_entry": "marian_truth"
+      },
+      "next": "path_b_reward_chip"
+    },
+    "path_b_reward_chip": {
+      "speaker": "System",
+      "bubble": "",
+      "text": "数据片外壳还留着体温。我把它收好，从碎玻璃里走出去。",
+      "actions": {
+        "give_item": "marian_chip",
+        "count": 1
+      },
+      "next": "story_done"
+    },
+    "story_done": {
+      "speaker": "System",
+      "bubble": "",
+      "text": "走廊尽头的暖光熄灭了。我可以离开这里。",
+      "next": "story_done_close"
+    },
+    "story_done_close": {
+      "speaker": "System",
+      "text": "",
+      "actions": {
+        "end_dialogue": true,
+        "close_dialogue": true,
+        "clear_checkpoint": true
+      }
+    }
+  }
+}

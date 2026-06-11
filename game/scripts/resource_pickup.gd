@@ -70,7 +70,9 @@ func _refresh_label() -> void:
 
 
 func _on_body_entered(body: Node) -> void:
-	if _is_collected:
+	if _is_collected or bool(get_meta("picked_up", false)):
+		return
+	if not monitoring:
 		return
 	if body.is_in_group("player"):
 		_is_collected = true

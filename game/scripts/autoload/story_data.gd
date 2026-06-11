@@ -4,6 +4,7 @@ const DATA_PATH := "res://data/stories.json"
 
 var _stories: Dictionary = {}
 var _required_truth: Array[String] = []
+var _required_truth_stories: Array[String] = []
 
 
 func _ready() -> void:
@@ -13,6 +14,7 @@ func _ready() -> void:
 func _load() -> void:
 	_stories.clear()
 	_required_truth.clear()
+	_required_truth_stories.clear()
 	if not FileAccess.file_exists(DATA_PATH):
 		return
 	var file := FileAccess.open(DATA_PATH, FileAccess.READ)
@@ -23,6 +25,10 @@ func _load() -> void:
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return
 	var data: Dictionary = parsed
+	for raw_id in data.get("required_stories_for_truth", []):
+		var story_id := str(raw_id)
+		if story_id != "":
+			_required_truth_stories.append(story_id)
 	for raw_id in data.get("required_for_truth", []):
 		var id := str(raw_id)
 		if id != "":
@@ -39,6 +45,8 @@ func _load() -> void:
 
 
 func _rebuild_journal_index() -> void:
+	if JournalData.has_method("configure_truth_stories"):
+		JournalData.configure_truth_stories(_required_truth_stories)
 	if JournalData.has_method("rebuild_from_stories"):
 		JournalData.rebuild_from_stories(_stories, _required_truth)
 	if JournalData.has_method("ensure_legacy_loaded"):
@@ -119,6 +127,31 @@ func reward_loot_def(story_id: String, loot_key: String) -> Dictionary:
 	return (bucket as Dictionary).duplicate(true)
 
 
+func interior_ambient_loot_pickups(story_id: String) -> Array:
+	var raw: Variant = get_story(story_id).get("interior_ambient_loot", [])
+	if typeof(raw) != TYPE_ARRAY:
+		return []
+	return (raw as Array).duplicate(true)
+
+
+func tactical_hidden_sites(story_id: String) -> Array:
+	var raw: Variant = get_story(story_id).get("tactical_hidden_sites", [])
+	if typeof(raw) != TYPE_ARRAY:
+		return []
+	return (raw as Array).duplicate(true)
+
+
+func setup_tactical_hidden_sites(map: WorldMapData, layer: int) -> void:
+	for story_id in _stories.keys():
+		var story: Dictionary = _stories[story_id]
+		if int(story.get("spawn_layer", 1)) != layer:
+			continue
+		var sites := tactical_hidden_sites(story_id)
+		if sites.is_empty():
+			continue
+		map.prepare_tactical_hidden_sites(sites, story_id)
+
+
 func gate_lines(story_id: String) -> Array:
 	var gate: Dictionary = get_story(story_id).get("gate", {})
 	var raw: Variant = gate.get("lines", [])
@@ -196,6 +229,10 @@ func journal_for_encounter(encounter_id: String) -> Dictionary:
 	}
 
 
+func required_truth_story_ids() -> Array[String]:
+	return _required_truth_stories.duplicate()
+
+
 func required_truth_ids() -> Array[String]:
 	return _required_truth.duplicate()
 
@@ -204,53 +241,100 @@ func _clear_district_map_loot(cell: Dictionary) -> void:
 	cell["resource_total"] = 0
 	cell["resource_remaining"] = 0
 	cell["resource_spawns"] = []
+	cell["collected_resource_spawns"] = []
 
 
-func ensure_story_districts(map: WorldMapData) -> void:
+func is_interior_encounter(story_id: String) -> bool:
+	return bool(get_story(story_id).get("interior_encounter", false))
+
+
+func gate_boss_id(story_id: String) -> String:
+	return str(get_story(story_id).get("gate_boss_id", ""))
+
+
+func locks_exit_until_resolved(story_id: String) -> bool:
+	return bool(get_story(story_id).get("lock_exit_until_resolved", false))
+
+
+func ensure_story_districts(map: WorldMapData, layer: int = 1) -> void:
+	var near_start_ids: Array[String] = []
+	var other_ids: Array[String] = []
 	for story_id in _stories.keys():
 		var story: Dictionary = _stories[story_id]
-		var building_type := str(story.get("building_type", ""))
-		if building_type == "":
+		if int(story.get("spawn_layer", 1)) != layer:
 			continue
-		var tag := str(story.get("district_tag", story_id))
-		var already := false
-		for district_index in map.district_indices:
-			var cell := map.get_cell(district_index)
-			if str(cell.get("story_id", "")) == story_id:
-				_clear_district_map_loot(cell)
-				already = true
-				break
-			if str(cell.get("special_encounter", "")) == tag:
-				cell["story_id"] = story_id
-				cell["building_type"] = building_type
-				_clear_district_map_loot(cell)
-				already = true
-				break
-		if already:
+		if str(story.get("building_type", "")) == "":
 			continue
-		var candidates: Array[int] = []
-		for district_index in map.district_indices:
-			var pick_cell := map.get_cell(district_index)
-			if bool(pick_cell.get("has_elevator", false)) or bool(pick_cell.get("has_kunlun_control", false)):
-				continue
-			if str(pick_cell.get("story_id", "")) != "" or str(pick_cell.get("special_encounter", "")) != "":
-				continue
-			candidates.append(district_index)
-		if candidates.is_empty():
-			continue
-		var pick := -1
 		if bool(story.get("spawn_near_start", false)):
-			pick = _pick_district_near_start(map, candidates)
-		if pick < 0:
-			var rng := RandomNumberGenerator.new()
-			rng.randomize()
-			pick = candidates[rng.randi_range(0, candidates.size() - 1)]
-		var cell_pick := map.get_cell(pick)
-		cell_pick["building_type"] = building_type
-		cell_pick["story_id"] = story_id
-		cell_pick["district_tag"] = tag
-		cell_pick["special_encounter"] = tag
-		_clear_district_map_loot(cell_pick)
+			near_start_ids.append(story_id)
+		else:
+			other_ids.append(story_id)
+	for story_id in near_start_ids + other_ids:
+		_assign_story_district(map, story_id, layer)
+
+
+func _assign_story_district(map: WorldMapData, story_id: String, layer: int) -> void:
+	var story: Dictionary = _stories[story_id]
+	var required_layer := int(story.get("spawn_layer", 1))
+	if layer != required_layer:
+		return
+	var building_type := str(story.get("building_type", ""))
+	if building_type == "":
+		return
+	var tag := str(story.get("district_tag", story_id))
+	var assigned_index := -1
+	for district_index in map.district_indices:
+		var cell := map.get_cell(district_index)
+		if str(cell.get("story_id", "")) == story_id:
+			_clear_district_map_loot(cell)
+			assigned_index = district_index
+			break
+		if str(cell.get("special_encounter", "")) == tag:
+			cell["story_id"] = story_id
+			cell["building_type"] = building_type
+			_clear_district_map_loot(cell)
+			assigned_index = district_index
+			break
+	if assigned_index >= 0:
+		_apply_story_district_layout(map, story_id, assigned_index)
+		return
+	var candidates: Array[int] = []
+	for district_index in map.district_indices:
+		var pick_cell := map.get_cell(district_index)
+		if bool(pick_cell.get("has_elevator", false)) or bool(pick_cell.get("has_kunlun_control", false)):
+			continue
+		if str(pick_cell.get("story_id", "")) != "" or str(pick_cell.get("special_encounter", "")) != "":
+			continue
+		candidates.append(district_index)
+	if candidates.is_empty():
+		return
+	if story_id == WorldMapData.SENTINEL_STORY_ID:
+		var north_candidates := map.filter_districts_with_north_road(candidates)
+		if not north_candidates.is_empty():
+			candidates = north_candidates
+	var pick := -1
+	if story_id == WorldMapData.SENTINEL_STORY_ID:
+		pick = map.pick_district_with_north_road(candidates)
+	if pick < 0 and bool(story.get("spawn_near_start", false)):
+		pick = _pick_district_near_start(map, candidates)
+	if pick < 0:
+		var rng := RandomNumberGenerator.new()
+		rng.randomize()
+		pick = candidates[rng.randi_range(0, candidates.size() - 1)]
+	var cell_pick := map.get_cell(pick)
+	cell_pick["building_type"] = building_type
+	cell_pick["story_id"] = story_id
+	cell_pick["district_tag"] = tag
+	cell_pick["special_encounter"] = tag
+	_clear_district_map_loot(cell_pick)
+	_apply_story_district_layout(map, story_id, pick)
+
+
+func _apply_story_district_layout(map: WorldMapData, story_id: String, district_index: int) -> void:
+	if story_id == WorldMapData.SENTINEL_STORY_ID:
+		map.orient_district_door_north(district_index)
+	if story_id == WorldMapData.MARIAN_STORY_ID:
+		map.clear_interior_obstacles(district_index)
 
 
 func _pick_district_near_start(map: WorldMapData, candidates: Array[int]) -> int:
