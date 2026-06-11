@@ -101,6 +101,7 @@ var _session_options: Dictionary = {}
 var _session_kind: String = "normal"
 var _phase_title_override: String = ""
 var _no_day_advance := false
+var _tower_upgrades: Dictionary = NightTdUpgrades.default_state()
 var _screen_camera: Camera2D = null
 var _enemy_index_by_eid: Dictionary = {}
 var _active_slow_towers: Array[Dictionary] = []
@@ -181,6 +182,8 @@ func start_session(
 	_session_kind = str(_session_options.get("kind", "normal"))
 	_phase_title_override = str(_session_options.get("phase_title", ""))
 	_no_day_advance = bool(_session_options.get("no_day_advance", false))
+	# 防御塔强化（Part B）：从白天安装的升级道具累加而来，建塔时乘到属性上。
+	_tower_upgrades = NightTdUpgrades.sanitize(_session_options.get("tower_upgrades", {}))
 	_allow_placement = allow_placement
 	# 从快照创建本地背包副本（切断对白天状态的引用）
 	_local_backpack = InventoryData.new()
@@ -257,12 +260,14 @@ func start_session(
 	_last_result = {}
 	phase = Phase.PLACE if allow_placement and placement_time_sec > 0.0 else Phase.COMBAT
 	show_route_overlay = phase == Phase.PLACE
-	show_overlay = false   # 覆盖层默认关闭，玩家可通过按钮开启
+	show_overlay = true
 	visible = true
 	if is_instance_valid(hud):
 		if not hud.intro_finished.is_connected(_on_hud_intro_finished):
 			hud.intro_finished.connect(_on_hud_intro_finished, CONNECT_ONE_SHOT)
 		hud.show_session_ui()
+		if hud.has_method("set_overlay_active"):
+			hud.set_overlay_active(show_overlay)
 		_sync_vehicle_durability_hud(false)
 		_refresh_resource_hud()
 		if phase == Phase.PLACE:
@@ -285,6 +290,9 @@ func start_session(
 			hud.set_phase_text(_session_phase_title("接敌中"))
 			hud.set_hint("没有进入布防模式，敌人将直接来袭。")
 		hud.clear_log()
+		var upgrade_summary := NightTdUpgrades.summary_text(_tower_upgrades)
+		if upgrade_summary != "":
+			hud.append_log("防御塔强化生效：%s" % upgrade_summary, Color("#88e8b0"))
 		_notify_debug_skip_available()
 		_refresh_fuel_boost_hud()
 	_update_hud_tools()
@@ -399,6 +407,8 @@ func hide_session() -> void:
 	_display_influence = null
 	_display_influence_dirty = true
 	if is_instance_valid(hud):
+		if hud.has_method("set_overlay_active"):
+			hud.set_overlay_active(false)
 		hud.hide_session_ui()
 
 
@@ -945,9 +955,9 @@ func _update_towers(delta: float) -> void:
 		# （路障 range=0、陷阱 fire_interval=999 由 one_shot 触发，均不在此开火。）
 		if bool(tdef.get("is_hack_tower", false)):
 			continue
-		var range_px := float(tdef.get("range", 0.0))
+		var range_px := float(tdef.get("range", 0.0)) * float(tower.get("range_mult", 1.0))
 		var fire_interval := float(tdef.get("fire_interval", 0.0))
-		var base_damage := float(tdef.get("damage", 0.0))
+		var base_damage := float(tdef.get("damage", 0.0)) * float(tower.get("damage_mult", 1.0))
 		if range_px <= 0.0 or base_damage <= 0.0 or fire_interval <= 0.0 or fire_interval >= 900.0:
 			continue
 		var scale := float(tower.get("power_scale", 1.0))
@@ -1631,6 +1641,7 @@ func _on_cell_clicked(cell: Vector2i) -> void:
 	resources_spent += cost
 	var tower_id := _next_tower_id
 	_next_tower_id += 1
+	var tower_hp_mult := float(_tower_upgrades.get("tower_hp_mult", 1.0))
 	var tower := {
 		"id": tower_id,
 		"type": _selected_tower,
@@ -1638,9 +1649,11 @@ func _on_cell_clicked(cell: Vector2i) -> void:
 		"world_pos": field.cell_to_world(cell),
 		"cooldown": 0.0,
 		"target_eid": -1,
-		"hp": float(tdef.get("hp", 30)),
+		"hp": float(tdef.get("hp", 30)) * tower_hp_mult,
 		"removed": false,
 		"power_scale": 1.0,
+		"damage_mult": float(_tower_upgrades.get("damage_mult", 1.0)),
+		"range_mult": float(_tower_upgrades.get("range_mult", 1.0)),
 	}
 	_towers.append(tower)
 	# 耗电塔登记进能源系统（额定功率 1.0）。upkeep=0 的塔登记后不影响电池。
@@ -1786,7 +1799,7 @@ func _end_combat_vehicle_destroyed() -> void:
 	base_hp = 0.0
 	phase = Phase.RESULT
 	if is_instance_valid(hud):
-		hud.show_result(_compose_result_message(_last_result))
+		hud.show_result(_compose_result_message(_last_result), "确认结算")
 		hud.set_phase_text(_session_phase_title("车辆损毁"))
 		hud.set_combat_status("车辆 HP 归零")
 
@@ -1795,8 +1808,16 @@ func _end_combat() -> void:
 	_combat_done = true
 	_last_result = _build_result()
 	phase = Phase.RESULT
+	if _session_kind == "final_terminal_defense":
+		_last_result["message"] = "顶层终端防线已清除。通信链路恢复，正在接入昆仑终端。"
+		if is_instance_valid(hud):
+			hud.set_phase_text(_session_phase_title("终端接入"))
+			hud.set_combat_status("防线存活，正在接入通信终端")
+		_finish_session.call_deferred()
+		return
 	if is_instance_valid(hud):
-		hud.show_result(_compose_result_message(_last_result))
+		var button_text := "确认，返回探索" if _no_day_advance else "确认结算，进入下一天"
+		hud.show_result(_compose_result_message(_last_result), button_text)
 		hud.set_phase_text(_session_phase_title("结算"))
 		hud.set_combat_status("交互结束，请确认结算")
 

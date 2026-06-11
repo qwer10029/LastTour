@@ -87,12 +87,11 @@ text = "资源"
 layout_mode = 2
 text = "布防 180s"
 
-[node name="HeatmapSwitch" type="TextureButton" parent="Hud/Shell/TopStatusPanel/Margin/StatusHBox"]
-custom_minimum_size = Vector2(96, 32)
+[node name="HeatmapSwitch" type="Button" parent="Hud/Shell/TopStatusPanel/Margin/StatusHBox"]
+custom_minimum_size = Vector2(112, 32)
 layout_mode = 2
-stretch_mode = 5
-ignore_texture_size = true
-modulate = Color(1, 1, 1, 0.5)
+toggle_mode = true
+text = "热力图: 关"
 
 [node name="DurabilityBar" type="Control" parent="Hud/Shell"]
 layout_mode = 1

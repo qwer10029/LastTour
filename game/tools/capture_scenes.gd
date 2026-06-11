@@ -72,17 +72,17 @@ func _save_viewport(name: String) -> void:
 
 func _capture_day(save_image: bool = true) -> void:
 	_clear_root()
-	var scene := load("res://scenes/day_exploration.tscn") as PackedScene
+	var scene := load("res://scenes/main.tscn") as PackedScene
 	if scene == null:
-		push_error("Cannot load day scene")
+		push_error("Cannot load main gameplay scene")
 		return
 	var day := scene.instantiate()
 	_scene_root.add_child(day)
-	await _settle(20)
+	await _settle(80)
 	if save_image:
 		await _save_viewport("day_exploration")
 	else:
-		print("SCENE_LOADED day_exploration")
+		print("SCENE_LOADED main_day_exploration")
 
 
 func _capture_night(save_image: bool = true) -> void:
@@ -97,13 +97,16 @@ func _capture_night(save_image: bool = true) -> void:
 	if night.has_method("start_session"):
 		night.start_session(
 			10,
-			GameManager.Difficulty.NORMAL,
+			1,
 			1,
 			true,
 			100.0,
 			100.0,
 			{"scrap": 5, "wood": 3, "parts": 2, "fuel": 2, "supplies": 4},
-			)
+			{},
+			80.0,
+			100.0,
+		)
 	await _settle(20)
 	if save_image:
 		await _save_viewport("night_td")

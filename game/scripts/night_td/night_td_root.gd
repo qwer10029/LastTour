@@ -14,18 +14,12 @@ func _ready() -> void:
 	# 从 GameManager 获取 RunState
 	_run_state = GameManager.consume_run_state()
 	if _run_state == null:
-		push_error("NightTdRoot: GameManager.run_state is null, cannot start night defense.")
+		print("NightTdRoot: no GameManager.run_state; starting standalone demo session.")
+		_start_demo_session()
 		return
 
 	# 加载 NightTd 子场景
-	if night_td_scene == null:
-		night_td_scene = load("res://scenes/night_td/night_td.tscn")
-	_td = night_td_scene.instantiate()
-	add_child(_td)
-
-	# 连接结算信号
-	if _td != null and not _td.session_finished.is_connected(_on_td_finished):
-		_td.session_finished.connect(_on_td_finished)
+	_instantiate_td()
 
 	# 启动塔防会话：使用背包快照（非 live 引用）
 	var backpack_total := 0
@@ -52,6 +46,36 @@ func _ready() -> void:
 			_td.set_session_paused(true)
 
 
+func _instantiate_td() -> void:
+	if night_td_scene == null:
+		night_td_scene = load("res://scenes/night_td/night_td.tscn")
+	_td = night_td_scene.instantiate()
+	add_child(_td)
+
+	# 连接结算信号
+	if _td != null and not _td.session_finished.is_connected(_on_td_finished):
+		_td.session_finished.connect(_on_td_finished)
+
+
+func _start_demo_session() -> void:
+	_instantiate_td()
+	_td.start_session(
+		30,
+		1,
+		1,
+		true,  # allow_placement
+		100.0,
+		100.0,
+		{"scrap": 20, "wood": 10, "parts": 20, "fuel": 5, "supplies": 5},
+		{},
+		20.0,
+		100.0,
+	)
+
+
 func _on_td_finished(result: Dictionary) -> void:
+	if _run_state == null:
+		_td.hide_session()
+		return
 	# 通知 GameManager 切回白天
 	GameManager.apply_night_result_and_continue(result)

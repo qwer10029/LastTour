@@ -53,7 +53,9 @@ var _logistics_card: SquadCard
 func _ready() -> void:
 	SquadSelect.clear_texture_cache()
 	preload_assets()
-	RunTransition.preload_background()
+	var transition := _run_transition()
+	if transition != null and transition.has_method("preload_background"):
+		transition.preload_background()
 	_play_music_cue("menu_select", 0.8)
 	_setup_background()
 	_setup_header()
@@ -167,3 +169,9 @@ func _select_squad(id: String) -> void:
 func _on_back_pressed() -> void:
 	_play_music_cue("menu_select", 0.6)
 	get_tree().change_scene_to_file(GameManager.SCENE_DIFFICULTY)
+
+
+func _run_transition() -> Node:
+	if get_tree() == null or get_tree().root == null:
+		return null
+	return get_tree().root.get_node_or_null("RunTransition")

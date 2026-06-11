@@ -87,6 +87,8 @@ var _run_end_reason := ""
 var _final_choice_id := ""
 var _final_defense_cleared := false
 var _thunder_leiting_defeated := false
+# 防御塔强化（Part B）：故事奖励道具安装后累加的乘法系数。随存档/昼夜流转。
+var _tower_upgrades: Dictionary = NightTdUpgrades.default_state()
 var _pending_thunder_district := -1
 var _run_end_overlay: CanvasLayer
 var _communication_terminal: CanvasLayer
@@ -104,6 +106,8 @@ var _pause_layer: CanvasLayer
 var _pause_panel: PanelContainer
 var _pause_confirm: ConfirmationDialog
 var _fuel_empty_dialog: AcceptDialog
+var _tower_upgrade_dialog: AcceptDialog
+var _night_tutorial: NightTutorialOverlay
 var _fuel_empty_prompt_open := false
 var _war_fog_checkbox: CheckBox
 var _repair_choice_panel: PanelContainer
@@ -682,6 +686,7 @@ func _start_new_run() -> void:
 	_final_choice_id = ""
 	_final_defense_cleared = false
 	_thunder_leiting_defeated = false
+	_tower_upgrades = NightTdUpgrades.default_state()
 	_pending_thunder_district = -1
 	_run_journal = RunJournal.new()
 	_story_controller.reset_for_new_run()
@@ -2145,6 +2150,20 @@ func _on_backpack_craft_parts() -> void:
 func _use_backpack_item(item_id: String) -> bool:
 	if not _backpack.has(item_id, 1):
 		return false
+	# 防御塔强化道具（Part B）：消耗式可叠加。安装即把 deltas 累加进 _tower_upgrades，
+	# 夜晚建塔时生效。提示玩家本次强化效果与当前累计倍率。
+	if NightTdUpgrades.is_upgrade_item(item_id):
+		if NightTdUpgrades.apply_item(_tower_upgrades, item_id):
+			_backpack.remove(item_id, 1)
+			var eff := NightTdUpgrades.effect_text(item_id)
+			var summary := NightTdUpgrades.summary_text(_tower_upgrades)
+			_show_tower_upgrade_toast(
+				"%s 已写入夜间防御系统：%s\n当前防御塔强化：%s" % [
+					NightTdUpgrades.display_name(item_id), eff, summary
+				]
+			)
+			return true
+		return false
 	match item_id:
 		"supplies":
 			_backpack.remove("supplies", 1)
@@ -2160,6 +2179,22 @@ func _use_backpack_item(item_id: String) -> bool:
 			return true
 		_:
 			return false
+
+
+## 防御塔强化安装提示（复用一个惰性创建的 AcceptDialog）。
+func _show_tower_upgrade_toast(text: String) -> void:
+	if not is_instance_valid(_tower_upgrade_dialog):
+		_tower_upgrade_dialog = AcceptDialog.new()
+		_tower_upgrade_dialog.name = "TowerUpgradeDialog"
+		_tower_upgrade_dialog.title = "防御塔强化"
+		_tower_upgrade_dialog.ok_button_text = "确认"
+		var hud := get_node_or_null("HUD")
+		if hud != null:
+			hud.add_child(_tower_upgrade_dialog)
+		else:
+			add_child(_tower_upgrade_dialog)
+	_tower_upgrade_dialog.dialog_text = text
+	_tower_upgrade_dialog.popup_centered()
 
 
 func _can_drive_with_current_fuel() -> bool:
@@ -2430,6 +2465,9 @@ func _request_terminal_access() -> void:
 		return
 	if not _thunder_leiting_defeated:
 		return
+	if not _final_defense_cleared:
+		_start_final_terminal_defense()
+		return
 	_open_communication_terminal()
 
 
@@ -2439,6 +2477,7 @@ func _final_terminal_session_options() -> Dictionary:
 		"wave_plan_path": FINAL_TERMINAL_WAVE_PATH,
 		"phase_title": "顶层终端防线",
 		"no_day_advance": true,
+		"tower_upgrades": _tower_upgrades.duplicate(true),
 	}
 
 
@@ -2453,6 +2492,7 @@ func _thunder_leiting_session_options() -> Dictionary:
 		"wave_plan_path": THUNDER_LEITING_WAVE_PATH,
 		"phase_title": "不败之盾-雷霆",
 		"no_day_advance": true,
+		"tower_upgrades": _tower_upgrades.duplicate(true),
 	}
 
 
@@ -2479,6 +2519,8 @@ func _start_thunder_leiting_boss() -> void:
 			_vehicle_hp_max,
 			snapshot,
 			options,
+			_fuel,
+			fuel_max
 		)
 		_refresh_ui()
 		return
@@ -2491,7 +2533,6 @@ func _start_thunder_leiting_boss() -> void:
 
 func _apply_thunder_leiting_victory() -> void:
 	_thunder_leiting_defeated = true
-	_final_defense_cleared = true
 	_backpack.add("composite_armor_panel", 3)
 	_backpack.add("auto_turret_auth", 3)
 	var recognition := "enemy"
@@ -2760,12 +2801,18 @@ func _pause_game() -> void:
 		_pause_layer.visible = true
 	if is_instance_valid(time_system) and not time_system.is_paused():
 		time_system.pause()
+	# 夜晚塔防会话自走一套 _process（战斗计时、刷怪、敌人移动、炮塔开火），
+	# 不受 time_system 暂停影响，必须显式冻结，否则按 ESC 后夜晚仍在流逝。
+	if is_instance_valid(night_td):
+		night_td.set_session_paused(true)
 
 
 func _resume_from_pause() -> void:
 	_game_paused = false
 	if is_instance_valid(_pause_layer):
 		_pause_layer.visible = false
+	if is_instance_valid(night_td):
+		night_td.set_session_paused(false)
 	if is_instance_valid(time_system):
 		if _is_night_phase():
 			time_system.pause()
@@ -2877,6 +2924,7 @@ func capture_save_data() -> Dictionary:
 			"run_ended": _run_ended,
 			"run_end_reason": _run_end_reason,
 			"final_choice_id": _final_choice_id,
+			"tower_upgrades": _tower_upgrades.duplicate(true),
 		},
 		"time": time_system.to_dictionary() if is_instance_valid(time_system) else {},
 		"foot": {
@@ -2931,6 +2979,7 @@ func _apply_save_data(data: Dictionary) -> void:
 	_run_ended = bool(layer.get("run_ended", false))
 	_run_end_reason = str(layer.get("run_end_reason", ""))
 	_final_choice_id = str(layer.get("final_choice_id", ""))
+	_tower_upgrades = NightTdUpgrades.sanitize(layer.get("tower_upgrades", {}))
 	if _run_ended and _run_end_reason in ["vehicle_destroyed", "player_collapsed", "out_of_fuel", "strike"]:
 		_show_run_summary()
 	elif _run_ended and _run_end_reason == "reached_top":
@@ -3030,7 +3079,8 @@ func _restore_time_phase_after_load(keep_terminal_music: bool = false) -> void:
 					snapshot = _backpack.to_dictionary().duplicate()
 				night_defense.start_td_session(
 					_backpack.total_count(), GameManager.difficulty, time_system.day_index, true,
-					_vehicle_hp, _vehicle_hp_max, snapshot, {}, _fuel, fuel_max
+					_vehicle_hp, _vehicle_hp_max, snapshot,
+					{"tower_upgrades": _tower_upgrades.duplicate(true)}, _fuel, fuel_max
 				)
 			_play_music_cue("night_setup", 0.9)
 			time_system.pause()
@@ -3177,6 +3227,11 @@ func _on_night_setup_started(day_index: int, manual_setup: bool) -> void:
 		time_system.pause()
 	if is_instance_valid(evening_notice) and evening_notice.has_method("hide_notice"):
 		evening_notice.hide_notice()
+	# 顶层终局：到顶且已击败雷霆后的夜晚不再是普通刷怪夜，而是"顶层终端防线"——
+	# 打完直接接入通信终端走结局流程，不进入次日。否则普通夜会绕过整个终端结局。
+	if _current_layer >= total_layers and _thunder_leiting_defeated and not _final_defense_cleared:
+		_start_final_terminal_defense()
+		return
 	if is_instance_valid(night_defense):
 		# 传入背包快照（字典），而非 live 引用，切断耦合
 		var snapshot: Dictionary = {}
@@ -3184,10 +3239,34 @@ func _on_night_setup_started(day_index: int, manual_setup: bool) -> void:
 			snapshot = _backpack.to_dictionary().duplicate()
 		night_defense.start_td_session(
 			_backpack.total_count(), GameManager.difficulty, day_index, manual_setup,
-			_vehicle_hp, _vehicle_hp_max, snapshot, {}, _fuel, fuel_max
+			_vehicle_hp, _vehicle_hp_max, snapshot,
+			{"tower_upgrades": _tower_upgrades.duplicate(true)}, _fuel, fuel_max
 		)
 	_play_music_cue("night_setup", 1.0)
 	_refresh_ui()
+	_maybe_show_night_tutorial()
+
+
+## 首次进入夜晚布防时弹出图文教程；看过后由 MetaManager 记住不再自动弹出。
+func _maybe_show_night_tutorial(force: bool = false) -> void:
+	var meta := get_node_or_null("/root/MetaManager")
+	if not force and meta != null and bool(meta.get("night_tutorial_seen")):
+		return
+	if is_instance_valid(_night_tutorial):
+		return
+	_night_tutorial = NightTutorialOverlay.new()
+	_night_tutorial.name = "NightTutorialOverlay"
+	var hud := get_node_or_null("HUD")
+	if hud != null:
+		hud.add_child(_night_tutorial)
+	else:
+		add_child(_night_tutorial)
+	_night_tutorial.finished.connect(func():
+		_night_tutorial = null
+		var m := get_node_or_null("/root/MetaManager")
+		if m != null and m.has_method("mark_night_tutorial_seen"):
+			m.mark_night_tutorial_seen()
+	)
 
 
 func on_td_combat_ended(result: Dictionary) -> String:
@@ -4483,10 +4562,29 @@ func _draw_day_overworld() -> void:
 func _draw_world_speech_bubble(anchor: Vector2, text: String, fill: Color, border: Color) -> void:
 	var bubble_w := clampf(float(text.length()) * 11.0 + 20.0, 72.0, 220.0)
 	var bubble_h := 22.0
-	var bubble_pos := Vector2(anchor.x - bubble_w * 0.5, anchor.y - bubble_h - 6.0)
+	var bubble_size := Vector2(bubble_w, bubble_h)
+	var bubble_pos := _clamp_world_speech_bubble_position(
+		Vector2(anchor.x - bubble_w * 0.5, anchor.y - bubble_h - 6.0),
+		bubble_size,
+	)
 	draw_rect(Rect2(bubble_pos, Vector2(bubble_w, bubble_h)), Color(0.05, 0.09, 0.13, 0.84), true)
 	draw_rect(Rect2(bubble_pos, Vector2(bubble_w, bubble_h)), border, false, 1.0)
 	HudTheme.draw_string(self, bubble_pos + Vector2(8.0, 14.0), text, 11, fill)
+
+
+func _clamp_world_speech_bubble_position(world_pos: Vector2, bubble_size: Vector2) -> Vector2:
+	var to_screen := get_global_transform_with_canvas()
+	var screen_pos := to_screen * world_pos
+	var screen_size := to_screen.basis_xform(bubble_size)
+	screen_size = Vector2(absf(screen_size.x), absf(screen_size.y))
+	var viewport_size := get_viewport_rect().size
+	var margin := 8.0
+	var top_safe := HudTheme.TOP_HUD_Y + HudTheme.TOP_BAR_HEIGHT + 14.0
+	var max_x := maxf(margin, viewport_size.x - screen_size.x - margin)
+	var max_y := maxf(top_safe, viewport_size.y - screen_size.y - margin)
+	screen_pos.x = clampf(screen_pos.x, margin, max_x)
+	screen_pos.y = clampf(screen_pos.y, top_safe, max_y)
+	return to_screen.affine_inverse() * screen_pos
 
 
 func _draw_door_exit_hint(door_rect: Rect2) -> void:
@@ -4626,7 +4724,8 @@ func _draw_elevator_console_hint(console_rect: Rect2) -> void:
 func _draw_kunlun_console_hint(console_rect: Rect2) -> void:
 	if not _can_use_kunlun_control() or not _is_near_kunlun_console():
 		return
-	_draw_interior_console_hint(console_rect, "F 启动通信终端", Color("#6eb8ff"))
+	var hint_text := "F 接入通信终端" if _final_defense_cleared else "F 启动终端防线"
+	_draw_interior_console_hint(console_rect, hint_text, Color("#6eb8ff"))
 
 
 func _draw_interior_console_hint(console_rect: Rect2, text: String, accent: Color) -> void:

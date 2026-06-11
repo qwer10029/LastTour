@@ -150,7 +150,9 @@ func go_to_main_menu() -> void:
 	_run_bootstrap = {}
 	_preloaded_game_scene = null
 	_await_enter_overlay_dismiss = false
-	RunTransition.hide_cover()
+	var transition := _run_transition()
+	if transition != null and transition.has_method("hide_cover"):
+		transition.hide_cover()
 	run_state = null
 	_play_music_cue("menu_main", 1.0)
 	get_tree().change_scene_to_file(SCENE_MAIN_MENU)
@@ -200,8 +202,12 @@ func start_run() -> void:
 	_run_bootstrap = {}
 	_preloaded_game_scene = null
 	_await_enter_overlay_dismiss = true
-	RunTransition.preload_background()
-	RunTransition.show_cover()
+	var transition := _run_transition()
+	if transition != null:
+		if transition.has_method("preload_background"):
+			transition.preload_background()
+		if transition.has_method("show_cover"):
+			transition.show_cover()
 	get_tree().change_scene_to_packed(RunLoadingScene)
 
 
@@ -235,18 +241,32 @@ func dismiss_enter_overlay() -> void:
 	if not _await_enter_overlay_dismiss:
 		return
 	_await_enter_overlay_dismiss = false
-	if RunTransition.is_covering():
-		await RunTransition.fade_out_cover()
+	var transition := _run_transition()
+	if (
+		transition != null
+		and transition.has_method("is_covering")
+		and transition.has_method("fade_out_cover")
+		and bool(transition.is_covering())
+	):
+		await transition.fade_out_cover()
 
 
 func enter_game_after_bootstrap() -> void:
 	_play_music_cue("day_exploration", 1.0)
-	RunTransition.show_cover()
+	var transition := _run_transition()
+	if transition != null and transition.has_method("show_cover"):
+		transition.show_cover()
 	if _preloaded_game_scene != null:
 		get_tree().change_scene_to_packed(_preloaded_game_scene)
 		_preloaded_game_scene = null
 	else:
 		get_tree().change_scene_to_file(SCENE_GAME)
+
+
+func _run_transition() -> Node:
+	if get_tree() == null or get_tree().root == null:
+		return null
+	return get_tree().root.get_node_or_null("RunTransition")
 
 
 func get_difficulty_name(value: int = -1) -> String:

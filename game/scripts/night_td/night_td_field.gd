@@ -72,7 +72,9 @@ func _reflow_layout() -> void:
 	))
 	_layout_tile_size = clampf(fitted_tile, 22.0, 56.0)
 	var vehicle_offset := _vehicle_center_offset()
-	var target_center := view_size * Vector2(0.5, 0.54)
+	# 以"可用区"（已扣除顶栏与右侧面板的预留）中心为锚点，而非整屏中心，
+	# 否则网格会向右滑到侧栏下方。垂直方向略微下偏(0.04)给顶部状态栏留白。
+	var target_center := play_rect.position + play_rect.size * Vector2(0.5, 0.54)
 	field_origin = target_center - vehicle_offset * _layout_tile_size
 
 
@@ -570,6 +572,17 @@ func _draw_placement_preview() -> void:
 	if not is_inside_grid(hover):
 		return
 	var build_rect := Rect2(field_origin + Vector2(hover.x * _layout_tile_size, hover.y * _layout_tile_size), Vector2(_layout_tile_size, _layout_tile_size))
+	var tower_type := str(_controller._selected_tower)
+	var tdef: Dictionary = NightTdDefs.get_tower_def(tower_type)
+	if not tdef.is_empty():
+		_draw_tower_range_fx(
+			build_rect.get_center(),
+			tower_type,
+			{"range_mult": float(_controller._tower_upgrades.get("range_mult", 1.0))},
+			tdef,
+			float(tdef.get("radius", 12.0)),
+			true
+		)
 	if can_place_tower(hover, _controller.get_occupied_cells()):
 		draw_rect(build_rect, Color(0.43, 0.82, 0.55, 0.42), true)
 		draw_rect(build_rect, Color("#ffffff"), false, 2.5)
@@ -663,16 +676,22 @@ func _draw_tower_range_fx(
 	tower: Dictionary,
 	tdef: Dictionary,
 	radius: float,
+	is_preview: bool = false,
 ) -> void:
 	var arc_seg := _range_arc_segments()
+	var alpha_mul := 1.35 if is_preview else 1.0
+	var width_mul := 1.35 if is_preview else 1.0
+	var range_px := _tower_range_px(tdef, tower, "range", 0.0)
 	match tower_type:
 		"jammer":
-			draw_arc(local_pos, float(tdef.get("range", 100)), 0.0, TAU, arc_seg, Color(0.43, 0.82, 0.55, 0.22), 2.0)
+			draw_circle(local_pos, range_px, Color(0.43, 0.82, 0.55, 0.10 * alpha_mul))
+			draw_arc(local_pos, range_px, 0.0, TAU, arc_seg, Color(0.55, 1.0, 0.65, 0.46 * alpha_mul), 2.8 * width_mul)
 		"cryo_beacon":
-			draw_circle(local_pos, float(tdef.get("range", 130)), Color(0.52, 0.85, 1.0, 0.08))
-			draw_arc(local_pos, float(tdef.get("range", 130)), 0.0, TAU, arc_seg, Color(0.52, 0.85, 1.0, 0.24), 2.0)
+			draw_circle(local_pos, range_px, Color(0.52, 0.85, 1.0, 0.14 * alpha_mul))
+			draw_arc(local_pos, range_px, 0.0, TAU, arc_seg, Color(0.58, 0.92, 1.0, 0.50 * alpha_mul), 2.8 * width_mul)
 		"hacker":
-			draw_arc(local_pos, float(tdef.get("range", 150)), 0.0, TAU, arc_seg, Color(0.35, 0.78, 0.88, 0.18), 2.0)
+			draw_circle(local_pos, range_px, Color(0.35, 0.78, 0.88, 0.08 * alpha_mul))
+			draw_arc(local_pos, range_px, 0.0, TAU, arc_seg, Color(0.45, 0.9, 1.0, 0.42 * alpha_mul), 2.6 * width_mul)
 			if _controller.phase == NightTdController.Phase.COMBAT and int(tower.get("id", -1)) == _controller._selected_hacker_id:
 				draw_arc(local_pos, radius + 6.0, 0.0, TAU, 40, Color("#9af0ff"), 2.5)
 			var prog := float(tower.get("hack_progress", 0.0))
@@ -688,12 +707,18 @@ func _draw_tower_range_fx(
 						break
 		"sniper":
 			var sniper_seg := arc_seg if _controller.phase == NightTdController.Phase.PLACE else 64
-			draw_arc(local_pos, float(tdef.get("range", 220)), 0.0, TAU, sniper_seg, Color(0.48, 0.65, 1.0, 0.18), 1.5)
+			draw_circle(local_pos, range_px, Color(0.48, 0.65, 1.0, 0.07 * alpha_mul))
+			draw_arc(local_pos, range_px, 0.0, TAU, sniper_seg, Color(0.55, 0.74, 1.0, 0.44 * alpha_mul), 2.4 * width_mul)
 		"splash":
 			var splash_r := float(tdef.get("splash_radius", 56.0))
-			draw_circle(local_pos, splash_r, Color(0.88, 0.64, 0.23, 0.10))
-			draw_arc(local_pos, splash_r, 0.0, TAU, arc_seg, Color(0.88, 0.64, 0.23, 0.28), 1.5)
-			draw_arc(local_pos, float(tdef.get("range", 120)), 0.0, TAU, arc_seg, Color(0.88, 0.64, 0.23, 0.22), 2.0)
+			draw_circle(local_pos, splash_r, Color(0.95, 0.68, 0.24, 0.18 * alpha_mul))
+			draw_arc(local_pos, splash_r, 0.0, TAU, arc_seg, Color(1.0, 0.72, 0.28, 0.50 * alpha_mul), 2.2 * width_mul)
+			draw_circle(local_pos, range_px, Color(0.88, 0.64, 0.23, 0.08 * alpha_mul))
+			draw_arc(local_pos, range_px, 0.0, TAU, arc_seg, Color(1.0, 0.76, 0.32, 0.46 * alpha_mul), 2.8 * width_mul)
+
+
+func _tower_range_px(tdef: Dictionary, tower: Dictionary, key: String, fallback: float) -> float:
+	return float(tdef.get(key, fallback)) * float(tower.get("range_mult", 1.0))
 
 
 func _draw_tower_body_fallback(local_pos: Vector2, tower_type: String, tdef: Dictionary, radius: float) -> void:

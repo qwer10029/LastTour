@@ -334,6 +334,9 @@ func apply_night_result(result: Dictionary) -> void:
 		vehicle_hp = 0.0
 		run_ended = true
 		run_end_reason = "vehicle_destroyed"
+	elif survival_dict.has("stamina") and float(survival_dict.get("stamina", 1.0)) <= 0.0:
+		run_ended = true
+		run_end_reason = "player_collapsed"
 
 
 func advance_after_normal_night() -> void:

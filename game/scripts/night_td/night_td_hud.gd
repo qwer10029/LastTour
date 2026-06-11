@@ -17,7 +17,7 @@ signal intro_finished
 @onready var phase_label: Label = $Shell/TopStatusPanel/Margin/StatusHBox/PhaseLabel
 @onready var resource_label: Label = $Shell/TopStatusPanel/Margin/StatusHBox/ResourceLabel
 @onready var timer_label: Label = $Shell/TopStatusPanel/Margin/StatusHBox/TimerLabel
-@onready var heatmap_switch: TextureButton = $Shell/TopStatusPanel/Margin/StatusHBox/HeatmapSwitch
+@onready var heatmap_switch: Button = $Shell/TopStatusPanel/Margin/StatusHBox/HeatmapSwitch
 @onready var durability_bar: NightTdDurabilityBar = $Shell/DurabilityBar
 @onready var start_btn: Button = $Shell/SidebarPanel/Margin/VBox/StartWaveBtn
 @onready var event_log_vbox: VBoxContainer = $Shell/LogPanel/Margin/VBox/ScrollContainer/EventLog
@@ -66,6 +66,10 @@ var _power_empty_label: Label = null
 var _power_rows: Dictionary = {}
 var _selected_power_tower_ids: Array[int] = []   # 多选支持：框选多塔时同时高亮多行
 var _power_pulse_tweens: Array[Tween] = []        # 多选时每个高亮行各一个脉冲动画
+var _night_fuel_bar: ProgressBar = null
+var _night_fuel_label: Label = null
+var _night_vehicle_bar: ProgressBar = null
+var _night_vehicle_label: Label = null
 
 const COLORS := {
 	"bg": "#0b1018", "panel": "#141c28", "border": "#2a3a4f",
@@ -84,6 +88,7 @@ func _ready() -> void:
 	if is_instance_valid(continue_btn):
 		continue_btn.pressed.connect(_on_continue_pressed)
 	_build_power_panel()
+	_build_night_status_meters()
 	_setup_heatmap_switch()
 	_wire_hover_feedback()
 	for lbl in [phase_label, resource_label, timer_label]:
@@ -126,6 +131,8 @@ func show_session_ui() -> void:
 
 func hide_session_ui() -> void:
 	hide_result_dialog()
+	show_power_panel(false)
+	clear_power_highlight()
 	if is_instance_valid(shell):
 		shell.hide()
 	if is_instance_valid(breach_label):
@@ -355,15 +362,21 @@ func _apply_holo_shell_styles() -> void:
 func _setup_heatmap_switch() -> void:
 	if not is_instance_valid(heatmap_switch):
 		return
-	var tex := NightTdUiTheme.load_texture(NightTdUiTheme.SWITCH_HEATMAP_ON)
-	if tex != null:
-		heatmap_switch.texture_normal = tex
-		heatmap_switch.texture_pressed = tex
-		heatmap_switch.texture_hover = tex
-	heatmap_switch.modulate = Color(1, 1, 1, 0.5)
+	heatmap_switch.focus_mode = Control.FOCUS_NONE
+	heatmap_switch.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	HudTheme.apply_sci_fi_terminal_button(heatmap_switch, Color(COLORS["hack"]))
+	heatmap_switch.add_theme_font_size_override("font_size", 12)
+	heatmap_switch.custom_minimum_size = Vector2(112, 30)
 	heatmap_switch.toggle_mode = true
-	heatmap_switch.button_pressed = false
+	set_overlay_active(false)
 	heatmap_switch.pressed.connect(_on_heatmap_switch_pressed)
+
+
+func set_overlay_active(active: bool) -> void:
+	_overlay_active = active
+	if is_instance_valid(heatmap_switch):
+		heatmap_switch.button_pressed = active
+	_refresh_heatmap_switch_visual()
 
 
 func _wire_hover_feedback() -> void:
@@ -404,6 +417,7 @@ func _refresh_heatmap_switch_visual() -> void:
 		return
 	var alpha := 1.0 if _overlay_active else 0.5
 	heatmap_switch.modulate = Color(1, 1, 1, alpha)
+	heatmap_switch.text = "热力图: 开" if _overlay_active else "热力图: 关"
 
 
 func _on_heatmap_mouse_entered() -> void:
@@ -450,9 +464,13 @@ func _on_log_panel_mouse_exited() -> void:
 
 
 func set_vehicle_durability(current: float, maximum: float, animate: bool = true) -> void:
-	if not is_instance_valid(durability_bar) or maximum <= 0.0:
+	if maximum <= 0.0:
+		_set_status_meter(_night_vehicle_bar, _night_vehicle_label, "车辆耐久", current, maximum)
 		return
-	durability_bar.set_ratio(current / maximum, animate)
+	if is_instance_valid(durability_bar):
+		durability_bar.show()
+		durability_bar.set_ratio(current / maximum, animate)
+	_set_status_meter(_night_vehicle_bar, _night_vehicle_label, "车辆耐久", current, maximum)
 
 
 # -- Phase --------------------------------------------------------
@@ -546,12 +564,16 @@ func _update_card_states(enabled: bool) -> void:
 
 # -- Result Screen ------------------------------------------------
 
-func show_result(text: String) -> void:
+func show_result(text: String, button_text: String = "确认结算，进入下一天") -> void:
 	_continue_locked = false
 	if is_instance_valid(result_label): result_label.text = text
-	if is_instance_valid(continue_btn): continue_btn.disabled = false
+	if is_instance_valid(continue_btn):
+		continue_btn.text = button_text
+		continue_btn.disabled = false
 	if is_instance_valid(result_overlay):
 		result_overlay.show(); result_overlay.visible = true
+	show_power_panel(false)
+	clear_power_highlight()
 	if is_instance_valid(start_btn): start_btn.hide()
 	if is_instance_valid(_cards_vbox): _cards_vbox.visible = false
 
@@ -561,22 +583,27 @@ func show_result(text: String) -> void:
 func _build_power_panel() -> void:
 	_power_panel = VBoxContainer.new()
 	_power_panel.name = "PowerPanel"
-	_power_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	_power_panel.offset_left = 16.0
-	_power_panel.offset_top = 88.0
-	_power_panel.custom_minimum_size = Vector2(200, 0)
-	_power_panel.add_theme_constant_override("separation", 3)
+	_power_panel.custom_minimum_size = Vector2(0, 0)
+	_power_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_power_panel.add_theme_constant_override("separation", 5)
 	_power_panel.visible = false
 	_power_panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	add_child(_power_panel)
+	var side_vbox := get_node_or_null("Shell/SidebarPanel/Margin/VBox")
+	if side_vbox != null:
+		side_vbox.add_child(_power_panel)
+	else:
+		add_child(_power_panel)
 
 	var title := Label.new()
 	title.text = "⚡ 电力调度"
+	title.add_theme_font_size_override("font_size", 13)
 	title.add_theme_color_override("font_color", Color(COLORS["title"]))
 	_power_panel.add_child(title)
 
 	_energy_label = Label.new()
 	_energy_label.text = "反应堆: --"
+	_energy_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_energy_label.add_theme_font_size_override("font_size", 11)
 	_energy_label.add_theme_color_override("font_color", Color(COLORS["subtitle"]))
 	_power_panel.add_child(_energy_label)
 
@@ -604,12 +631,80 @@ func _build_power_panel() -> void:
 	_power_panel.add_child(_power_empty_label)
 
 
+func _build_night_status_meters() -> void:
+	var status_hbox := get_node_or_null("Shell/TopStatusPanel/Margin/StatusHBox")
+	if status_hbox == null:
+		return
+	status_hbox.add_theme_constant_override("separation", 14)
+	var fuel := _make_status_meter("燃料", Color("#f4d03f"))
+	status_hbox.add_child(fuel)
+	_night_fuel_label = fuel.get_node("ValueLabel") as Label
+	_night_fuel_bar = fuel.get_node("Bar") as ProgressBar
+	var vehicle := _make_status_meter("车辆耐久", Color("#bb8fce"))
+	status_hbox.add_child(vehicle)
+	_night_vehicle_label = vehicle.get_node("ValueLabel") as Label
+	_night_vehicle_bar = vehicle.get_node("Bar") as ProgressBar
+
+
+func _make_status_meter(title: String, accent: Color) -> VBoxContainer:
+	var box := VBoxContainer.new()
+	box.custom_minimum_size = Vector2(124, 32)
+	box.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	box.add_theme_constant_override("separation", 2)
+	var label := Label.new()
+	label.name = "ValueLabel"
+	label.text = "%s --/--" % title
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	label.add_theme_font_size_override("font_size", 11)
+	label.add_theme_color_override("font_color", Color(COLORS["title"]))
+	box.add_child(label)
+	var bar := ProgressBar.new()
+	bar.name = "Bar"
+	bar.custom_minimum_size = Vector2(124, 8)
+	bar.show_percentage = false
+	bar.min_value = 0.0
+	bar.max_value = 1.0
+	bar.value = 1.0
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.08, 0.11, 0.16, 0.82)
+	bg.set_corner_radius_all(4)
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = accent
+	fill.set_corner_radius_all(4)
+	bar.add_theme_stylebox_override("background", bg)
+	bar.add_theme_stylebox_override("fill", fill)
+	box.add_child(bar)
+	return box
+
+
+func _set_status_meter(bar: ProgressBar, label: Label, title: String, current: float, maximum: float) -> void:
+	if not is_instance_valid(bar) or not is_instance_valid(label):
+		return
+	if maximum <= 0.0:
+		bar.max_value = 1.0
+		bar.value = 0.0
+		label.text = "%s --/--" % title
+		return
+	var safe_max := maxf(maximum, 1.0)
+	bar.max_value = safe_max
+	bar.value = clampf(current, 0.0, safe_max)
+	label.text = "%s %.0f/%.0f" % [title, clampf(current, 0.0, safe_max), maximum]
+
+
 func set_energy_status(current: float, capacity: float, demand: float) -> void:
 	if is_instance_valid(_energy_label):
-		_energy_label.text = "反应堆: %.0f/%.0f  耗能 %.1f/s" % [current, capacity, demand]
+		_energy_label.text = "反应堆 %.0f/%.0f\n耗能 %.1f/s" % [current, capacity, demand]
 
 
 func set_fuel_boost_status(fuel: float, fuel_max: float, active: bool, remaining: float, burn_rate: float, production_bonus: float) -> void:
+	_set_status_meter(_night_fuel_bar, _night_fuel_label, "燃料", fuel, fuel_max)
+	if active and is_instance_valid(_night_fuel_label) and fuel_max > 0.0:
+		_night_fuel_label.text = "燃料 %.0f/%.0f -%.1f/s" % [
+			clampf(fuel, 0.0, fuel_max),
+			fuel_max,
+			burn_rate,
+		]
 	if is_instance_valid(_fuel_boost_btn):
 		_fuel_boost_btn.disabled = fuel <= 0.0
 	if not is_instance_valid(_fuel_boost_label):

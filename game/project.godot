@@ -25,6 +25,7 @@ MetaManager="*res://scripts/autoload/meta_manager.gd"
 EvidenceData="*res://scripts/autoload/evidence_data.gd"
 JournalData="*res://scripts/autoload/journal_data.gd"
 StoryData="*res://scripts/autoload/story_data.gd"
+SettingsManager="*res://scripts/autoload/settings_manager.gd"
 
 [display]
 
