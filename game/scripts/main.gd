@@ -125,6 +125,7 @@ var _pda_panel: PdaHudPanel
 @onready var night_defense: NightDefenseSystem = $Systems/NightDefenseSystem
 @onready var time_hud: Control = $HUD/TimePanel/MarginContainer/TimeHud
 @onready var evening_notice: PanelContainer = $HUD/EveningNotice
+@onready var low_stamina_warning: PanelContainer = $HUD/LowStaminaWarning
 var night_td: NightTdController = null  # 由子场景决定是否存在（main.tscn 有，day_exploration.tscn 无）
 @onready var fuel_label: Label = $HUD/InfoPanel/MarginContainer/VBoxContainer/FuelLabel
 @onready var inventory_label: Label = $HUD/InfoPanel/MarginContainer/VBoxContainer/InventoryLabel
@@ -915,6 +916,7 @@ func _physics_process(delta: float) -> void:
 	_check_vehicle_destroyed()
 	_tick_survival(delta)
 	_check_player_vitals_failure()
+	_check_low_stamina_warning()
 
 	if Input.is_action_just_pressed("interact"):
 		if _try_story_e_action_overlay():
@@ -2172,6 +2174,7 @@ func _use_backpack_item(item_id: String) -> bool:
 		"supplies":
 			_backpack.remove("supplies", 1)
 			_survival.use_supplies()
+			_check_low_stamina_warning()
 			return true
 		"fuel":
 			_backpack.remove("fuel", 1)
@@ -2269,6 +2272,22 @@ func _check_player_vitals_failure() -> void:
 	if is_instance_valid(_vehicle):
 		_vehicle.set_active(false)
 	_show_run_summary()
+
+
+func _check_low_stamina_warning() -> void:
+	if not is_instance_valid(low_stamina_warning):
+		return
+	var should_show := (
+		_survival.stamina < 20.0
+		and _survival.stamina > 0.0
+		and _is_exploration_allowed()
+		and not _is_night_phase()
+		and not _run_ended
+	)
+	if should_show and not low_stamina_warning.visible:
+		low_stamina_warning.show_warning()
+	elif not should_show and low_stamina_warning.visible:
+		low_stamina_warning.hide_warning()
 
 
 func _inventory_summary() -> String:
@@ -3102,6 +3121,8 @@ func _restore_time_phase_after_load(keep_terminal_music: bool = false) -> void:
 			time_system.resume()
 			if is_instance_valid(evening_notice) and evening_notice.has_method("show_evening_warning"):
 				evening_notice.show_evening_warning(time_system.get_day_remaining_sec())
+			if is_instance_valid(low_stamina_warning) and low_stamina_warning.has_method("hide_warning"):
+				low_stamina_warning.hide_warning()
 			if not keep_terminal_music:
 				_play_music_cue("day_exploration", 1.0)
 		_:
@@ -3229,6 +3250,8 @@ func _update_evening_tint(delta: float) -> void:
 func _on_evening_warning(remaining_sec: float) -> void:
 	if is_instance_valid(evening_notice) and evening_notice.has_method("show_evening_warning"):
 		evening_notice.show_evening_warning(remaining_sec)
+	if is_instance_valid(low_stamina_warning) and low_stamina_warning.has_method("hide_warning"):
+		low_stamina_warning.hide_warning()
 	_play_music_stinger("evening_warning", -11.0)
 
 

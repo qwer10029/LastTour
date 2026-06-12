@@ -30,6 +30,21 @@ static func evening_panel_style() -> StyleBoxFlat:
 	return box
 
 
+static func low_stamina_panel_style() -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = Color(0.18, 0.04, 0.04, 0.94)
+	box.border_color = Color("#e84040")
+	box.set_border_width_all(2)
+	box.set_corner_radius_all(8)
+	box.shadow_color = Color(0.8, 0.1, 0.1, 0.40)
+	box.shadow_size = 5
+	box.content_margin_left = INNER_MARGIN
+	box.content_margin_top = INNER_MARGIN
+	box.content_margin_right = INNER_MARGIN
+	box.content_margin_bottom = INNER_MARGIN
+	return box
+
+
 static func panel_style(bg_alpha: float = 0.52) -> StyleBoxFlat:
 	var box := StyleBoxFlat.new()
 	box.bg_color = Color(0.05, 0.08, 0.12, bg_alpha)
@@ -382,6 +397,13 @@ static func layout_hud(hud: CanvasLayer) -> void:
 		evening.offset_top = TOP_HUD_Y + TOP_BAR_HEIGHT + 8.0
 		var evening_margin := evening.get_node_or_null("MarginContainer") as MarginContainer
 		apply_margin(evening_margin)
+
+	var low_stamina := hud.get_node_or_null("LowStaminaWarning") as PanelContainer
+	if low_stamina != null:
+		low_stamina.add_theme_stylebox_override("panel", low_stamina_panel_style())
+		low_stamina.offset_top = TOP_HUD_Y + TOP_BAR_HEIGHT + 8.0
+		var low_stamina_margin := low_stamina.get_node_or_null("MarginContainer") as MarginContainer
+		apply_margin(low_stamina_margin)
 
 	apply_tree(hud)
 	if hud.get_parent() != null and hud.get_parent().has_method("_setup_story_choice_overlay"):
