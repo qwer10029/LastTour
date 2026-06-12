@@ -98,6 +98,15 @@ func _check_td_mechanics() -> void:
 		if gallery != null:
 			_expect(gallery.get_item_count() == 1, "enemy gallery should hide unseen enemy types")
 			_expect(str(gallery.get_item_metadata(0)) == "drone", "enemy gallery should keep seen enemy metadata")
+		var gallery_panel := hud.get_node_or_null("Shell/EnemyGalleryOverlay/EnemyGalleryPanel") as PanelContainer
+		_expect(gallery_panel != null, "enemy gallery panel should exist")
+		if gallery_panel != null:
+			_expect(gallery_panel.custom_minimum_size.x <= 540.0 and gallery_panel.custom_minimum_size.y <= 340.0, "enemy gallery should be smaller than the old centered popup")
+		if hud.has_method("_on_gallery_auto_hide_timeout"):
+			hud.call("_on_gallery_auto_hide_timeout")
+			for i in range(24):
+				await process_frame
+			_expect(not bool(hud.get_node_or_null("Shell/EnemyGalleryOverlay").visible), "enemy gallery should auto-hide after timeout")
 		hud.hide_enemy_gallery()
 
 	var core := td.get_node_or_null("Field/DefenceCoreVisual")
