@@ -56,17 +56,15 @@
       "speaker": "我",
       "bubble": "……",
       "text": "机枪开始旋转。我握紧武器。没有别的路了。",
-      "actions": {
-        "set_variable": { "pre_battle_done": true }
-      },
-      "next": "combat_start"
+      "next": "combat_prompt"
     },
-    "combat_start": {
+    "combat_prompt": {
       "speaker": "System",
       "bubble": "",
       "text": "",
       "actions": {
-        "start_thunder_boss": true
+        "set_variable": { "pre_battle_done": true },
+        "close_dialogue": true
       }
     }
   }

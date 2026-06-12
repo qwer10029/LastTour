@@ -8,6 +8,7 @@ var management_rights_transferred: bool = false
 var endings_seen: Array[String] = []
 var journal_uploads: Array[Dictionary] = []
 var night_tutorial_seen: bool = false
+var seen_enemy_types: Array[String] = []
 
 
 func _ready() -> void:
@@ -20,6 +21,7 @@ func load_meta() -> void:
 	endings_seen = []
 	journal_uploads = []
 	night_tutorial_seen = false
+	seen_enemy_types = []
 	if not FileAccess.file_exists(META_PATH):
 		return
 	var file := FileAccess.open(META_PATH, FileAccess.READ)
@@ -50,6 +52,11 @@ func load_meta() -> void:
 	night_tutorial_seen = bool(data.get("night_tutorial_seen", false))
 	for e in data.get("endings_seen", []):
 		endings_seen.append(str(e))
+	for type_id_var in data.get("seen_enemy_types", []):
+		var type_id := str(type_id_var)
+		if type_id == "" or seen_enemy_types.has(type_id):
+			continue
+		seen_enemy_types.append(type_id)
 
 
 func save_meta() -> void:
@@ -60,6 +67,7 @@ func save_meta() -> void:
 		"endings_seen": endings_seen,
 		"journal_uploads": journal_uploads,
 		"night_tutorial_seen": night_tutorial_seen,
+		"seen_enemy_types": seen_enemy_types,
 		"saved_at": int(Time.get_unix_time_from_system()),
 	}
 	var file := FileAccess.open(META_PATH, FileAccess.WRITE)
@@ -79,6 +87,23 @@ func mark_night_tutorial_seen() -> void:
 func reset_night_tutorial() -> void:
 	night_tutorial_seen = false
 	save_meta()
+
+
+func get_seen_enemy_types() -> Array[String]:
+	return seen_enemy_types.duplicate()
+
+
+func has_seen_enemy_type(type_id: String) -> bool:
+	return type_id != "" and seen_enemy_types.has(type_id)
+
+
+func mark_enemy_seen(type_id: String) -> bool:
+	type_id = str(type_id)
+	if type_id == "" or seen_enemy_types.has(type_id):
+		return false
+	seen_enemy_types.append(type_id)
+	save_meta()
+	return true
 
 
 func unlock_encounter(encounter_id: String) -> bool:

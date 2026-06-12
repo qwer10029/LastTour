@@ -231,10 +231,13 @@ func advance_active_drive_dialogue() -> bool:
 func begin_thunder_gate_encounter(district_index: int) -> void:
 	if not is_thunder_blocking_district(district_index):
 		return
+	if _host != null and _host.has_method("_pause_day_night_for_terminal_sequence"):
+		_host.set("_thunder_terminal_sequence_active", true)
+		_host.call("_pause_day_night_for_terminal_sequence")
 	var checkpoint := str(run_state.get_dialogue_node(THUNDER_LEITING_STORY_ID))
 	var ready_for_battle := bool(
 		run_state.get_variable(THUNDER_LEITING_STORY_ID, "pre_battle_done", false)
-	) or checkpoint in ["combat_ready", "combat_start"]
+	) or checkpoint in ["combat_ready", "combat_prompt"]
 	if ready_for_battle:
 		_active_story_id = ""
 		_ui_locked = false
@@ -256,6 +259,9 @@ func begin_thunder_gate_encounter(district_index: int) -> void:
 	var ctx := _dialogue_context(THUNDER_LEITING_STORY_ID)
 	ctx["get_thunder_recognition"] = Callable(self, "thunder_recognition")
 	ctx["start_thunder_boss"] = func() -> void:
+		if _host != null and _host.has_method("_pause_day_night_for_terminal_sequence"):
+			_host.set("_thunder_terminal_sequence_active", true)
+			_host.call("_pause_day_night_for_terminal_sequence")
 		thunder_boss_requested.emit(district_index)
 	npc_dialogue.start_dialogue(THUNDER_LEITING_STORY_ID, "", ctx)
 	ui_refresh_requested.emit()

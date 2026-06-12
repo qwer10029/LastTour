@@ -6,6 +6,7 @@ signal advance_requested
 
 const MAX_CHARS_PER_PAGE := 88
 const MAX_VISIBLE_LINES := 3
+const ADVANCE_DEBOUNCE_SEC := 0.12
 
 @onready var _bottom: VBoxContainer = $Root/BottomAnchor
 @onready var _name_panel: PanelContainer = $Root/BottomAnchor/NameTagRow/NameTagPanel
@@ -24,6 +25,7 @@ var _pages: PackedStringArray = []
 var _page_index := 0
 var _show_continue_on_last_page := true
 var _choice_mode := false
+var _next_advance_time_msec := 0
 
 
 func _ready() -> void:
@@ -64,7 +66,10 @@ func get_choice_count() -> int:
 func try_advance_page() -> bool:
 	if _choice_mode or not visible:
 		return false
+	if not _can_advance_now():
+		return true
 	if _page_index < _pages.size() - 1:
+		_mark_advanced()
 		_page_index += 1
 		_apply_page()
 		return true
@@ -77,6 +82,7 @@ func show_narrative(body: String, speaker: String = "", show_continue: bool = tr
 	_show_continue_on_last_page = show_continue
 	_pages = _split_pages(body.strip_edges())
 	_page_index = 0
+	_mark_advanced()
 	_set_speaker(speaker)
 	_choice_hint.visible = false
 	_apply_page()
@@ -208,9 +214,19 @@ func _on_dialog_gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed:
+			if not _can_advance_now():
+				return
 			if try_advance_page():
 				return
 			advance_requested.emit()
+
+
+func _can_advance_now() -> bool:
+	return Time.get_ticks_msec() >= _next_advance_time_msec
+
+
+func _mark_advanced() -> void:
+	_next_advance_time_msec = Time.get_ticks_msec() + int(ADVANCE_DEBOUNCE_SEC * 1000.0)
 
 
 func _reflow_body() -> void:

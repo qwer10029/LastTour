@@ -99,11 +99,10 @@ func apply_night_result_and_continue(result: Dictionary) -> void:
 	var no_day_advance := bool(result.get("no_day_advance", false))
 	run_state.apply_night_result(result)
 	if not run_state.run_ended:
-		if context == "final_terminal_defense":
-			run_state.final_defense_cleared = true
-			run_state.pending_open_terminal = true
-		elif context == "thunder_leiting_boss" and str(result.get("outcome", "")) == "success":
+		if context == "thunder_leiting_boss" and str(result.get("outcome", "")) == "success":
 			run_state.thunder_leiting_defeated = true
+			run_state.final_defense_cleared = true
+			run_state.thunder_terminal_sequence_active = true
 		elif not no_day_advance:
 			run_state.advance_after_normal_night()
 	start_day_via_loading(run_state)

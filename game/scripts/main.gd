@@ -8,7 +8,6 @@ const DayTopdownRender = preload("res://scripts/day_topdown_render.gd")
 const RunStateClass = preload("res://scripts/run_state.gd")
 const NpcDialogueRunnerScript = preload("res://scripts/story/npc_dialogue_runner.gd")
 const StoryDialogueUIScene = preload("res://scenes/ui/story_dialogue_ui.tscn")
-const FINAL_TERMINAL_WAVE_PATH := "res://data/night_td/waves/night_wave_final_terminal.json"
 const FUEL_EMPTY_EPSILON := 0.001
 const THUNDER_LEITING_WAVE_PATH := "res://data/night_td/waves/night_wave_thunder_leiting.json"
 var _building_pick_index: int = 0
@@ -88,6 +87,7 @@ var _run_end_reason := ""
 var _final_choice_id := ""
 var _final_defense_cleared := false
 var _thunder_leiting_defeated := false
+var _thunder_terminal_sequence_active := false
 # 防御塔强化（Part B）：故事奖励道具安装后累加的乘法系数。随存档/昼夜流转。
 var _tower_upgrades: Dictionary = NightTdUpgrades.default_state()
 var _pending_thunder_district := -1
@@ -332,13 +332,24 @@ func _on_story_dialogue_choice_pressed(index: int) -> void:
 	elif _story_choice_overlay_key.begins_with("reward|"):
 		_on_story_reward_pressed(index)
 	elif _story_choice_overlay_key.begins_with("thunder|"):
-		_on_disembark_pressed()
+		_begin_or_continue_thunder_gate()
 	elif _story_choice_overlay_key.begins_with("foot_return|"):
 		_story_controller.try_interior_story_interact(_current_district_index, _foot_local_pos)
 	else:
 		_story_controller.choose_dialogue_option(index)
 	_hide_story_choice_overlay()
 	_schedule_refresh_ui()
+
+
+func _begin_or_continue_thunder_gate() -> void:
+	if not is_instance_valid(_story_controller):
+		return
+	var district_index := _selected_enterable_district()
+	if not _story_controller.is_thunder_blocking_district(district_index):
+		return
+	_thunder_terminal_sequence_active = true
+	_pause_day_night_for_terminal_sequence()
+	_story_controller.begin_thunder_gate_encounter(district_index)
 
 
 func _current_dialogue_speaker() -> String:
@@ -1571,6 +1582,8 @@ func _begin_foot_mode(district_index: int = -1) -> void:
 	if district_index < 0 or not _map.is_district(district_index):
 		return
 	if is_instance_valid(_story_controller) and _story_controller.is_thunder_blocking_district(district_index):
+		_thunder_terminal_sequence_active = true
+		_pause_day_night_for_terminal_sequence()
 		_story_controller.begin_thunder_gate_encounter(district_index)
 		return
 	if not _can_enter_district(district_index):
@@ -2533,24 +2546,16 @@ func _request_terminal_access() -> void:
 		return
 	if not _thunder_leiting_defeated:
 		return
-	if not _final_defense_cleared:
-		_start_final_terminal_defense()
-		return
+	_final_defense_cleared = true
+	_thunder_terminal_sequence_active = true
+	_pause_day_night_for_terminal_sequence()
 	_open_communication_terminal()
-
-
-func _final_terminal_session_options() -> Dictionary:
-	return {
-		"kind": "final_terminal_defense",
-		"wave_plan_path": FINAL_TERMINAL_WAVE_PATH,
-		"phase_title": "顶层终端防线",
-		"no_day_advance": true,
-		"tower_upgrades": _tower_upgrades.duplicate(true),
-	}
 
 
 func _on_thunder_boss_requested(district_index: int) -> void:
 	_pending_thunder_district = district_index
+	_thunder_terminal_sequence_active = true
+	_pause_day_night_for_terminal_sequence()
 	_start_thunder_leiting_boss()
 
 
@@ -2601,6 +2606,9 @@ func _start_thunder_leiting_boss() -> void:
 
 func _apply_thunder_leiting_victory() -> void:
 	_thunder_leiting_defeated = true
+	_final_defense_cleared = true
+	_thunder_terminal_sequence_active = true
+	_pause_day_night_for_terminal_sequence()
 	_backpack.add("composite_armor_panel", 3)
 	_backpack.add("auto_turret_auth", 3)
 	var recognition := "enemy"
@@ -2630,42 +2638,11 @@ func _trigger_thunder_defeat_end() -> void:
 	_show_run_summary()
 
 
-func _start_final_terminal_defense() -> void:
-	_force_return_to_vehicle_for_night()
-	if is_instance_valid(time_system):
-		time_system.pause()
-	if is_instance_valid(evening_notice) and evening_notice.has_method("hide_notice"):
-		evening_notice.hide_notice()
-	var snapshot: Dictionary = {}
-	if is_instance_valid(_backpack) and _backpack.has_method("to_dictionary"):
-		snapshot = _backpack.to_dictionary().duplicate()
-	var options := _final_terminal_session_options()
-	if is_instance_valid(night_defense) and is_instance_valid(night_td):
-		_night_result_applied = false
-		night_defense.start_td_session(
-			_backpack.total_count(),
-			GameManager.difficulty,
-			time_system.day_index if is_instance_valid(time_system) else 1,
-			true,
-			_vehicle_hp,
-			_vehicle_hp_max,
-			snapshot,
-			options,
-			_fuel,
-			fuel_max
-		)
-		_refresh_ui()
-		return
-	var rs = export_run_state()
-	rs.backpack_dict = snapshot
-	rs.night_context = "final_terminal_defense"
-	rs.night_session_options = options
-	GameManager.request_night_defense(rs, options)
-
-
 func _open_communication_terminal() -> void:
 	if _run_ended:
 		return
+	_thunder_terminal_sequence_active = true
+	_pause_day_night_for_terminal_sequence()
 	if not is_instance_valid(_communication_terminal):
 		_begin_final_ceremony()
 		return
@@ -2673,6 +2650,22 @@ func _open_communication_terminal() -> void:
 	_play_music_cue("terminal", 0.9)
 	var snapshot := _backpack.to_dictionary() if is_instance_valid(_backpack) and _backpack.has_method("to_dictionary") else {}
 	_communication_terminal.start_flow(_run_journal.get_entries(), _current_layer, day_n, snapshot)
+
+
+func _should_pause_day_night_for_terminal_sequence() -> bool:
+	return (
+		_thunder_terminal_sequence_active
+		or (
+			_current_layer >= total_layers
+			and _thunder_leiting_defeated
+			and not _run_ended
+		)
+	)
+
+
+func _pause_day_night_for_terminal_sequence() -> void:
+	if is_instance_valid(time_system):
+		time_system.pause()
 
 
 func _on_terminal_strike() -> void:
@@ -2889,6 +2882,8 @@ func _resume_from_pause() -> void:
 	if is_instance_valid(time_system):
 		if _is_night_phase():
 			time_system.pause()
+		elif _should_pause_day_night_for_terminal_sequence():
+			time_system.pause()
 		else:
 			time_system.resume()
 
@@ -2922,6 +2917,7 @@ func init_from_run_state(rs) -> void:
 	_run_squad_name = rs.run_squad_name
 	_final_defense_cleared = rs.final_defense_cleared
 	_thunder_leiting_defeated = rs.thunder_leiting_defeated
+	_thunder_terminal_sequence_active = rs.thunder_terminal_sequence_active
 	GameManager.difficulty = rs.difficulty
 	GameManager.squad_id = rs.squad_id
 	_apply_run_config_from_manager()
@@ -2955,6 +2951,7 @@ func export_run_state():
 	rs.run_squad_name = _run_squad_name
 	rs.final_defense_cleared = _final_defense_cleared
 	rs.thunder_leiting_defeated = _thunder_leiting_defeated
+	rs.thunder_terminal_sequence_active = _thunder_terminal_sequence_active
 	rs.last_night_losses.clear()
 	for s in _last_night_losses:
 		rs.last_night_losses.append(s)
@@ -2994,6 +2991,7 @@ func capture_save_data() -> Dictionary:
 			"elevator_repair_progress": _elevator_repair_progress,
 			"final_defense_cleared": _final_defense_cleared,
 			"thunder_leiting_defeated": _thunder_leiting_defeated,
+			"thunder_terminal_sequence_active": _thunder_terminal_sequence_active,
 			"run_ended": _run_ended,
 			"run_end_reason": _run_end_reason,
 			"final_choice_id": _final_choice_id,
@@ -3047,8 +3045,12 @@ func _apply_save_data(data: Dictionary) -> void:
 	_elevator_repair_progress = int(layer.get("elevator_repair_progress", 0))
 	_final_defense_cleared = bool(layer.get("final_defense_cleared", false))
 	_thunder_leiting_defeated = bool(layer.get("thunder_leiting_defeated", false))
+	_thunder_terminal_sequence_active = bool(layer.get("thunder_terminal_sequence_active", false))
 	if _final_defense_cleared and not _thunder_leiting_defeated:
 		_thunder_leiting_defeated = true
+	if _thunder_leiting_defeated:
+		_final_defense_cleared = true
+		_thunder_terminal_sequence_active = true
 	_run_ended = bool(layer.get("run_ended", false))
 	_run_end_reason = str(layer.get("run_end_reason", ""))
 	_final_choice_id = str(layer.get("final_choice_id", ""))
@@ -3160,7 +3162,10 @@ func _restore_time_phase_after_load(keep_terminal_music: bool = false) -> void:
 		TimeSystem.Phase.NIGHT_RESOLVE:
 			time_system.finish_night_and_advance_day()
 		TimeSystem.Phase.EVENING:
-			time_system.resume()
+			if _should_pause_day_night_for_terminal_sequence():
+				time_system.pause()
+			else:
+				time_system.resume()
 			if is_instance_valid(evening_notice) and evening_notice.has_method("show_evening_warning"):
 				evening_notice.show_evening_warning(time_system.get_day_remaining_sec())
 			if is_instance_valid(low_stamina_warning) and low_stamina_warning.has_method("hide_warning"):
@@ -3168,7 +3173,10 @@ func _restore_time_phase_after_load(keep_terminal_music: bool = false) -> void:
 			if not keep_terminal_music:
 				_play_music_cue("day_exploration", 1.0)
 		_:
-			time_system.resume()
+			if _should_pause_day_night_for_terminal_sequence():
+				time_system.pause()
+			else:
+				time_system.resume()
 			if is_instance_valid(evening_notice):
 				evening_notice.hide_notice()
 			if not keep_terminal_music:
@@ -3304,11 +3312,6 @@ func _on_night_setup_started(day_index: int, manual_setup: bool) -> void:
 		time_system.pause()
 	if is_instance_valid(evening_notice) and evening_notice.has_method("hide_notice"):
 		evening_notice.hide_notice()
-	# 顶层终局：到顶且已击败雷霆后的夜晚不再是普通刷怪夜，而是"顶层终端防线"——
-	# 打完直接接入通信终端走结局流程，不进入次日。否则普通夜会绕过整个终端结局。
-	if _current_layer >= total_layers and _thunder_leiting_defeated and not _final_defense_cleared:
-		_start_final_terminal_defense()
-		return
 	if is_instance_valid(night_defense):
 		# 传入背包快照（字典），而非 live 引用，切断耦合
 		var snapshot: Dictionary = {}
@@ -3373,19 +3376,11 @@ func _on_night_td_finished(result: Dictionary) -> void:
 	if _check_vehicle_destroyed():
 		return
 	var kind := str(result.get("kind", "normal"))
-	if kind == "final_terminal_defense":
-		_final_defense_cleared = true
-		if is_instance_valid(time_system):
-			time_system.pause()
-		_refresh_ui()
-		call_deferred("_open_communication_terminal")
-		return
 	if kind == "thunder_leiting_boss":
 		var outcome := str(result.get("outcome", "success"))
 		if outcome == "success":
 			_apply_thunder_leiting_victory()
-			if is_instance_valid(time_system):
-				time_system.resume()
+			_pause_day_night_for_terminal_sequence()
 			var district := _pending_thunder_district
 			_pending_thunder_district = -1
 			_refresh_ui()
@@ -3769,8 +3764,9 @@ func _update_foot_story_prompts() -> bool:
 		for opt_var in prompt.get("dialogue_options", []):
 			option_labels.append(str(opt_var))
 		return _show_story_choice_overlay(str(prompt.get("text", "")), option_labels, "dialogue")
-	if str(prompt.get("continuf_hint", "")) != "":
-		return _show_story_narrative_overlay(str(prompt.get("text", "")), str(prompt.get("continuf_hint", "")))
+	var continue_hint := str(prompt.get("continue_hint", prompt.get("continuf_hint", "")))
+	if continue_hint != "":
+		return _show_story_narrative_overlay(str(prompt.get("text", "")), continue_hint)
 	return false
 
 
@@ -3820,10 +3816,11 @@ func _update_thunder_dialogue_prompts() -> bool:
 	if npc == null or not npc.is_active() or npc.story_id != "thunder_leiting":
 		return false
 	var prompt: Dictionary = _story_controller.build_prompt("thunder_leiting")
-	if str(prompt.get("continuf_hint", "")) != "":
+	var continue_hint := str(prompt.get("continue_hint", prompt.get("continuf_hint", "")))
+	if continue_hint != "":
 		return _show_story_narrative_overlay(
 			str(prompt.get("text", "")),
-			str(prompt.get("continuf_hint", "")),
+			continue_hint,
 		)
 	return false
 
@@ -3847,12 +3844,12 @@ func _update_thunder_gate_prompts() -> bool:
 		var checkpoint := str(rs.get_dialogue_node("thunder_leiting"))
 		ready_for_battle = bool(
 			rs.get_variable("thunder_leiting", "pre_battle_done", false)
-		) or checkpoint in ["combat_ready", "combat_start"]
+		) or checkpoint in ["combat_ready", "combat_prompt"]
 	if ready_for_battle:
 		return _show_story_e_action_overlay("战前交涉已结束。", "进入布防战", "thunder")
 	return _show_story_e_action_overlay(
 		"昆仑控制中心门口被「不败之盾-雷霆」封锁。",
-		"接战",
+		"交涉",
 		"thunder",
 	)
 
@@ -3893,10 +3890,11 @@ func _update_story_gate_prompts() -> bool:
 			reward_labels,
 			"reward",
 		)
-	if str(prompt.get("continuf_hint", "")) != "":
+	var continue_hint := str(prompt.get("continue_hint", prompt.get("continuf_hint", "")))
+	if continue_hint != "":
 		return _show_story_narrative_overlay(
 			str(prompt.get("text", "")),
-			str(prompt.get("continuf_hint", "")),
+			continue_hint,
 		)
 	if bool(prompt.get("show_disembark", false)) and bool(prompt.get("show_decline", false)):
 		var action_labels := _disembark_choice_labels(prompt)
@@ -4803,7 +4801,7 @@ func _draw_elevator_consolf_hint(console_rect: Rect2) -> void:
 func _draw_kunlun_consolf_hint(console_rect: Rect2) -> void:
 	if not _can_use_kunlun_control() or not _is_near_kunlun_console():
 		return
-	var hint_text := "F 接入通信终端" if _final_defense_cleared else "F 启动终端防线"
+	var hint_text := "F 接入通信终端" if _thunder_leiting_defeated else "终端离线 · 雷霆封锁中"
 	_draw_interior_consolf_hint(console_rect, hint_text, Color("#6eb8ff"))
 
 

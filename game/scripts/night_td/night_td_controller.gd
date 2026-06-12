@@ -246,7 +246,7 @@ func start_session(
 	_shepherd_degrade_until = 0.0
 	_combat_time = 0.0
 	_placement_warning_30_fired = false
-	_seen_enemy_types.clear()
+	_load_seen_enemy_types_from_meta()
 	_activate_screen_camera()
 	_flow_dirty = true
 	_flow_rebuild_cooldown = 0.0
@@ -276,7 +276,7 @@ func start_session(
 		if hud.has_method("set_overlay_active"):
 			hud.set_overlay_active(show_overlay)
 		if hud.has_method("set_seen_enemy_types"):
-			hud.set_seen_enemy_types([])
+			hud.set_seen_enemy_types(_seen_enemy_types)
 		_sync_vehicle_durability_hud(false)
 		_refresh_resource_hud()
 		if phase == Phase.PLACE:
@@ -308,7 +308,7 @@ func start_session(
 	_play_music_cue("night_setup" if phase == Phase.PLACE else "night_combat", 0.8)
 
 
-const DEBUG_SKIP_SESSION_KINDS := ["final_terminal_defense", "thunder_leiting_boss"]
+const DEBUG_SKIP_SESSION_KINDS := ["thunder_leiting_boss"]
 
 
 func _debug_skip_available() -> bool:
@@ -324,9 +324,7 @@ func _notify_debug_skip_available() -> void:
 		return
 	if is_instance_valid(hud):
 		var hint := "[调试] 按 F9 跳过 Boss 战"
-		if _session_kind == "final_terminal_defense":
-			hint = "[调试] 按 F9 跳过 Boss 战，直接进入终端剧情"
-		elif _session_kind == "thunder_leiting_boss":
+		if _session_kind == "thunder_leiting_boss":
 			hint = "[调试] 按 F9 跳过 Boss 战，解锁指挥中心"
 		hud.append_log(hint)
 
@@ -362,8 +360,6 @@ func debug_skip_boss_fight() -> void:
 	_last_result["breach_losses"] = {}
 	_last_result["breach_total"] = 0
 	match _session_kind:
-		"final_terminal_defense":
-			_last_result["message"] = "【调试跳过】顶层终端防线已清除。"
 		"thunder_leiting_boss":
 			_last_result["message"] = "【调试跳过】不败之盾-雷霆已击败。"
 		_:
@@ -371,10 +367,6 @@ func debug_skip_boss_fight() -> void:
 	if is_instance_valid(hud):
 		hud.append_log("【调试】已跳过 Boss 战")
 	_finish_session()
-
-
-func debug_skip_final_terminal_boss() -> void:
-	debug_skip_boss_fight()
 
 
 func _session_phase_title(suffix: String) -> String:
@@ -653,15 +645,34 @@ func _spawn_from_spec(spec: Dictionary) -> void:
 
 
 func _notify_enemy_type_seen(type_id: String) -> void:
-	if _seen_enemy_types.has(type_id):
+	type_id = str(type_id)
+	if type_id == "":
 		return
-	_seen_enemy_types.append(type_id)
+	var meta := get_node_or_null("/root/MetaManager")
+	var already_seen := _seen_enemy_types.has(type_id)
+	var is_new := not already_seen
+	if meta != null and meta.has_method("mark_enemy_seen"):
+		is_new = bool(meta.mark_enemy_seen(type_id))
+	if not already_seen:
+		_seen_enemy_types.append(type_id)
 	if not is_instance_valid(hud):
 		return
 	if hud.has_method("set_seen_enemy_types"):
 		hud.set_seen_enemy_types(_seen_enemy_types)
-	if hud.has_method("show_enemy_first_seen"):
+	if is_new and hud.has_method("show_enemy_first_seen"):
 		hud.show_enemy_first_seen(type_id)
+
+
+func _load_seen_enemy_types_from_meta() -> void:
+	_seen_enemy_types.clear()
+	var meta := get_node_or_null("/root/MetaManager")
+	if meta == null or not meta.has_method("get_seen_enemy_types"):
+		return
+	for type_id_var in meta.get_seen_enemy_types():
+		var type_id := str(type_id_var)
+		if type_id == "" or _seen_enemy_types.has(type_id):
+			continue
+		_seen_enemy_types.append(type_id)
 
 
 func _scale_enemy_stat(value: float, type_id: String, stat: String) -> float:
@@ -1959,13 +1970,6 @@ func _end_combat() -> void:
 	_combat_done = true
 	_last_result = _build_result()
 	phase = Phase.RESULT
-	if _session_kind == "final_terminal_defense":
-		_last_result["message"] = "顶层终端防线已清除。通信链路恢复，正在接入昆仑终端。"
-		if is_instance_valid(hud):
-			hud.set_phase_text(_session_phase_title("终端接入"))
-			hud.set_combat_status("防线存活，正在接入通信终端")
-		_finish_session.call_deferred()
-		return
 	if is_instance_valid(hud):
 		var button_text := "确认，返回探索" if _no_day_advance else "确认结算，进入下一天"
 		hud.show_result(_compose_result_message(_last_result), button_text)
