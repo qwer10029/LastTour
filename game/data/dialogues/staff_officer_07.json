@@ -141,8 +141,6 @@
       "bubble": "",
       "text": "我站在沙盘桌前，看着那张完整的地图，看了很久。\n\n「……谢谢。」\n\n参谋-07没有回答。它已经转过身去，面对沙盘，继续推演下一场战役。",
       "actions": {
-        "give_item": "tactical_map",
-        "count": 1,
         "set_variable": { "staff_officer_outcome": "calibrate" },
         "unlock_journal_entry": "staff_officer_07_calibrate",
         "spawn_reward_loot": "tactical_map"

@@ -142,8 +142,6 @@
       "bubble": "愿您旅途平安。",
       "text": "编史者的屏幕渐渐暗淡下来，但不再闪烁不安——像一盏完成了任务后不会熄灭的夜灯。那首生日歌，终于不再循环了。",
       "actions": {
-        "give_item": "data_chip",
-        "count": 1,
         "unlock_journal_entry": "chronicler_repair"
       },
       "next": "story_done"

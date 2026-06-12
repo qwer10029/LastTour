@@ -729,7 +729,7 @@ func _ensure_input_actions() -> void:
 	_register_key_action("move_left", KEY_LEFT)
 	_register_key_action("move_right", KEY_D)
 	_register_key_action("move_right", KEY_RIGHT)
-	_register_key_action("interact", KEY_F)
+	_register_key_action("interact", KEY_E)
 	_register_key_action("interact", KEY_SPACE)
 	_register_key_action("repair", KEY_R)
 	_register_key_action("pause", KEY_ESCAPE)
@@ -2078,9 +2078,6 @@ func _init_player_loadout() -> void:
 	_backpack.clear()
 	if GameManager.has_method("get_starting_items"):
 		_backpack.apply_starting_items(GameManager.get_starting_items())
-	var bonus := GameManager.get_starting_inventory() if GameManager.has_method("get_starting_inventory") else 0
-	if bonus > 0:
-		_backpack.add("scrap", bonus)
 
 
 func _toggle_backpack() -> void:
@@ -4016,7 +4013,7 @@ func _on_journal_entry_added(encounter_id: String) -> void:
 		)
 
 
-func _on_tactical_sites_revealed(source_id: String = "") -> void:
+func _on_tactical_sites_revealed(source_id: String = "", auto_open_map: bool = false) -> void:
 	_spawn_resources()
 	_mark_overworld_dirty()
 	queue_redraw()
@@ -4031,8 +4028,10 @@ func _on_tactical_sites_revealed(source_id: String = "") -> void:
 			body = "地图上出现 3 处雷达扫描到的隐藏建筑。"
 		elif source_id == "chronicler_04":
 			title = "物资登记坐标已更新"
-			body = "数据片写入两处隐藏仓库坐标，已叠加至导航。"
+			body = "编史者提供的两处隐藏仓库坐标已叠加至导航。"
 		evening_notice.show_message(title, body)
+	if auto_open_map:
+		call_deferred("_open_world_map")
 
 
 func _clear_story_reward_buttons() -> void:
@@ -4702,7 +4701,7 @@ func _handle_foot_interact() -> void:
 			_refresh_ui()
 			return
 		if is_instance_valid(evening_notice) and evening_notice.has_method("show_message"):
-			evening_notice.show_message("先完成抉择，才能离开。")
+			evening_notice.show_message("先完成抉择，才能离开。", "")
 		return
 
 
@@ -4728,7 +4727,7 @@ func _try_foot_return_to_vehicle() -> bool:
 			_refresh_ui()
 			return true
 		if is_instance_valid(evening_notice) and evening_notice.has_method("show_message"):
-			evening_notice.show_message("先完成抉择，才能离开。")
+			evening_notice.show_message("先完成抉择，才能离开。", "")
 		return true
 	_return_to_vehicle()
 	return true

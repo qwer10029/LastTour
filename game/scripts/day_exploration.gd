@@ -13,9 +13,15 @@ var _handling_night_transition := false
 
 
 func _ready() -> void:
-	# NightTd 在此场景中不存在
 	night_td = null
+	var overlay_flags := {
+		"enter": GameManager.should_dismiss_enter_overlay(),
+		"transition": GameManager.should_dismiss_transition_overlay(),
+	}
+	call_deferred("_boot_exploration_scene", overlay_flags)
 
+
+func _boot_exploration_scene(overlay_flags: Dictionary) -> void:
 	# 初始化基础配置
 	_base_fuel_max = fuel_max
 	_base_elevator_repair_cost = base_elevator_repair_cost
@@ -33,11 +39,13 @@ func _ready() -> void:
 	_connect_buttons()
 	_setup_pause_ui()
 	_setup_backpack_ui()
+	_setup_fuel_empty_dialog()
 	_setup_story_controller()
 	_setup_run_end_ui()
 	_setup_stat_bars()
 	_setup_world_camera()
 	_setup_minimap_hud()
+	_setup_world_map_overlay()
 	_setup_hud_theme()
 	_setup_repair_choice_popup()
 	_spawn_vehicle()
@@ -45,8 +53,14 @@ func _ready() -> void:
 	# 用自己的日夜系统（场景切换模式）
 	_setup_day_night_scene_switch()
 
-	# 从 GameManager 的 RunState 恢复（场景切换后）或开始新游戏
-	if GameManager.run_state != null and not GameManager.run_state.to_full_dict().is_empty():
+	# 从 GameManager 的 RunState 恢复（场景切换后）、读档或开始新游戏
+	if GameManager.consume_load_save_request():
+		var save_data: Dictionary = SaveManager.load_game()
+		if save_data.is_empty():
+			_start_new_run()
+		else:
+			_apply_save_data(save_data)
+	elif GameManager.run_state != null and not GameManager.run_state.to_full_dict().is_empty():
 		init_from_run_state(GameManager.run_state)
 	else:
 		_start_new_run()
@@ -54,6 +68,14 @@ func _ready() -> void:
 	_sync_day_entity_visibility()
 	_refresh_ui()
 	queue_redraw()
+	await _release_pending_overlays(overlay_flags)
+
+
+func _release_pending_overlays(overlay_flags: Dictionary) -> void:
+	if overlay_flags.get("enter", false) or GameManager.should_dismiss_enter_overlay():
+		await GameManager.dismiss_enter_overlay()
+	if overlay_flags.get("transition", false) or GameManager.should_dismiss_transition_overlay():
+		await GameManager.dismiss_transition_overlay()
 
 
 ## 重写：使用场景切换模式的日夜系统。
@@ -88,7 +110,7 @@ func _on_night_setup_scene_switch(day_index: int, _manual_setup: bool) -> void:
 	if is_instance_valid(_backpack) and _backpack.has_method("to_dictionary"):
 		rs.backpack_dict = _backpack.to_dictionary().duplicate()
 
-	GameManager.request_night_defense(rs)
+	GameManager.go_to_night_with_loading(rs)
 	# GameManager.change_scene_to_file() 会销毁当前场景，无需额外清理
 
 
