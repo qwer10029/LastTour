@@ -8,6 +8,9 @@ static var REPAIR_PARTS_EACH := 1
 static var REPAIR_SCRAP_EACH := 2
 static var REPAIR_WOOD_EACH := 2
 static var REPAIR_SCRAP_ALT_EACH := 1
+static var VEHICLE_REPAIR_PARTS_EACH := 1
+static var VEHICLE_REPAIR_WOOD_EACH := 2
+static var VEHICLE_REPAIR_HEAL_AMOUNT := 25.0
 static var LOOT_FALLBACK_ITEM := "scrap"
 
 # 背包内合成：废料 + 燃料 → 零件（缓解前期造塔资源短缺）
@@ -99,6 +102,11 @@ static func _load_data() -> void:
 	CRAFT_PARTS_SCRAP_COST = maxi(int(craft.get("scrap_cost", CRAFT_PARTS_SCRAP_COST)), 1)
 	CRAFT_PARTS_FUEL_COST = maxi(int(craft.get("fuel_cost", CRAFT_PARTS_FUEL_COST)), 0)
 	CRAFT_PARTS_OUT = maxi(int(craft.get("parts_out", CRAFT_PARTS_OUT)), 1)
+
+	var vehicle_repair: Dictionary = data.get("vehicle_repair", {})
+	VEHICLE_REPAIR_PARTS_EACH = maxi(int(vehicle_repair.get("parts_each", VEHICLE_REPAIR_PARTS_EACH)), 1)
+	VEHICLE_REPAIR_WOOD_EACH = maxi(int(vehicle_repair.get("wood_each", VEHICLE_REPAIR_WOOD_EACH)), 1)
+	VEHICLE_REPAIR_HEAL_AMOUNT = maxf(float(vehicle_repair.get("heal_amount", VEHICLE_REPAIR_HEAL_AMOUNT)), 1.0)
 
 	var loaded_items: Dictionary = data.get("items", {})
 	if not loaded_items.is_empty():
@@ -288,6 +296,28 @@ static func can_repair_with_inventory(inventory: InventoryData) -> bool:
 	if inventory.has("scrap", REPAIR_SCRAP_EACH):
 		return true
 	return inventory.has("wood", REPAIR_WOOD_EACH) and inventory.has("scrap", REPAIR_SCRAP_ALT_EACH)
+
+
+static func can_repair_vehicle_with_inventory(inventory: InventoryData) -> bool:
+	if inventory == null:
+		return false
+	return inventory.has("parts", VEHICLE_REPAIR_PARTS_EACH) and inventory.has("wood", VEHICLE_REPAIR_WOOD_EACH)
+
+
+static func get_vehicle_repair_requirement_text(inventory: InventoryData) -> String:
+	var lines: PackedStringArray = []
+	lines.append("车辆修复：零件 ×%d + 木材 ×%d" % [VEHICLE_REPAIR_PARTS_EACH, VEHICLE_REPAIR_WOOD_EACH])
+	lines.append("修复效果：车辆耐久 +%.0f" % VEHICLE_REPAIR_HEAL_AMOUNT)
+	if inventory != null:
+		lines.append("当前持有：零件 %d | 木材 %d" % [
+			inventory.count("parts"),
+			inventory.count("wood"),
+		])
+		if can_repair_vehicle_with_inventory(inventory):
+			lines.append("✓ 可在白天从背包中修复车辆")
+		else:
+			lines.append("✗ 材料不足或已到夜晚")
+	return "\n".join(lines)
 
 
 static func pick_loot_for_building(building_type: String, rng: RandomNumberGenerator) -> String:

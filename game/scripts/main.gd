@@ -1914,7 +1914,23 @@ func _on_resource_collected(district_index: int, item_id: String, pickup: Area2D
 
 func _refresh_backpack_if_open() -> void:
 	if is_instance_valid(_backpack_ui) and _backpack_ui.is_open():
-		_backpack_ui.show_backpack(_backpack, _run_journal)
+		_backpack_ui.show_backpack(
+			_backpack,
+			_run_journal,
+			false,
+			_can_repair_vehicle_from_backpack(),
+			_vehicle_hp,
+			_vehicle_hp_max,
+		)
+
+
+func _can_repair_vehicle_from_backpack() -> bool:
+	if _is_night_phase():
+		return false
+	if _vehicle_hp_max <= 0.0 or _vehicle_hp >= _vehicle_hp_max - 0.5:
+		return false
+	return ItemDefs.can_repair_vehicle_with_inventory(_backpack)
+
 
 func _current_focus_position() -> Vector2:
 	if _mode == TravelMode.FOOT and _current_district_index >= 0:
@@ -2032,6 +2048,7 @@ func _setup_backpack_ui() -> void:
 	_backpack_ui.item_use_requested.connect(_on_backpack_use_item)
 	_backpack_ui.item_discard_requested.connect(_on_backpack_discard_item)
 	_backpack_ui.craft_parts_requested.connect(_on_backpack_craft_parts)
+	_backpack_ui.vehicle_repair_requested.connect(_on_backpack_repair_vehicle)
 	_backpack_ui.closed.connect(_on_backpack_closed)
 
 
@@ -2080,7 +2097,14 @@ func _open_backpack(open_journal_tab: bool = false) -> void:
 	if not is_instance_valid(_backpack_ui):
 		return
 	_backpack_open = true
-	_backpack_ui.show_backpack(_backpack, _run_journal, open_journal_tab)
+	_backpack_ui.show_backpack(
+		_backpack,
+		_run_journal,
+		open_journal_tab,
+		_can_repair_vehicle_from_backpack(),
+		_vehicle_hp,
+		_vehicle_hp_max,
+	)
 	if is_instance_valid(time_system) and not _is_night_phase():
 		time_system.pause()
 
@@ -2115,13 +2139,13 @@ func _on_backpack_closed() -> void:
 func _on_backpack_use_item(item_id: String) -> void:
 	if not _use_backpack_item(item_id):
 		return
-	_backpack_ui.show_backpack(_backpack, _run_journal)
+	_refresh_backpack_if_open()
 	_refresh_ui()
 
 
 func _on_backpack_discard_item(item_id: String) -> void:
 	if _backpack.remove(item_id, 1):
-		_backpack_ui.show_backpack(_backpack, _run_journal)
+		_refresh_backpack_if_open()
 		_refresh_ui()
 
 
@@ -2143,8 +2167,29 @@ func _on_backpack_craft_parts() -> void:
 	_backpack.add("parts", parts_out)
 
 	print("[Craft] 已将 %d 废料 + %d 燃料合成为 %d 零件。" % [scrap_cost, fuel_cost, parts_out])
-	_backpack_ui.show_backpack(_backpack, _run_journal)
+	_refresh_backpack_if_open()
 	_refresh_ui()
+
+
+func _on_backpack_repair_vehicle() -> void:
+	if _is_night_phase():
+		return
+	if not _can_repair_vehicle_from_backpack():
+		_refresh_backpack_if_open()
+		return
+	if not _backpack.remove("parts", ItemDefs.VEHICLE_REPAIR_PARTS_EACH):
+		return
+	if not _backpack.remove("wood", ItemDefs.VEHICLE_REPAIR_WOOD_EACH):
+		_backpack.add("parts", ItemDefs.VEHICLE_REPAIR_PARTS_EACH)
+		return
+	_vehicle_hp = minf(_vehicle_hp + ItemDefs.VEHICLE_REPAIR_HEAL_AMOUNT, _vehicle_hp_max)
+	_refresh_backpack_if_open()
+	_refresh_ui()
+	print("[Repair] 车辆修复：消耗零件×%d + 木材×%d，恢复 %.0f 耐久。" % [
+		ItemDefs.VEHICLE_REPAIR_PARTS_EACH,
+		ItemDefs.VEHICLE_REPAIR_WOOD_EACH,
+		ItemDefs.VEHICLE_REPAIR_HEAL_AMOUNT,
+	])
 
 
 func _use_backpack_item(item_id: String) -> bool:

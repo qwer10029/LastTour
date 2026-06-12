@@ -70,6 +70,19 @@ var _night_fuel_bar: ProgressBar = null
 var _night_fuel_label: Label = null
 var _night_vehicle_bar: ProgressBar = null
 var _night_vehicle_label: Label = null
+var _countdown_warning_label: Label = null
+var _gallery_btn: Button = null
+var _gallery_overlay: Control = null
+var _gallery_title: Label = null
+var _gallery_list: ItemList = null
+var _gallery_detail: Label = null
+var _seen_enemy_types: Array[String] = []
+
+# 事件日志：单个 RichTextLabel + 定长环形缓冲，避免每条日志各建一个 Label 节点
+# （旧方案节点数随波次单调增长 → 布局/滚动开销越打越卡）。
+const MAX_LOG_LINES := 14
+var _log_lines: Array[String] = []
+var _log_label: RichTextLabel = null
 
 const COLORS := {
 	"bg": "#0b1018", "panel": "#141c28", "border": "#2a3a4f",
@@ -87,12 +100,18 @@ func _ready() -> void:
 		start_btn.pressed.connect(func(): start_wave_pressed.emit())
 	if is_instance_valid(continue_btn):
 		continue_btn.pressed.connect(_on_continue_pressed)
+	_build_countdown_warning()
 	_build_power_panel()
 	_build_night_status_meters()
+	_build_enemy_gallery()
 	_setup_heatmap_switch()
 	_wire_hover_feedback()
 	for lbl in [phase_label, resource_label, timer_label]:
 		NightTdUiTheme.apply_holo_label(lbl)
+	if is_instance_valid(timer_label):
+		timer_label.custom_minimum_size = Vector2(156, 0)
+		timer_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		timer_label.add_theme_font_size_override("font_size", 24)
 	NightTdUiTheme.apply_holo_label(breach_label, true)
 	if is_instance_valid(breach_label):
 		breach_label.visible = false
@@ -126,6 +145,9 @@ func show_session_ui() -> void:
 	hide_result_dialog()
 	if is_instance_valid(heatmap_switch):
 		heatmap_switch.show()
+	if is_instance_valid(_gallery_btn):
+		_gallery_btn.show()
+	hide_enemy_gallery()
 	_play_intro_animation()
 
 
@@ -137,6 +159,9 @@ func hide_session_ui() -> void:
 		shell.hide()
 	if is_instance_valid(breach_label):
 		breach_label.visible = false
+	if is_instance_valid(_countdown_warning_label):
+		_countdown_warning_label.hide()
+	hide_enemy_gallery()
 	hide()
 
 
@@ -372,6 +397,239 @@ func _setup_heatmap_switch() -> void:
 	heatmap_switch.pressed.connect(_on_heatmap_switch_pressed)
 
 
+func _build_countdown_warning() -> void:
+	if not is_instance_valid(shell):
+		return
+	_countdown_warning_label = Label.new()
+	_countdown_warning_label.name = "CountdownWarning"
+	_countdown_warning_label.visible = false
+	_countdown_warning_label.z_index = 90
+	_countdown_warning_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_countdown_warning_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_countdown_warning_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_countdown_warning_label.add_theme_font_size_override("font_size", 34)
+	_countdown_warning_label.add_theme_color_override("font_color", Color(COLORS["danger"]))
+	_countdown_warning_label.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	_countdown_warning_label.offset_left = 240.0
+	_countdown_warning_label.offset_top = 86.0
+	_countdown_warning_label.offset_right = -300.0
+	_countdown_warning_label.offset_bottom = 138.0
+	shell.add_child(_countdown_warning_label)
+
+
+func show_placement_warning(seconds_left: int) -> void:
+	if not is_instance_valid(_countdown_warning_label):
+		return
+	_countdown_warning_label.text = "布防倒计时 %d 秒" % seconds_left
+	_countdown_warning_label.modulate = Color.WHITE
+	_countdown_warning_label.scale = Vector2.ONE
+	_countdown_warning_label.show()
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(_countdown_warning_label, "scale", Vector2(1.12, 1.12), 0.18)
+	tween.tween_property(_countdown_warning_label, "modulate:a", 0.58, 0.18)
+	tween.set_parallel(false)
+	tween.tween_property(_countdown_warning_label, "scale", Vector2.ONE, 0.24)
+	tween.tween_property(_countdown_warning_label, "modulate:a", 1.0, 0.24)
+	tween.tween_interval(2.6)
+	tween.tween_property(_countdown_warning_label, "modulate:a", 0.0, 0.35)
+	tween.finished.connect(func():
+		if is_instance_valid(_countdown_warning_label):
+			_countdown_warning_label.hide()
+			_countdown_warning_label.modulate.a = 1.0
+	)
+
+
+func _build_enemy_gallery() -> void:
+	var status_hbox := get_node_or_null("Shell/TopStatusPanel/Margin/StatusHBox")
+	if status_hbox != null:
+		_gallery_btn = Button.new()
+		_gallery_btn.text = "敌情图鉴"
+		_gallery_btn.custom_minimum_size = Vector2(104, 30)
+		_gallery_btn.focus_mode = Control.FOCUS_NONE
+		_gallery_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		HudTheme.apply_sci_fi_terminal_button(_gallery_btn, Color(COLORS["amber"]))
+		_gallery_btn.add_theme_font_size_override("font_size", 12)
+		_gallery_btn.pressed.connect(show_enemy_gallery)
+		status_hbox.add_child(_gallery_btn)
+	if not is_instance_valid(shell):
+		return
+	_gallery_overlay = Control.new()
+	_gallery_overlay.name = "EnemyGalleryOverlay"
+	_gallery_overlay.visible = false
+	_gallery_overlay.z_index = 110
+	_gallery_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_gallery_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	shell.add_child(_gallery_overlay)
+
+	var dim := ColorRect.new()
+	dim.color = Color(0.0, 0.0, 0.0, 0.56)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	_gallery_overlay.add_child(dim)
+
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_gallery_overlay.add_child(center)
+
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(660, 420)
+	panel.add_theme_stylebox_override("panel", NightTdUiTheme.panel_style(NightTdUiTheme.PANEL_DIALOG_LOG, 18))
+	center.add_child(panel)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 18)
+	margin.add_theme_constant_override("margin_top", 16)
+	margin.add_theme_constant_override("margin_right", 18)
+	margin.add_theme_constant_override("margin_bottom", 16)
+	panel.add_child(margin)
+
+	var outer := VBoxContainer.new()
+	outer.add_theme_constant_override("separation", 10)
+	margin.add_child(outer)
+
+	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", 10)
+	outer.add_child(top)
+	_gallery_title = Label.new()
+	_gallery_title.text = "敌情图鉴"
+	_gallery_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_gallery_title.add_theme_font_size_override("font_size", 18)
+	_gallery_title.add_theme_color_override("font_color", Color(COLORS["title"]))
+	top.add_child(_gallery_title)
+	var close_btn := Button.new()
+	close_btn.text = "关闭"
+	close_btn.focus_mode = Control.FOCUS_NONE
+	close_btn.pressed.connect(hide_enemy_gallery)
+	top.add_child(close_btn)
+
+	var body := HBoxContainer.new()
+	body.add_theme_constant_override("separation", 14)
+	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	outer.add_child(body)
+	_gallery_list = ItemList.new()
+	_gallery_list.custom_minimum_size = Vector2(220, 320)
+	_gallery_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_gallery_list.item_selected.connect(_on_gallery_enemy_selected)
+	body.add_child(_gallery_list)
+	var detail_scroll := ScrollContainer.new()
+	detail_scroll.custom_minimum_size = Vector2(390, 320)
+	detail_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	detail_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	detail_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	body.add_child(detail_scroll)
+	_gallery_detail = Label.new()
+	_gallery_detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_gallery_detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_gallery_detail.add_theme_color_override("font_color", Color(COLORS["title"]))
+	detail_scroll.add_child(_gallery_detail)
+
+
+func set_seen_enemy_types(types: Array) -> void:
+	_seen_enemy_types.clear()
+	for type_id in types:
+		_seen_enemy_types.append(str(type_id))
+	_refresh_enemy_gallery_list()
+
+
+func show_enemy_first_seen(type_id: String) -> void:
+	set_seen_enemy_types(_seen_enemy_types)
+	if is_instance_valid(_gallery_overlay) and _gallery_overlay.visible:
+		_select_gallery_type(type_id)
+		return
+	show_enemy_gallery(type_id, true)
+
+
+func show_enemy_gallery(type_id: String = "", first_seen: bool = false) -> void:
+	if not is_instance_valid(_gallery_overlay):
+		return
+	_refresh_enemy_gallery_list()
+	_gallery_title.text = "新敌人出现" if first_seen else "敌情图鉴"
+	_gallery_overlay.show()
+	if type_id != "":
+		_select_gallery_type(type_id)
+	elif is_instance_valid(_gallery_list) and _gallery_list.get_item_count() > 0:
+		_gallery_list.select(0)
+		_on_gallery_enemy_selected(0)
+	else:
+		_gallery_detail.text = "尚未遭遇新的敌方机体。"
+
+
+func hide_enemy_gallery() -> void:
+	if is_instance_valid(_gallery_overlay):
+		_gallery_overlay.hide()
+
+
+func _refresh_enemy_gallery_list() -> void:
+	if not is_instance_valid(_gallery_list):
+		return
+	_gallery_list.clear()
+	var all_types := NightTdDefs.get_enemy_type_ids()
+	for type_id in all_types:
+		var def := NightTdDefs.get_enemy_def(type_id)
+		var seen := _seen_enemy_types.has(type_id)
+		var label := str(def.get("name", type_id)) if seen else "%s（未遭遇）" % str(def.get("name", type_id))
+		var idx := _gallery_list.add_item(label)
+		_gallery_list.set_item_metadata(idx, type_id)
+		var color: Color = def.get("color", Color.WHITE)
+		_gallery_list.set_item_custom_fg_color(idx, color if seen else Color(COLORS["subtitle"]))
+
+
+func _select_gallery_type(type_id: String) -> void:
+	if not is_instance_valid(_gallery_list):
+		return
+	for i in range(_gallery_list.get_item_count()):
+		if str(_gallery_list.get_item_metadata(i)) == type_id:
+			_gallery_list.select(i)
+			_on_gallery_enemy_selected(i)
+			return
+	_gallery_detail.text = _enemy_gallery_text(type_id)
+
+
+func _on_gallery_enemy_selected(index: int) -> void:
+	if index < 0 or not is_instance_valid(_gallery_list):
+		return
+	var meta: Variant = _gallery_list.get_item_metadata(index)
+	if meta == null:
+		return
+	_gallery_detail.text = _enemy_gallery_text(str(meta))
+
+
+func _enemy_gallery_text(type_id: String) -> String:
+	var def := NightTdDefs.get_enemy_def(type_id)
+	if def.is_empty():
+		return type_id
+	var lines: PackedStringArray = []
+	lines.append(str(def.get("name", type_id)))
+	lines.append("")
+	lines.append("耐久 %.0f · 速度 %.0f · 突破伤害 %.0f" % [
+		float(def.get("hp", 0.0)),
+		float(def.get("speed", 0.0)),
+		float(def.get("base_damage", 0.0)),
+	])
+	var armor := float(def.get("armor", 0.0))
+	if armor > 0.0:
+		lines.append("装甲 %.0f%%：更耐打。" % (armor * 100.0))
+	if bool(def.get("hack_immune", false)):
+		lines.append("黑入免疫：入侵天线无法策反。")
+	elif float(def.get("hack_resist", 1.0)) > 1.0:
+		lines.append("黑入抗性 %.1fx：策反需要更久。" % float(def.get("hack_resist", 1.0)))
+	if bool(def.get("effect_immune", false)):
+		lines.append("效果免疫：不受减速等控制影响。")
+	if bool(def.get("is_shepherd", false)):
+		lines.append("指挥机：组织敌群绕开火力、压迫薄弱处；击毁或策反后指挥链会短暂中断。")
+	if float(def.get("heal_per_sec", 0.0)) > 0.0:
+		lines.append("修复中继：每秒修复附近敌人 %.0f 点。" % float(def.get("heal_per_sec", 0.0)))
+	var summon := str(def.get("summon_enemy", ""))
+	if summon != "":
+		var summon_def := NightTdDefs.get_enemy_def(summon)
+		lines.append("召唤：周期性呼叫 %s 增援。" % str(summon_def.get("name", summon)))
+	if float(def.get("breach_damage_factor", -1.0)) >= 0.0:
+		lines.append("突破特性：抵达车辆时造成高额固定比例伤害。")
+	return "\n".join(lines)
+
+
 func set_overlay_active(active: bool) -> void:
 	_overlay_active = active
 	if is_instance_valid(heatmap_switch):
@@ -486,7 +744,12 @@ func set_resource_text(text: String) -> void:
 	if is_instance_valid(resource_label): resource_label.text = text
 
 func set_placement_timer(sec: float) -> void:
-	if is_instance_valid(timer_label): timer_label.text = "布防 %.0fs" % maxf(sec, 0.0)
+	if not is_instance_valid(timer_label):
+		return
+	var remaining := maxf(sec, 0.0)
+	timer_label.text = "布防 %.0fs" % remaining
+	timer_label.add_theme_color_override("font_color", Color(COLORS["danger"]) if remaining <= 30.0 else Color(COLORS["title"]))
+	timer_label.add_theme_font_size_override("font_size", 26 if remaining <= 30.0 else 24)
 
 func set_combat_status(text: String) -> void:
 	if is_instance_valid(timer_label): timer_label.text = text
@@ -509,8 +772,32 @@ func increment_breach_counter(count: int) -> void:
 
 # -- Event Log ----------------------------------------------------
 
+func _ensure_log_label() -> RichTextLabel:
+	if is_instance_valid(_log_label):
+		return _log_label
+	if not is_instance_valid(event_log_vbox):
+		return null
+	# 清掉旧方案可能遗留的逐条 Label 子节点。
+	for child in event_log_vbox.get_children():
+		child.queue_free()
+	_log_label = RichTextLabel.new()
+	_log_label.name = "LogText"
+	_log_label.bbcode_enabled = true
+	_log_label.scroll_active = false   # 由外层 ScrollContainer 负责滚动
+	_log_label.fit_content = true
+	_log_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_log_label.add_theme_font_size_override("normal_font_size", 10)
+	_log_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_log_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	event_log_vbox.add_child(_log_label)
+	return _log_label
+
+
 func clear_log() -> void:
-	if is_instance_valid(event_log_vbox):
+	_log_lines.clear()
+	if is_instance_valid(_log_label):
+		_log_label.text = ""
+	elif is_instance_valid(event_log_vbox):
 		for child in event_log_vbox.get_children():
 			child.queue_free()
 
@@ -520,14 +807,15 @@ func _scroll_to_bottom() -> void:
 
 
 func append_log(line: String, text_color: Color = Color(COLORS["subtitle"])) -> void:
-	if not is_instance_valid(event_log_vbox): return
-	var entry := Label.new()
-	entry.text = line
-	entry.add_theme_font_size_override("font_size", 10)
-	entry.add_theme_color_override("font_color", text_color)
-	entry.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	entry.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	event_log_vbox.add_child(entry)
+	var label := _ensure_log_label()
+	if label == null:
+		return
+	# 环形缓冲：只保留最近 MAX_LOG_LINES 行，整体重渲染一次，
+	# 节点数恒为 1，开销与夜晚时长无关。
+	_log_lines.append("[color=#%s]%s[/color]" % [text_color.to_html(false), line])
+	while _log_lines.size() > MAX_LOG_LINES:
+		_log_lines.pop_front()
+	label.text = "\n".join(_log_lines)
 	# 用 call_deferred 替代 await，避免每次日志创建协程对象（GDScriptFunctionState）
 	if is_instance_valid(event_scroll):
 		_scroll_to_bottom.call_deferred()

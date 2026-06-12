@@ -49,6 +49,7 @@ func _check_terminal_audit() -> void:
 	var pass_report: Dictionary = terminal._evidence_audit_report()
 	_expect(bool(pass_report.get("passed", false)), "terminal audit should pass with all required evidence")
 	terminal.queue_free()
+	await process_frame
 
 
 func _check_td_mechanics() -> void:
@@ -56,6 +57,12 @@ func _check_td_mechanics() -> void:
 	_expect(scene != null, "night TD scene should load")
 	if scene == null:
 		return
+	_expect(float(NightTdDefs.get_tower_def("splash").get("range", 0.0)) >= 160.0, "splash tower should have wider range")
+	var repair_inv := InventoryData.new()
+	repair_inv.add("parts", ItemDefs.VEHICLE_REPAIR_PARTS_EACH)
+	repair_inv.add("wood", ItemDefs.VEHICLE_REPAIR_WOOD_EACH)
+	_expect(ItemDefs.can_repair_vehicle_with_inventory(repair_inv), "vehicle repair should require parts and wood")
+	_check_wave_scheduler_counts_are_stable()
 	var td: Node = scene.instantiate()
 	root.add_child(td)
 	await process_frame
@@ -148,7 +155,47 @@ func _check_td_mechanics() -> void:
 	td._update_towers(1.0)
 	_expect(int(td._towers[0].get("target_eid", -1)) == 22, "damaging tower should retarget after locked target dies")
 
+	td._towers.clear()
+	td._towers.append({
+		"id": 301,
+		"type": "hacker",
+		"cell": Vector2i(2, 2),
+		"world_pos": Vector2.ZERO,
+		"removed": false,
+		"power_scale": 1.0,
+		"target_eid": -1,
+		"hack_progress": 0.0,
+	})
+	td._enemies.clear()
+	td._enemies.append({"eid": 41, "type": "drone", "faction": "enemy", "hp": 55.0, "max_hp": 55.0, "pos": Vector2(20, 0), "base_damage": 4.0, "speed": 40.0, "hack_resist": 1.0, "hack_immune": false})
+	td._enemies.append({"eid": 42, "type": "heavy", "faction": "enemy", "hp": 220.0, "max_hp": 220.0, "pos": Vector2(48, 0), "base_damage": 12.0, "speed": 22.0, "hack_resist": 1.0, "hack_immune": false})
+	td._rebuild_enemy_index_cache()
+	td._update_hackers(0.1)
+	_expect(int(td._towers[0].get("target_eid", -1)) == 42, "idle powered hacker should auto-target a high-value enemy in range")
+	td._towers[0]["target_eid"] = 41
+	td._selected_hacker_id = 301
+	td._on_cell_combat_clicked(Vector2i(5, 5))
+	_expect(int(td._towers[0].get("target_eid", -1)) == 41, "missed hacker assignment click should not clear previous target")
+
 	td.queue_free()
+	await process_frame
+
+
+func _check_wave_scheduler_counts_are_stable() -> void:
+	var plan := NightTdWavePlan.new()
+	plan.waves = [{
+		"id": 1,
+		"entries": [
+			{"enemy": "drone", "count": 3, "spawn_interval": 0.1},
+			{"enemy": "scout", "count": 2, "spawn_interval": 0.1},
+		],
+	}]
+	var easy := NightTdWaveScheduler.new()
+	easy.build_from_plan(plan, 0, 1)
+	var hard_late := NightTdWaveScheduler.new()
+	hard_late.build_from_plan(plan, 2, 8)
+	_expect(easy.total_spawn_events == 5, "easy wave count should match plan count")
+	_expect(hard_late.total_spawn_events == 5, "hard late wave count should not inflate enemy count")
 
 
 func _terminal_required_evidence_ids() -> Array[String]:

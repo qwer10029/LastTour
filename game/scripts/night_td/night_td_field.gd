@@ -29,6 +29,8 @@ var _selected_tower_ids: Array[int] = []
 var _drag_start_pos: Vector2 = Vector2.ZERO
 var _drag_end_pos: Vector2 = Vector2.ZERO
 var _is_dragging := false
+var _is_wall_placing := false
+var _last_wall_place_cell := Vector2i(-999, -999)
 # Breach flash effects
 var _breach_flashes: Array[Dictionary] = []  # {pos, timer, max_timer}
 # 缓存字体引用，避免每帧在 draw_string 中查 ThemeDB
@@ -197,19 +199,39 @@ func _unhandled_input(event: InputEvent) -> void:
 			queue_redraw()
 		return
 
-	if not (event is InputEventMouseButton and event.pressed):
-		return
-	var cell := world_to_cell(get_global_mouse_position())
-	if not is_inside_grid(cell):
-		return
 	if _controller.phase == NightTdController.Phase.PLACE:
-		if event.button_index == MOUSE_BUTTON_LEFT:
-			cell_clicked.emit(cell)
-			queue_redraw()
-			get_viewport().set_input_as_handled()
-		elif event.button_index == MOUSE_BUTTON_RIGHT:
-			cell_right_clicked.emit(cell)
-			get_viewport().set_input_as_handled()
+		if event is InputEventMouseButton:
+			var cell := world_to_cell(get_global_mouse_position())
+			if event.button_index == MOUSE_BUTTON_LEFT:
+				if event.pressed:
+					if is_inside_grid(cell):
+						cell_clicked.emit(cell)
+						_last_wall_place_cell = cell
+						_is_wall_placing = _selected_build_tool_is_barrier()
+						queue_redraw()
+						get_viewport().set_input_as_handled()
+				else:
+					_is_wall_placing = false
+			elif event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+				_is_wall_placing = false
+				if is_inside_grid(cell):
+					cell_right_clicked.emit(cell)
+					get_viewport().set_input_as_handled()
+		elif event is InputEventMouseMotion and _is_wall_placing:
+			var cell := world_to_cell(get_global_mouse_position())
+			if is_inside_grid(cell) and cell != _last_wall_place_cell:
+				_last_wall_place_cell = cell
+				cell_clicked.emit(cell)
+				queue_redraw()
+				get_viewport().set_input_as_handled()
+
+
+func _selected_build_tool_is_barrier() -> bool:
+	if _controller == null:
+		return false
+	if _controller.has_method("get_selected_tower_type"):
+		return str(_controller.get_selected_tower_type()) == "barrier"
+	return str(_controller.get("_selected_tower")) == "barrier"
 
 
 func _select_towers_in_rect(from: Vector2, to: Vector2) -> void:

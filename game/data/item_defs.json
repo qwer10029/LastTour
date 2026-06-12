@@ -6,6 +6,11 @@
 		"wood_each": 2,
 		"scrap_alt_each": 1
 	},
+	"vehicle_repair": {
+		"parts_each": 1,
+		"wood_each": 2,
+		"heal_amount": 25
+	},
 	"craft_parts": {
 		"scrap_cost": 3,
 		"fuel_cost": 1,

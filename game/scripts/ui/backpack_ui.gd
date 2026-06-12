@@ -4,6 +4,7 @@ class_name BackpackUI
 signal item_use_requested(item_id: String)
 signal item_discard_requested(item_id: String)
 signal craft_parts_requested
+signal vehicle_repair_requested
 signal closed
 
 @export var panel_size: Vector2 = Vector2(540, 440)
@@ -16,6 +17,8 @@ var _use_btn: Button
 var _discard_btn: Button
 var _craft_hint_label: Label
 var _craft_btn: Button
+var _vehicle_repair_hint_label: Label
+var _vehicle_repair_btn: Button
 var _selected_id: String = ""
 var _inventory: InventoryData
 var _run_journal: RunJournal
@@ -25,6 +28,9 @@ var _journal_view: Control
 var _journal_list: ItemList
 var _journal_detail_scroll: ScrollContainer
 var _journal_detail: Label
+var _vehicle_repair_allowed := false
+var _vehicle_hp: float = -1.0
+var _vehicle_hp_max: float = -1.0
 
 
 func _ready() -> void:
@@ -140,6 +146,22 @@ func _build_ui() -> void:
 	_craft_btn.pressed.connect(func(): craft_parts_requested.emit())
 	side.add_child(_craft_btn)
 
+	_vehicle_repair_hint_label = Label.new()
+	_vehicle_repair_hint_label.text = "车辆修复：零件 ×%d + 木材 ×%d → 耐久 +%.0f" % [
+		ItemDefs.VEHICLE_REPAIR_PARTS_EACH,
+		ItemDefs.VEHICLE_REPAIR_WOOD_EACH,
+		ItemDefs.VEHICLE_REPAIR_HEAL_AMOUNT,
+	]
+	_vehicle_repair_hint_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_vehicle_repair_hint_label.add_theme_font_size_override("font_size", 13)
+	_vehicle_repair_hint_label.add_theme_color_override("font_color", Color("#bcc8d8"))
+	side.add_child(_vehicle_repair_hint_label)
+
+	_vehicle_repair_btn = Button.new()
+	_vehicle_repair_btn.text = "修复车辆"
+	_vehicle_repair_btn.pressed.connect(func(): vehicle_repair_requested.emit())
+	side.add_child(_vehicle_repair_btn)
+
 	var close_btn := Button.new()
 	close_btn.text = "关闭 (B / Esc)"
 	close_btn.pressed.connect(func(): hide_backpack())
@@ -183,9 +205,19 @@ func _build_ui() -> void:
 	journal_side.add_child(journal_close_btn)
 
 
-func show_backpack(inventory: InventoryData, run_journal: RunJournal = null, open_journal_tab: bool = false) -> void:
+func show_backpack(
+	inventory: InventoryData,
+	run_journal: RunJournal = null,
+	open_journal_tab: bool = false,
+	vehicle_repair_allowed: bool = false,
+	vehicle_hp: float = -1.0,
+	vehicle_hp_max: float = -1.0,
+) -> void:
 	_inventory = inventory
 	_run_journal = run_journal
+	_vehicle_repair_allowed = vehicle_repair_allowed
+	_vehicle_hp = vehicle_hp
+	_vehicle_hp_max = vehicle_hp_max
 	_refresh_list(inventory)
 	_refresh_journal_list()
 	if is_instance_valid(_tab_bar):
@@ -269,6 +301,20 @@ func _update_action_buttons() -> void:
 	var has_sel := _selected_id != ""
 	_use_btn.disabled = not has_sel or not ItemDefs.is_usable(_selected_id)
 	_discard_btn.disabled = not has_sel
+	var can_repair := _vehicle_repair_allowed
+	if can_repair and _inventory != null:
+		can_repair = ItemDefs.can_repair_vehicle_with_inventory(_inventory) and _vehicle_hp_max > 0.0 and _vehicle_hp < _vehicle_hp_max - 0.5
+	if is_instance_valid(_vehicle_repair_btn):
+		_vehicle_repair_btn.disabled = not can_repair
+		var base_text := "修复车辆"
+		if _vehicle_hp_max > 0.0:
+			base_text = "修复车辆 (%.0f/%.0f)" % [_vehicle_hp, _vehicle_hp_max]
+		_vehicle_repair_btn.text = base_text
+	if is_instance_valid(_vehicle_repair_hint_label):
+		if _vehicle_repair_allowed:
+			_vehicle_repair_hint_label.modulate = Color.WHITE
+		else:
+			_vehicle_repair_hint_label.modulate = Color(1, 1, 1, 0.45)
 
 
 func _on_use_pressed() -> void:
@@ -281,6 +327,10 @@ func _on_discard_pressed() -> void:
 	if _selected_id == "":
 		return
 	item_discard_requested.emit(_selected_id)
+
+
+func _on_vehicle_repair_pressed() -> void:
+	vehicle_repair_requested.emit()
 
 func _refresh_journal_list() -> void:
 	_journal_list.clear()

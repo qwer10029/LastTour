@@ -92,18 +92,8 @@ func _append_single_entry(
 	var pre_delay := maxf(float(entry.get("pre_delay", 0.0)), 0.0)
 	var move_speed := float(entry.get("move_speed", -1.0))
 	var spawn_side := str(entry.get("spawn_side", ""))   # 限制出生方向（空=四面随机）
-	var day_bonus := maxi((day_index - 1) / 2, 0)
-	if bool(entry.get("scale_with_day", true)):
-		count += day_bonus
-	match difficulty:
-		0:
-			count = maxi(count - 1, 1)
-		1:
-			pass
-		2:
-			count += 2
-			if move_speed > 0.0:
-				move_speed *= 1.1
+	var _unused_day := day_index
+	var _unused_diff := difficulty
 	var group_start := base_time + pre_delay + float(entry_index) * 0.01
 	for i in range(count):
 		_events.append({
