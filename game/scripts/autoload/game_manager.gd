@@ -15,7 +15,11 @@ const SCENE_SQUAD := "res://scenes/menu/squad_select.tscn"
 const SCENE_RUN_LOADING := "res://scenes/menu/run_loading.tscn"
 const SCENE_GAME := "res://scenes/day_exploration.tscn"
 const SCENE_DAY := "res://scenes/day_exploration.tscn"
+const SCENE_TUTORIAL_DAY := "res://scenes/tutorial/tutorial_day.tscn"
+const SCENE_TUTORIAL_COMPLETE := "res://scenes/tutorial/tutorial_complete.tscn"
 const SCENE_NIGHT_TD := "res://scenes/night_td/night_td_standalone.tscn"
+
+var is_tutorial_run := false
 
 var _difficulty_names := {
 	Difficulty.EASY: "简单",
@@ -61,8 +65,11 @@ var _game_paused := false           # 暂停状态（NightTdRoot 需要查询）
 ## 启动昼夜切换加载页，进入夜间塔防场景（有加载画面）。
 func go_to_night_with_loading(rs) -> void:
 	if rs != null:
-		rs.night_session_options = {}
-		rs.night_context = "normal"
+		if rs.night_session_options.is_empty():
+			rs.night_session_options = {}
+			rs.night_context = "normal"
+		else:
+			rs.night_context = str(rs.night_session_options.get("kind", "normal"))
 		rs.pending_open_terminal = false
 	run_state = rs
 	_preloaded_transition_scene = null
@@ -100,6 +107,9 @@ func apply_night_result_and_continue(result: Dictionary) -> void:
 	var no_day_advance := bool(result.get("no_day_advance", false))
 	run_state.apply_night_result(result)
 	if not run_state.run_ended:
+		if context == "tutorial" or run_state.run_context == "tutorial":
+			return_to_tutorial_hub_after_night()
+			return
 		if context == "thunder_leiting_boss" and str(result.get("outcome", "")) == "success":
 			run_state.thunder_leiting_defeated = true
 			run_state.final_defense_cleared = true
@@ -123,7 +133,8 @@ func start_day_exploration(rs = null) -> void:
 		_play_music_cue("terminal", 0.9)
 	else:
 		_play_music_cue("day_exploration", 1.2)
-	get_tree().change_scene_to_file(SCENE_DAY)
+	var scene_path := _day_scene_path()
+	get_tree().change_scene_to_file(scene_path)
 
 
 ## 启动白天探索场景（通过加载页）。
@@ -134,7 +145,7 @@ func start_day_via_loading(rs = null) -> void:
 	_preloaded_transition_scene = null
 	_await_transition_overlay_dismiss = true
 	_transition_direction = 1   # NIGHT_TO_DAY
-	_transition_target_scene = SCENE_DAY
+	_transition_target_scene = _day_scene_path()
 	if rs != null and bool(rs.pending_open_terminal):
 		_play_music_cue("terminal", 0.9)
 	else:
@@ -172,7 +183,7 @@ func enter_day_after_loading() -> void:
 		get_tree().change_scene_to_packed(_preloaded_transition_scene)
 		_preloaded_transition_scene = null
 	else:
-		get_tree().change_scene_to_file(SCENE_DAY)
+		get_tree().change_scene_to_file(_day_scene_path())
 	_schedule_overlay_safety_dismiss()
 
 
@@ -246,7 +257,70 @@ func _load_run_config() -> void:
 		_squad_defs = squads.duplicate(true)
 
 
+func begin_tutorial_flow() -> void:
+	is_tutorial_run = true
+	_pending_new_game = false
+	_pending_load_save = false
+	difficulty = Difficulty.NORMAL
+	squad_id = "scavenger"
+	_run_bootstrap = {}
+	run_state = null
+	_preloaded_game_scene = null
+	_await_enter_overlay_dismiss = true
+	_play_music_cue("menu_select", 0.6)
+	var transition := _run_transition()
+	if transition != null:
+		if transition.has_method("preload_background"):
+			transition.preload_background()
+		if transition.has_method("show_cover"):
+			transition.show_cover()
+	get_tree().change_scene_to_packed(RunLoadingScene)
+
+
+func get_exploration_scene_path() -> String:
+	return _day_scene_path()
+
+
+func finish_tutorial_run() -> void:
+	is_tutorial_run = false
+	get_tree().change_scene_to_file(SCENE_TUTORIAL_COMPLETE)
+
+
+func finish_tutorial_and_return_menu() -> void:
+	is_tutorial_run = false
+	go_to_main_menu()
+
+
+func return_to_tutorial_hub_after_night() -> void:
+	if run_state == null:
+		push_error("GameManager: run_state is null when returning to tutorial hub.")
+		go_to_main_menu()
+		return
+	is_tutorial_run = true
+	run_state.run_context = "tutorial"
+	run_state.tutorial_phase = "elevator"
+	run_state.tutorial_step = "go_elevator"
+	# 夜战在独立场景完成，回到白天前必须把阶段从 NIGHT_SETUP 重置为 DAY，
+	# 否则 scene_switch 模式会因 night_td 为空而只绘制黑夜背景（黑屏）。
+	var day_idx := maxi(run_state.day_index, 1)
+	run_state.time_dict = {
+		"phase": 0,
+		"day_index": day_idx,
+		"elapsed_in_phase": 0.0,
+		"evening_warning_sent": false,
+	}
+	run_state.travel_dict["mode"] = 0
+	run_state.travel_dict["current_district_index"] = -1
+	run_state.travel_dict["segment_target_index"] = -1
+	start_day_via_loading(run_state)
+
+
+func _day_scene_path() -> String:
+	return SCENE_TUTORIAL_DAY if is_tutorial_run else SCENE_DAY
+
+
 func go_to_main_menu() -> void:
+	is_tutorial_run = false
 	_pending_new_game = false
 	_pending_load_save = false
 	_run_bootstrap = {}
@@ -365,7 +439,7 @@ func enter_game_after_bootstrap() -> void:
 		get_tree().change_scene_to_packed(_preloaded_game_scene)
 		_preloaded_game_scene = null
 	else:
-		get_tree().change_scene_to_file(SCENE_GAME)
+		get_tree().change_scene_to_file(_day_scene_path())
 	_schedule_overlay_safety_dismiss()
 
 
@@ -463,6 +537,14 @@ func get_elevator_repair_cost(base: int) -> int:
 	var squad_def: Dictionary = _squad_defs.get(squad_id, {})
 	cost = maxi(cost - int(squad_def.get("repair_discount", 0)), 1)
 	return cost
+
+
+func get_tutorial_starting_items() -> Dictionary:
+	return {
+		"supplies": 2,
+		"parts": 5,
+		"scrap": 20,
+	}
 
 
 func get_starting_items() -> Dictionary:

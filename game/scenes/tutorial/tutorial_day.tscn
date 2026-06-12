@@ -1,0 +1,8 @@
+[gd_scene load_steps=3 format=3 uid="uid://tutorial_day_scene"]
+
+[ext_resource type="PackedScene" path="res://scenes/day_exploration.tscn" id="1_day"]
+[ext_resource type="Script" path="res://scripts/tutorial/tutorial_day.gd" id="2_tutorial"]
+
+[node name="TutorialDay" instance=ExtResource("1_day")]
+script = ExtResource("2_tutorial")
+enable_road_tuning_panel = false

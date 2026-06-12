@@ -189,6 +189,7 @@ func start_session(
 	_session_kind = str(_session_options.get("kind", "normal"))
 	_phase_title_override = str(_session_options.get("phase_title", ""))
 	_no_day_advance = bool(_session_options.get("no_day_advance", false))
+	_apply_tutorial_session_flags()
 	# 防御塔强化（Part B）：从白天安装的升级道具累加而来，建塔时乘到属性上。
 	_tower_upgrades = NightTdUpgrades.sanitize(_session_options.get("tower_upgrades", {}))
 	_blueprint_state = BlueprintCatalog.sanitize_run_state(_session_options.get("blueprint_state", {}))
@@ -293,25 +294,30 @@ func start_session(
 			hud.set_phase_text(_session_phase_title("布防阶段"))
 			hud.set_placement_timer(placement_remaining)
 			if _local_backpack != null:
-				hud.set_hint(
-					"俯视图：青色箭头为敌群涌动方向。左键放置设施、右键撤销（资源全额退还）。\n"
-					+ "用背包里的零件/废料建造设施；幸存设施夜末回收，被毁则折成少量废料。"
-				)
+				hud.set_hint(NightTdHintText.PLACE_BACKPACK)
 			else:
-				hud.set_hint(
-					"俯视图：青色箭头为敌群涌动方向。左键放置设施、右键撤销。\n"
-					+ "右侧列出每种设施消耗的部署点与效果，选中后点地图格子放置。"
-				)
+				hud.set_hint(NightTdHintText.PLACE_DEPLOY_BUDGET)
 		else:
 			hud.set_place_mode(false)
 			hud.set_combat_mode()
 			hud.set_phase_text(_session_phase_title("接敌中"))
-			hud.set_hint("没有进入布防模式，敌人将直接来袭。")
+			hud.set_hint(NightTdHintText.COMBAT_NO_PLACE)
 		hud.clear_log()
 		var upgrade_summary := NightTdUpgrades.summary_text(_tower_upgrades)
 		if upgrade_summary != "":
 			hud.append_log("防御塔强化生效：%s" % upgrade_summary, Color("#88e8b0"))
-		if hud.has_method("set_unlocked_towers"):
+		if _session_kind == "tutorial":
+			if is_instance_valid(hud):
+				var tutorial_flags: Dictionary = _session_options.get("tutorial_flags", {})
+				if bool(tutorial_flags.get("hide_power_panel", true)):
+					hud.show_power_panel(false)
+				if bool(tutorial_flags.get("hide_emergency_fuel", true)) and is_instance_valid(hud._fuel_boost_btn):
+					hud._fuel_boost_btn.hide()
+				if bool(tutorial_flags.get("hide_heatmap_until_place", false)) and is_instance_valid(hud.heatmap_switch):
+					hud.heatmap_switch.hide()
+				hud.set_unlocked_towers(["sniper", "barrier", "trap", "jammer"])
+				hud.set_hint(NightTdHintText.TUTORIAL_PLACE)
+		if hud.has_method("set_unlocked_towers") and _session_kind != "tutorial":
 			hud.set_unlocked_towers(_blueprint_state.get("unlocked_towers", []))
 		_notify_debug_skip_available()
 		_refresh_fuel_boost_hud()
@@ -320,6 +326,29 @@ func start_session(
 
 
 const DEBUG_SKIP_SESSION_KINDS := ["thunder_leiting_boss"]
+
+
+func _apply_tutorial_session_flags() -> void:
+	var flags: Dictionary = _session_options.get("tutorial_flags", {})
+	if flags.is_empty():
+		return
+	if flags.has("setup_time_sec"):
+		placement_time_sec = maxf(float(flags["setup_time_sec"]), 30.0)
+
+
+func _reveal_tutorial_night_features_after_place() -> void:
+	if _session_kind != "tutorial" or phase != Phase.PLACE:
+		return
+	var flags: Dictionary = _session_options.get("tutorial_flags", {})
+	if not bool(flags.get("gradual_features", false)):
+		return
+	if _count_active_towers() != 1 or not is_instance_valid(hud):
+		return
+	if bool(flags.get("hide_heatmap_until_place", false)) and is_instance_valid(hud.heatmap_switch):
+		hud.heatmap_switch.show()
+	if bool(flags.get("hide_power_panel", true)):
+		hud.show_power_panel(true)
+		hud.set_hint(NightTdHintText.TUTORIAL_AFTER_PLACE)
 
 
 func _debug_skip_available() -> bool:
@@ -1868,6 +1897,7 @@ func _on_cell_clicked(cell: Vector2i) -> void:
 	if is_instance_valid(hud):
 		_refresh_resource_hud()
 		hud.append_log("已部署 %s" % tdef.get("name", ""))
+	_reveal_tutorial_night_features_after_place()
 
 
 func _on_cell_right_clicked(cell: Vector2i) -> void:
@@ -1990,7 +2020,7 @@ func _begin_combat() -> void:
 	if is_instance_valid(hud):
 		hud.set_combat_mode()
 		hud.set_phase_text(_session_phase_title("接敌中"))
-		hud.set_hint("接敌中：敌人头顶箭头为当前前进方向，设施自动开火/阻挡。")
+		hud.set_hint(NightTdHintText.COMBAT_ACTIVE)
 		var total := _wave_scheduler.total_spawn_events if _wave_scheduler != null else _enemies_spawned + _wave_queue.size()
 		hud.set_combat_status("波次 %d/%d · 场上 %d 敌" % [_enemies_spawned, total, _count_hostiles()])
 		hud.append_log("—— 夜间威胁来袭 ——")

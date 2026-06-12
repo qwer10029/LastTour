@@ -76,6 +76,7 @@ var _night_fuel_label: Label = null
 var _night_vehicle_bar: ProgressBar = null
 var _night_vehicle_label: Label = null
 var _countdown_warning_label: Label = null
+var _tutorial_hint_label: Label = null
 var _gallery_btn: Button = null
 var _gallery_overlay: Control = null
 var _gallery_title: Label = null
@@ -834,8 +835,35 @@ func set_placement_timer(sec: float) -> void:
 func set_combat_status(text: String) -> void:
 	if is_instance_valid(timer_label): timer_label.text = text
 
+
+func _ensure_tutorial_hint_label() -> void:
+	if is_instance_valid(_tutorial_hint_label) or not is_instance_valid(shell):
+		return
+	_tutorial_hint_label = Label.new()
+	_tutorial_hint_label.name = "TutorialHintLabel"
+	_tutorial_hint_label.visible = false
+	_tutorial_hint_label.z_index = 85
+	_tutorial_hint_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tutorial_hint_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_tutorial_hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_tutorial_hint_label.add_theme_font_size_override("font_size", 15)
+	_tutorial_hint_label.add_theme_color_override("font_color", Color("#c8e8ff"))
+	_tutorial_hint_label.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	_tutorial_hint_label.offset_left = 280.0
+	_tutorial_hint_label.offset_top = 118.0
+	_tutorial_hint_label.offset_right = -280.0
+	_tutorial_hint_label.offset_bottom = 178.0
+	shell.add_child(_tutorial_hint_label)
+
+
 func set_hint(text: String) -> void:
-	pass
+	if text.strip_edges() == "":
+		if is_instance_valid(_tutorial_hint_label):
+			_tutorial_hint_label.hide()
+		return
+	_ensure_tutorial_hint_label()
+	_tutorial_hint_label.text = text
+	_tutorial_hint_label.show()
 
 
 # -- Breach Counter ------------------------------------------------

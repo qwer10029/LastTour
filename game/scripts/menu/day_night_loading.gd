@@ -12,6 +12,15 @@ const INTRO_SWEEP_SEC := 0.72
 const MIN_DISPLAY_SEC := 1.35
 const BOOT_HANDOFF_RATIO := 0.98
 
+const DAY_TO_NIGHT_STATUS := [
+	"加载场景资源…",
+	"正在准备夜间布防…",
+]
+const NIGHT_TO_DAY_STATUS := [
+	"加载场景资源…",
+	"正在加载探索区域…",
+]
+
 @onready var background_texture: TextureRect = %BackgroundTexture
 @onready var color_mask: ColorRect = %ColorMask
 @onready var intro_overlay: ColorRect = %IntroOverlay
@@ -26,6 +35,7 @@ var _direction: int = TransitionDirection.DAY_TO_NIGHT
 var _target_scene_path: String = ""
 var _preload_started := false
 var _shown_at_msec := 0
+var _threaded_load_started := false
 
 
 func _ready() -> void:
@@ -36,6 +46,7 @@ func _ready() -> void:
 	_setup_labels()
 	_setup_progress_ui()
 	_prepare_intro_state()
+	_begin_threaded_scene_load()
 	_play_entrance_animation()
 	await get_tree().create_timer(INTRO_FADE_SEC * 0.35).timeout
 	await _preload_and_enter()
@@ -175,22 +186,27 @@ func _play_screen_sweep() -> void:
 	)
 
 
+func _begin_threaded_scene_load() -> void:
+	if _target_scene_path.is_empty() or _threaded_load_started:
+		return
+	var status := ResourceLoader.load_threaded_request(_target_scene_path)
+	if status == OK or status == ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+		_threaded_load_started = true
+
+
 func _preload_and_enter() -> void:
 	if _preload_started:
 		return
 	_preload_started = true
-	_set_progress(0.0, "准备加载…")
+	_set_progress(0.08, "准备加载…")
 	await get_tree().process_frame
 
 	if _target_scene_path.is_empty():
 		await _finish_loading_and_enter()
 		return
 
-	var status := ResourceLoader.load_threaded_request(_target_scene_path)
-	if status != OK:
-		_set_progress(0.5, "跳过预加载…")
-		await _finish_loading_and_enter()
-		return
+	if not _threaded_load_started:
+		_begin_threaded_scene_load()
 
 	while true:
 		var progress: Array = []
@@ -207,12 +223,26 @@ func _preload_and_enter() -> void:
 			call_deferred("_enter_target_scene")
 			return
 		if not progress.is_empty():
-			_set_progress(0.1 + float(progress[0]) * (BOOT_HANDOFF_RATIO - 0.1), "加载场景资源…")
+			var load_ratio := float(progress[0])
+			_set_progress(0.12 + load_ratio * (BOOT_HANDOFF_RATIO - 0.12), _status_for_load_ratio(load_ratio))
 		await get_tree().process_frame
 
 
+func _status_for_load_ratio(ratio: float) -> String:
+	var lines := DAY_TO_NIGHT_STATUS if _direction == TransitionDirection.DAY_TO_NIGHT else NIGHT_TO_DAY_STATUS
+	if lines.is_empty():
+		return "加载场景资源…"
+	var index := clampi(int(ratio * float(lines.size())), 0, lines.size() - 1)
+	return lines[index]
+
+
 func _finish_loading_and_enter() -> void:
-	_set_progress(BOOT_HANDOFF_RATIO, "正在初始化…")
+	var handoff_label := "正在初始化…"
+	if _direction == TransitionDirection.DAY_TO_NIGHT:
+		handoff_label = "正在准备夜间布防…"
+	elif _direction == TransitionDirection.NIGHT_TO_DAY:
+		handoff_label = "正在加载探索区域…"
+	_set_progress(BOOT_HANDOFF_RATIO, handoff_label)
 	await _wait_min_display()
 	call_deferred("_enter_target_scene")
 
@@ -234,7 +264,6 @@ func _enter_target_scene() -> void:
 			if manager != null and manager.has_method("enter_day_after_loading"):
 				manager.enter_day_after_loading()
 				return
-	# 回退：直接切场景
 	if not _target_scene_path.is_empty():
 		get_tree().change_scene_to_file(_target_scene_path)
 

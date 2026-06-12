@@ -4,6 +4,8 @@ extends RefCounted
 
 const DayTopdownRenderScript := preload("res://scripts/day_topdown_render.gd")
 const ArmorySiteData := preload("res://scripts/armory_site_data.gd")
+const TutorialMapBuilderScript := preload("res://scripts/tutorial/tutorial_map_builder.gd")
+const NightTdSpritesScript := preload("res://scripts/night_td/night_td_sprites.gd")
 
 const MAP_COLUMNS := 24
 const MAP_ROWS := 18
@@ -15,6 +17,19 @@ const DEBUG_START_AT_STORY := true
 const TEXTURE_STEP_WEIGHT := 0.40
 const MAP_STEP_WEIGHT := 0.52
 const STORY_STEP_WEIGHT := 0.08
+
+
+static func build_tutorial_run_map(on_progress: Callable = Callable()) -> WorldMapData:
+	_report(on_progress, 0.55, "生成教学地图…")
+	var map := TutorialMapBuilderScript.build_tutorial_map()
+	_report(on_progress, 0.92, "教学地图就绪")
+	return map
+
+
+static func preload_night_td_assets(on_progress: Callable = Callable()) -> void:
+	_report(on_progress, 0.0, "加载塔防模块…")
+	NightTdSpritesScript.preload_all_towers()
+	_report(on_progress, 1.0, "塔防资源就绪")
 
 
 static func build_new_run_map(on_progress: Callable = Callable()) -> WorldMapData:

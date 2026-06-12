@@ -47,6 +47,9 @@ var foot_dict: Dictionary = {}
 var night_context: String = "normal"
 var night_session_options: Dictionary = {}
 var pending_open_terminal: bool = false
+var run_context: String = "normal"
+var tutorial_phase: String = "day"
+var tutorial_step: String = ""
 
 # -- 运行结束状态 --
 var run_ended: bool = false
@@ -399,6 +402,9 @@ func to_full_dict() -> Dictionary:
 		"foot": foot_dict,
 		"journal": journal_array,
 		"stories": stories_dict,
+		"run_context": run_context,
+		"tutorial_phase": tutorial_phase,
+		"tutorial_step": tutorial_step,
 	}
 
 
@@ -408,6 +414,9 @@ func from_full_dict(data: Dictionary) -> void:
 
 	# 补充 RunState 特有字段
 	total_layers = int(data.get("total_layers", 3))
+	run_context = str(data.get("run_context", run_context))
+	tutorial_phase = str(data.get("tutorial_phase", tutorial_phase))
+	tutorial_step = str(data.get("tutorial_step", tutorial_step))
 
 
 ## 创建一份独立副本。

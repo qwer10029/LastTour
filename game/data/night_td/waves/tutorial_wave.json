@@ -1,0 +1,16 @@
+{
+	"name": "教学 · 首次守夜",
+	"waves": [
+		{
+			"id": 1,
+			"entries": [
+				{
+					"enemy": "drone",
+					"count": 5,
+					"spawn_interval": 1.2,
+					"spawn_side": "east"
+				}
+			]
+		}
+	]
+}

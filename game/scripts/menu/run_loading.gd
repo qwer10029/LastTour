@@ -63,8 +63,12 @@ func _setup_background() -> void:
 func _setup_labels() -> void:
 	MenuStyles.style_title(title_label, 38)
 	MenuStyles.style_subtitle(subtitle_label)
-	title_label.text = "正在进入废墟"
 	var manager := _game_manager()
+	if manager != null and bool(manager.get("is_tutorial_run")):
+		title_label.text = "教学关卡"
+		subtitle_label.text = "熟悉探索、合成与守夜"
+		return
+	title_label.text = "正在进入废墟"
 	var difficulty_name := "普通"
 	var squad_name := "拾荒者"
 	if manager != null:
@@ -185,10 +189,14 @@ func _run_bootstrap_pipeline() -> void:
 	RunBootstrapScript.preload_render_assets(progress_cb)
 	await get_tree().process_frame
 
-	var map: WorldMapData = RunBootstrapScript.build_new_run_map(progress_cb)
+	var manager := _game_manager()
+	var map: WorldMapData
+	if manager != null and bool(manager.get("is_tutorial_run")):
+		map = RunBootstrapScript.build_tutorial_run_map(progress_cb)
+	else:
+		map = RunBootstrapScript.build_new_run_map(progress_cb)
 	await get_tree().process_frame
 
-	var manager := _game_manager()
 	if manager != null and manager.has_method("store_run_bootstrap"):
 		manager.store_run_bootstrap(RunBootstrapScript.pack_bootstrap(map))
 	_set_progress(0.94, "加载游戏场景…")
@@ -198,8 +206,10 @@ func _run_bootstrap_pipeline() -> void:
 
 
 func _preload_game_scene() -> void:
-	var scene_path := GameManager.SCENE_GAME
 	var manager := _game_manager()
+	var scene_path := GameManager.SCENE_GAME
+	if manager != null and manager.has_method("get_exploration_scene_path"):
+		scene_path = str(manager.get_exploration_scene_path())
 	var status := ResourceLoader.load_threaded_request(scene_path)
 	if status != OK:
 		return

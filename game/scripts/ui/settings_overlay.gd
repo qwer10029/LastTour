@@ -2,6 +2,7 @@ extends CanvasLayer
 class_name SettingsOverlay
 
 signal replay_tutorial_requested
+signal replay_tutorial_run_requested
 
 const COLOR_TITLE := Color("#6eb8ff")
 const COLOR_TEXT := Color("#e4eef8")
@@ -103,6 +104,14 @@ func _build_ui() -> void:
 	HudTheme.apply_sci_fi_terminal_button(tutorial_btn, Color("#8ec8e8"))
 	tutorial_btn.pressed.connect(_on_replay_tutorial_pressed)
 	root.add_child(tutorial_btn)
+
+	var tutorial_run_btn := Button.new()
+	tutorial_run_btn.text = "重玩教学关卡"
+	tutorial_run_btn.custom_minimum_size = Vector2(300, 44)
+	tutorial_run_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	HudTheme.apply_sci_fi_terminal_button(tutorial_run_btn, Color("#8ec8e8"))
+	tutorial_run_btn.pressed.connect(_on_replay_tutorial_run_pressed)
+	root.add_child(tutorial_run_btn)
 
 	var close_btn := Button.new()
 	close_btn.text = "关闭"
@@ -221,6 +230,10 @@ func _on_fullscreen_toggled(pressed: bool) -> void:
 
 func _on_replay_tutorial_pressed() -> void:
 	replay_tutorial_requested.emit()
+
+
+func _on_replay_tutorial_run_pressed() -> void:
+	replay_tutorial_run_requested.emit()
 	_hide_settings()
 
 

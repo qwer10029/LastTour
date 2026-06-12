@@ -17,6 +17,8 @@ var _use_btn: Button
 var _discard_btn: Button
 var _craft_hint_label: Label
 var _craft_btn: Button
+var _craft_highlight := false
+var _craft_pulse_tween: Tween
 var _vehicle_repair_hint_label: Label
 var _vehicle_repair_btn: Button
 var _selected_id: String = ""
@@ -315,6 +317,40 @@ func _update_action_buttons() -> void:
 			_vehicle_repair_hint_label.modulate = Color.WHITE
 		else:
 			_vehicle_repair_hint_label.modulate = Color(1, 1, 1, 0.45)
+	_update_craft_button()
+
+
+func set_craft_highlight(enabled: bool) -> void:
+	_craft_highlight = enabled
+	_update_craft_button()
+
+
+func _update_craft_button() -> void:
+	if not is_instance_valid(_craft_btn):
+		return
+	var can_craft := false
+	if _inventory != null:
+		can_craft = (
+			_inventory.has("scrap", ItemDefs.CRAFT_PARTS_SCRAP_COST)
+			and (
+				ItemDefs.CRAFT_PARTS_FUEL_COST <= 0
+				or _inventory.has("fuel", ItemDefs.CRAFT_PARTS_FUEL_COST)
+			)
+		)
+	_craft_btn.disabled = not can_craft
+	if _craft_highlight and can_craft:
+		HudTheme.apply_sci_fi_terminal_button(_craft_btn, Color("#ff9058"))
+		if _craft_pulse_tween != null and _craft_pulse_tween.is_valid():
+			_craft_pulse_tween.kill()
+		_craft_pulse_tween = _craft_btn.create_tween().set_loops()
+		_craft_pulse_tween.tween_property(_craft_btn, "modulate", Color(1.25, 1.12, 1.0, 1.0), 0.55)
+		_craft_pulse_tween.tween_property(_craft_btn, "modulate", Color.WHITE, 0.55)
+	elif is_instance_valid(_craft_btn):
+		if _craft_pulse_tween != null and _craft_pulse_tween.is_valid():
+			_craft_pulse_tween.kill()
+			_craft_pulse_tween = null
+		_craft_btn.modulate = Color.WHITE
+		HudTheme.apply_button(_craft_btn)
 
 
 func _on_use_pressed() -> void:

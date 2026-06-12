@@ -8,6 +8,7 @@ var management_rights_transferred: bool = false
 var endings_seen: Array[String] = []
 var journal_uploads: Array[Dictionary] = []
 var night_tutorial_seen: bool = false
+var tutorial_completed: bool = false
 var seen_enemy_types: Array[String] = []
 
 
@@ -21,6 +22,7 @@ func load_meta() -> void:
 	endings_seen = []
 	journal_uploads = []
 	night_tutorial_seen = false
+	tutorial_completed = false
 	seen_enemy_types = []
 	if not FileAccess.file_exists(META_PATH):
 		return
@@ -50,6 +52,7 @@ func load_meta() -> void:
 			continue
 	management_rights_transferred = bool(data.get("management_rights_transferred", false))
 	night_tutorial_seen = bool(data.get("night_tutorial_seen", false))
+	tutorial_completed = bool(data.get("tutorial_completed", false))
 	for e in data.get("endings_seen", []):
 		endings_seen.append(str(e))
 	for type_id_var in data.get("seen_enemy_types", []):
@@ -67,6 +70,7 @@ func save_meta() -> void:
 		"endings_seen": endings_seen,
 		"journal_uploads": journal_uploads,
 		"night_tutorial_seen": night_tutorial_seen,
+		"tutorial_completed": tutorial_completed,
 		"seen_enemy_types": seen_enemy_types,
 		"saved_at": int(Time.get_unix_time_from_system()),
 	}
@@ -86,6 +90,18 @@ func mark_night_tutorial_seen() -> void:
 
 func reset_night_tutorial() -> void:
 	night_tutorial_seen = false
+	save_meta()
+
+
+func mark_tutorial_completed() -> void:
+	if tutorial_completed:
+		return
+	tutorial_completed = true
+	save_meta()
+
+
+func reset_tutorial() -> void:
+	tutorial_completed = false
 	save_meta()
 
 

@@ -16,21 +16,23 @@ func _ready() -> void:
 
 
 func _boot_night_td_scene(should_dismiss_overlay: bool) -> void:
+	await _boot_night_td_session()
+	if should_dismiss_overlay or GameManager.should_dismiss_transition_overlay():
+		await GameManager.dismiss_transition_overlay()
+
+
+func _boot_night_td_session() -> void:
 	GameManager.report_overlay_boot_progress(0.985, "加载塔防模块…")
-	# 从 GameManager 获取 RunState
 	_run_state = GameManager.consume_run_state()
 	if _run_state == null:
 		print("NightTdRoot: no GameManager.run_state; starting standalone demo session.")
 		_start_demo_session()
-		if should_dismiss_overlay or GameManager.should_dismiss_transition_overlay():
-			await GameManager.dismiss_transition_overlay()
+		GameManager.report_overlay_boot_progress(0.998, "准备就绪")
 		return
 
-	# 加载 NightTd 子场景
 	_instantiate_td()
 	GameManager.report_overlay_boot_progress(0.992, "初始化夜战会话…")
 
-	# 启动塔防会话：使用背包快照（非 live 引用）
 	var backpack_total := 0
 	var snapshot: Dictionary = _run_state.backpack_dict.duplicate()
 	for key in snapshot.keys():
@@ -40,7 +42,7 @@ func _boot_night_td_scene(should_dismiss_overlay: bool) -> void:
 		backpack_total,
 		_run_state.difficulty,
 		_run_state.day_index,
-		true,  # allow_placement
+		true,
 		_run_state.vehicle_hp,
 		_run_state.vehicle_hp_max,
 		snapshot,
@@ -49,14 +51,11 @@ func _boot_night_td_scene(should_dismiss_overlay: bool) -> void:
 		_run_state.fuel_max,
 	)
 
-	# 暂停检查：将 GameManager 的暂停状态同步过来
 	if GameManager.has_method("is_game_paused") and GameManager.is_game_paused():
 		if _td.has_method("set_session_paused"):
 			_td.set_session_paused(true)
 
 	GameManager.report_overlay_boot_progress(0.998, "准备就绪")
-	if should_dismiss_overlay or GameManager.should_dismiss_transition_overlay():
-		await GameManager.dismiss_transition_overlay()
 
 
 func _instantiate_td() -> void:

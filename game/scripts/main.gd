@@ -3,14 +3,12 @@ extends Node2D
 const RunEndOverlayScript = preload("res://scripts/ui/run_end_overlay.gd")
 const CommunicationTerminalScript = preload("res://scripts/ui/communication_terminal.gd")
 const EndingOutcomeOverlayScript = preload("res://scripts/ui/ending_outcome_overlay.gd")
-const StartGuideOverlayScript = preload("res://scripts/ui/start_guide_overlay.gd")
 const DayTopdownRender = preload("res://scripts/day_topdown_render.gd")
 const RunStateClass = preload("res://scripts/run_state.gd")
 const NpcDialogueRunnerScript = preload("res://scripts/story/npc_dialogue_runner.gd")
 const StoryDialogueUIScene = preload("res://scenes/ui/story_dialogue_ui.tscn")
 const BlueprintCatalog := preload("res://scripts/night_td/blueprint_catalog.gd")
 const ArmorySiteData = preload("res://scripts/armory_site_data.gd")
-const BlueprintCatalog = preload("res://scripts/night_td/blueprint_catalog.gd")
 const FUEL_EMPTY_EPSILON := 0.001
 const THUNDER_LEITING_WAVE_PATH := "res://data/night_td/waves/night_wave_thunder_leiting.json"
 var _building_pick_index: int = 0
@@ -100,7 +98,6 @@ var _pending_thunder_district := -1
 var _run_end_overlay: CanvasLayer
 var _communication_terminal: CanvasLayer
 var _ending_outcome_overlay: CanvasLayer
-var _start_guide_overlay: CanvasLayer
 var _base_fuel_max: float = 999.0
 var _base_elevator_repair_cost: int = 3
 var _run_difficulty_name: String = "普通"
@@ -727,8 +724,11 @@ func _start_new_run() -> void:
 	if is_instance_valid(time_system):
 		time_system.start_day(1)
 	_play_music_cue("day_exploration", 1.0)
-	if is_instance_valid(_start_guide_overlay):
-		_start_guide_overlay.show_guide()
+
+
+func _is_tutorial_run() -> bool:
+	return false
+
 
 func _ensure_input_actions() -> void:
 	for action_name in ["move_up", "move_down", "move_left", "move_right", "interact", "repair", "pause", "enter_defense_mode", "toggle_backpack", "toggle_journal", "toggle_world_map", "cycle_building"]:
@@ -2513,9 +2513,6 @@ func _setup_run_end_ui() -> void:
 	_ending_outcome_overlay = EndingOutcomeOverlayScript.new()
 	add_child(_ending_outcome_overlay)
 	_ending_outcome_overlay.closed.connect(_on_ending_outcome_closed)
-	_start_guide_overlay = StartGuideOverlayScript.new()
-	add_child(_start_guide_overlay)
-	_start_guide_overlay.guide_closed.connect(_on_start_guide_closed)
 
 
 func _check_vehicle_destroyed() -> bool:
@@ -2749,11 +2746,6 @@ func _on_ending_outcome_closed() -> void:
 	if is_instance_valid(_ending_outcome_overlay):
 		_ending_outcome_overlay.hide_overlay()
 	_show_run_summary()
-
-
-func _on_start_guide_closed() -> void:
-	if is_instance_valid(_start_guide_overlay):
-		_start_guide_overlay.hide_overlay()
 
 
 func _show_run_summary() -> void:
@@ -3068,7 +3060,8 @@ func _apply_save_data(data: Dictionary) -> void:
 
 	var layer: Dictionary = data.get("layer", {})
 	_current_layer = int(layer.get("current_layer", 1))
-	StoryData.ensure_story_districts(_map, _current_layer)
+	if not _is_tutorial_run():
+		StoryData.ensure_story_districts(_map, _current_layer)
 	_elevator_repair_progress = int(layer.get("elevator_repair_progress", 0))
 	_final_defense_cleared = bool(layer.get("final_defense_cleared", false))
 	_thunder_leiting_defeated = bool(layer.get("thunder_leiting_defeated", false))
@@ -3175,6 +3168,14 @@ func _restore_time_phase_after_load(keep_terminal_music: bool = false) -> void:
 		return
 	match time_system.phase:
 		TimeSystem.Phase.NIGHT_SETUP:
+			if night_td == null:
+				time_system.start_day(maxi(time_system.day_index, 1))
+				time_system.resume()
+				if is_instance_valid(evening_notice):
+					evening_notice.hide_notice()
+				_evening_tint = 0.0
+				_play_music_cue("day_exploration", 1.0)
+				return
 			_force_return_to_vehicle_for_night()
 			if is_instance_valid(night_defense):
 				var snapshot: Dictionary = {}
@@ -5318,8 +5319,9 @@ func _generate_layer_map() -> void:
 		_current_layer >= total_layers,
 		debug_start_near_special,
 	)
-	StoryData.ensure_story_districts(_map, _current_layer)
-	StoryData.setup_tactical_hidden_sites(_map, _current_layer)
+	if not _is_tutorial_run():
+		StoryData.ensure_story_districts(_map, _current_layer)
+		StoryData.setup_tactical_hidden_sites(_map, _current_layer)
 	ArmorySiteData.place_on_map(_map, _current_layer)
 	if debug_start_near_special:
 		_map.set_start_near_special_building(_current_layer >= total_layers)

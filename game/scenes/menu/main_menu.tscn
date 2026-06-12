@@ -69,6 +69,12 @@ custom_minimum_size = Vector2(380, 58)
 layout_mode = 2
 text = "  ▶   继续游戏（无存档）"
 
+[node name="TutorialButton" type="Button" parent="Overlay/MenuCenter/MenuList"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(380, 58)
+layout_mode = 2
+text = "  ◈   教学关卡"
+
 [node name="JournalButton" type="Button" parent="Overlay/MenuCenter/MenuList"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(380, 58)

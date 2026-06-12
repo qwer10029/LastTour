@@ -122,6 +122,13 @@ func start_day(index: int = -1) -> void:
 	day_started.emit(day_index)
 
 
+func begin_evening_phase() -> void:
+	if phase == Phase.EVENING:
+		return
+	_evening_warning_sent = true
+	_enter_evening()
+
+
 func enter_night_setup(manual_setup: bool = false) -> void:
 	_set_phase(Phase.NIGHT_SETUP)
 	elapsed_in_phase = 0.0

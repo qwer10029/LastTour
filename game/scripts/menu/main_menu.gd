@@ -6,6 +6,7 @@ const JournalArchiveOverlayScript = preload("res://scripts/ui/journal_archive_ov
 @onready var background_texture: TextureRect = $Background
 @onready var title_label: Label = %TitleLabel
 @onready var new_game_button: Button = %NewGameButton
+@onready var tutorial_button: Button = %TutorialButton
 @onready var continue_button: Button = %ContinueButton
 @onready var journal_button: Button = %JournalButton
 @onready var settings_button: Button = %SettingsButton
@@ -23,6 +24,8 @@ func _ready() -> void:
 	_apply_menu_button_styles()
 
 	new_game_button.pressed.connect(_on_new_game_pressed)
+	if is_instance_valid(tutorial_button):
+		tutorial_button.pressed.connect(_on_tutorial_pressed)
 	continue_button.pressed.connect(_on_continue_pressed)
 	journal_button.pressed.connect(_on_journal_pressed)
 	settings_button.pressed.connect(_on_settings_pressed)
@@ -37,6 +40,8 @@ func _ready() -> void:
 	_settings_overlay = SettingsOverlay.new()
 	add_child(_settings_overlay)
 	_settings_overlay.replay_tutorial_requested.connect(_on_replay_tutorial_requested)
+	if _settings_overlay.has_signal("replay_tutorial_run_requested"):
+		_settings_overlay.replay_tutorial_run_requested.connect(_on_replay_tutorial_run_requested)
 
 	_refresh_continue_button()
 
@@ -61,6 +66,8 @@ func _load_texture(path: String) -> Texture2D:
 
 func _apply_menu_button_styles() -> void:
 	MenuStyles.style_new_game_button(new_game_button)
+	if is_instance_valid(tutorial_button):
+		MenuStyles.style_journal_button(tutorial_button)
 	MenuStyles.style_journal_button(journal_button)
 	MenuStyles.style_settings_button(settings_button)
 	_refresh_continue_button()
@@ -98,6 +105,10 @@ func _on_new_game_pressed() -> void:
 	GameManager.begin_new_game_flow()
 
 
+func _on_tutorial_pressed() -> void:
+	GameManager.begin_tutorial_flow()
+
+
 func _on_settings_pressed() -> void:
 	if is_instance_valid(_settings_overlay):
 		_settings_overlay.show_settings()
@@ -112,4 +123,13 @@ func _on_replay_tutorial_requested() -> void:
 		meta.reset_night_tutorial()
 	if placeholder_dialog:
 		placeholder_dialog.dialog_text = "夜晚教程将在下次进入夜晚布防时重新显示。"
+		placeholder_dialog.popup_centered()
+
+
+func _on_replay_tutorial_run_requested() -> void:
+	var meta := get_node_or_null("/root/MetaManager")
+	if meta != null and meta.has_method("reset_tutorial"):
+		meta.reset_tutorial()
+	if placeholder_dialog:
+		placeholder_dialog.dialog_text = "教学关卡完成标记已清除，可随时从主菜单重新进入。"
 		placeholder_dialog.popup_centered()
