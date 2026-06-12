@@ -6,7 +6,7 @@
 			"entries": [
 				{
 					"enemy": "drone",
-					"count": 12,
+					"count": 8,
 					"spawn_interval": 0.75,
 					"pre_delay": 0,
 					"move_speed": 58,
@@ -15,7 +15,7 @@
 				},
 				{
 					"enemy": "repair_mender",
-					"count": 2,
+					"count": 1,
 					"spawn_interval": 4.5,
 					"pre_delay": 8.0,
 					"move_speed": 28,
@@ -29,7 +29,7 @@
 			"entries": [
 				{
 					"enemy": "swarm",
-					"count": 18,
+					"count": 10,
 					"spawn_interval": 0.42,
 					"pre_delay": 0,
 					"move_speed": 68,
@@ -38,7 +38,7 @@
 				},
 				{
 					"enemy": "armored",
-					"count": 3,
+					"count": 2,
 					"spawn_interval": 3.0,
 					"pre_delay": 8.0,
 					"move_speed": 30,
@@ -61,7 +61,7 @@
 				},
 				{
 					"enemy": "saboteur",
-					"count": 4,
+					"count": 2,
 					"spawn_interval": 1.2,
 					"pre_delay": 9.0,
 					"move_speed": 62,

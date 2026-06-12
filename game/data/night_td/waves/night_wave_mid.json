@@ -6,7 +6,7 @@
 			"entries": [
 				{
 					"enemy": "drone",
-					"count": 10,
+					"count": 8,
 					"spawn_interval": 0.85,
 					"pre_delay": 0,
 					"move_speed": 56,
@@ -14,7 +14,7 @@
 				},
 				{
 					"enemy": "drone",
-					"count": 8,
+					"count": 6,
 					"spawn_interval": 0.95,
 					"pre_delay": 4.0,
 					"move_speed": 54,
@@ -27,7 +27,7 @@
 			"entries": [
 				{
 					"enemy": "swarm",
-					"count": 14,
+					"count": 10,
 					"spawn_interval": 0.5,
 					"pre_delay": 0,
 					"move_speed": 68,
@@ -35,7 +35,7 @@
 				},
 				{
 					"enemy": "scout",
-					"count": 4,
+					"count": 3,
 					"spawn_interval": 2.2,
 					"pre_delay": 6.0,
 					"move_speed": 44,
@@ -43,7 +43,7 @@
 				},
 				{
 					"enemy": "repair_mender",
-					"count": 2,
+					"count": 1,
 					"spawn_interval": 5.0,
 					"pre_delay": 8.0,
 					"move_speed": 26,
@@ -56,7 +56,7 @@
 			"entries": [
 				{
 					"enemy": "heavy",
-					"count": 3,
+					"count": 2,
 					"spawn_interval": 4.0,
 					"pre_delay": 0,
 					"move_speed": 30,
@@ -64,7 +64,7 @@
 				},
 				{
 					"enemy": "drone",
-					"count": 8,
+					"count": 5,
 					"spawn_interval": 0.8,
 					"pre_delay": 8.0,
 					"move_speed": 60,
@@ -72,7 +72,7 @@
 				},
 				{
 					"enemy": "scout",
-					"count": 3,
+					"count": 2,
 					"spawn_interval": 2.5,
 					"pre_delay": 12.0,
 					"move_speed": 46,
@@ -80,7 +80,7 @@
 				},
 				{
 					"enemy": "armored",
-					"count": 2,
+					"count": 1,
 					"spawn_interval": 3.5,
 					"pre_delay": 18.0,
 					"move_speed": 30,
@@ -88,7 +88,7 @@
 				},
 				{
 					"enemy": "saboteur",
-					"count": 3,
+					"count": 2,
 					"spawn_interval": 1.2,
 					"pre_delay": 22.0,
 					"move_speed": 64,

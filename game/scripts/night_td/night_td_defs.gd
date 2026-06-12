@@ -62,6 +62,40 @@ static func _load_data() -> void:
 			"radius": 14.0,
 			"desc": "广播刺耳噪声与伪信标，拖慢射程内敌人；无法影响特殊免疫目标。",
 		},
+		"hacker": {
+			"name": "入侵天线",
+			"cost": 2,
+			"range": 150.0,
+			"damage": 0.0,
+			"fire_interval": 0.0,
+			"hp": 35.0,
+			"color": Color("#5ac8e0"),
+			"radius": 14.0,
+			"desc": "战斗中点选它再点敌人，持续引导即可策反该机器为我方。耗电，可随时改派目标。",
+		},
+		"sniper": {
+			"name": "炮塔",
+			"cost": 2,
+			"range": 220.0,
+			"damage": 40.0,
+			"fire_interval": 2.2,
+			"hp": 30.0,
+			"color": Color("#7aa6ff"),
+			"radius": 13.0,
+			"desc": "超远射程单体炮击，伤害极高但射速慢。适合点杀重甲或高价值目标。",
+		},
+		"splash": {
+			"name": "电弧塔",
+			"cost": 2,
+			"range": 162.0,
+			"damage": 12.0,
+			"fire_interval": 1.1,
+			"hp": 45.0,
+			"splash_radius": 56.0,
+			"color": Color("#e0a23a"),
+			"radius": 15.0,
+			"desc": "中等射程范围伤害，每次攻击对目标点附近所有敌人造成电弧溅射，适合对付密集群体。",
+		},
 	}
 	_enemies = {
 		"drone": {
@@ -244,6 +278,23 @@ static func get_tower_button_text(type_id: String, selected: bool) -> String:
 				float(def.get("range", 0)),
 				float(def.get("slow_factor", 1.0)) * 100.0,
 			])
+		"hacker":
+			lines.append("范围 %.0f · 黑入速率 %.0f/s" % [
+				float(def.get("range", 0)),
+				float(def.get("hack_rate", 0)),
+			])
+		"sniper":
+			lines.append("射程 %.0f · 伤害 %.0f · 射速 %.1fs" % [
+				float(def.get("range", 0)),
+				float(def.get("damage", 0)),
+				float(def.get("fire_interval", 1)),
+			])
+		"splash":
+			lines.append("射程 %.0f · 范围 %.0f · 伤害 %.0f" % [
+				float(def.get("range", 0)),
+				float(def.get("splash_radius", 0)),
+				float(def.get("damage", 0)),
+			])
 	return "\n".join(lines)
 
 
@@ -251,3 +302,15 @@ static func get_enemy_def(type_id: String) -> Dictionary:
 	if _enemies.is_empty():
 		_load_data()
 	return _enemies.get(type_id, {})
+
+
+static func get_enemy_type_ids() -> Array[String]:
+	if _enemies.is_empty():
+		_load_data()
+	var ids: Array[String] = []
+	for key in _enemies.keys():
+		ids.append(str(key))
+	ids.sort_custom(func(a: String, b: String) -> bool:
+		return str(_enemies.get(a, {}).get("name", a)) < str(_enemies.get(b, {}).get("name", b))
+	)
+	return ids

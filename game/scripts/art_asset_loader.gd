@@ -566,5 +566,15 @@ static func clear_road_alpha_cache() -> void:
 			_alpha_key_cache.erase(key)
 
 
+## 仅清除缓存键中包含指定路径片段的条目（按需重载某一类素材，
+## 不波及共享缓存里的其它素材，如夜间塔防精灵 / 室内 NPC 立绘）。
+static func clear_alpha_cache_for_path(path_fragment: String) -> void:
+	if path_fragment == "":
+		return
+	for key in _alpha_key_cache.keys():
+		if str(key).contains(path_fragment):
+			_alpha_key_cache.erase(key)
+
+
 static func clear_alpha_cache() -> void:
 	_alpha_key_cache.clear()
