@@ -62,6 +62,13 @@ func _check_td_mechanics() -> void:
 	repair_inv.add("parts", ItemDefs.VEHICLE_REPAIR_PARTS_EACH)
 	repair_inv.add("wood", ItemDefs.VEHICLE_REPAIR_WOOD_EACH)
 	_expect(ItemDefs.can_repair_vehicle_with_inventory(repair_inv), "vehicle repair should require parts and wood")
+	var empty_energy := NightTdEnergy.new()
+	empty_energy.production_rate = 4.0
+	empty_energy.capacity = 60.0
+	empty_energy.current = 0.0
+	empty_energy.register_tower(9001, 2.0)
+	empty_energy.tick(1.0, {9001: 4.0})
+	_expect(empty_energy.last_actual_draw <= empty_energy.last_production_rate + 0.001, "empty energy storage should cap actual draw to generation rate")
 	_check_wave_scheduler_counts_are_stable()
 	var td: Node = scene.instantiate()
 	root.add_child(td)
@@ -80,6 +87,28 @@ func _check_td_mechanics() -> void:
 	)
 	await process_frame
 	td.set_process(false)
+
+	var hud := td.get_node_or_null("Hud")
+	_expect(hud != null, "night TD HUD should exist")
+	if hud != null:
+		hud.set_seen_enemy_types(["drone"])
+		hud.show_enemy_gallery()
+		var gallery := hud.get("_gallery_list") as ItemList
+		_expect(gallery != null, "enemy gallery list should exist")
+		if gallery != null:
+			_expect(gallery.get_item_count() == 1, "enemy gallery should hide unseen enemy types")
+			_expect(str(gallery.get_item_metadata(0)) == "drone", "enemy gallery should keep seen enemy metadata")
+		hud.hide_enemy_gallery()
+
+	var core := td.get_node_or_null("Field/DefenceCoreVisual")
+	_expect(core != null, "night TD defence core visual should exist")
+	if core != null:
+		var core_tex := core.get("_core_tex") as Texture2D
+		_expect(core_tex != null, "night TD base should show a vehicle marker texture")
+		if core_tex != null:
+			_expect(core_tex.get_width() > 0 and core_tex.get_height() > 0, "night TD base marker texture should be drawable")
+
+	_expect(td.get_node_or_null("Hud/Shell/DurabilityBar/Title") == null, "bottom durability bar should not show isolated vehicle endurance text")
 
 	td._on_fuel_boost_pressed()
 	td._update_fuel_boost(1.0)
