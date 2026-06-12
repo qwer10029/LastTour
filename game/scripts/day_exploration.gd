@@ -23,8 +23,10 @@ func _ready() -> void:
 	if road_render_settings == null:
 		road_render_settings = RoadRenderSettings.new()
 	DayTopdownRender.apply_settings(road_render_settings)
-	DayTopdownRender.reload_road_textures()
-	DayTopdownRender.reload_prop_textures()
+	# 幂等预热：贴图已缓存则秒回，避免每次昼夜场景切换都重新解码+抠图导致的卡顿。
+	# 生物群系变化时 set_overworld_biome() 会自行 reload，故此处不再无条件失效缓存。
+	DayTopdownRender.preload_road_textures()
+	DayTopdownRender.preload_prop_textures()
 	if enable_road_tuning_panel:
 		_setup_road_tuning_panel()
 	_ensure_input_actions()

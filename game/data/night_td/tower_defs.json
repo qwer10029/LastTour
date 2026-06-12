@@ -104,7 +104,7 @@
 		"splash": {
 			"name": "电弧塔",
 			"cost": 2,
-			"range": 120.0,
+			"range": 162.0,
 			"damage": 12.0,
 			"fire_interval": 1.1,
 			"hp": 45.0,

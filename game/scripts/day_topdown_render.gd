@@ -355,6 +355,16 @@ static func preload_interior_textures() -> void:
 	_ensure_interior_textures()
 
 
+## 幂等预热：道路/道具贴图已就绪则直接返回，避免每次进入白天场景重复解码+抠图。
+## 生物群系切换由 set_overworld_biome() 负责 reload，故此处无需失效现有缓存。
+static func preload_road_textures() -> void:
+	_ensure_road_textures()
+
+
+static func preload_prop_textures() -> void:
+	_ensure_prop_textures()
+
+
 static func draw_tiled_interior_floor(canvas: CanvasItem, panel_rect: Rect2, building_type: String = "") -> void:
 	var tex := _interior_floor_texture(building_type)
 	if tex == null:
@@ -1214,7 +1224,10 @@ static func reload_prop_textures() -> void:
 	_prop_textures_ready = false
 	_prop_textures.clear()
 	_tex_road_crater = null
-	ArtAssetLoader.clear_alpha_cache()
+	# 只清掉道具/路面碎屑的 alpha 缓存，保留夜间塔防精灵与室内立绘等共享缓存。
+	ArtAssetLoader.clear_alpha_cache_for_path(PROPS_DIR)
+	ArtAssetLoader.clear_alpha_cache_for_path(ROAD_TILE_DIR + "road_crater")
+	ArtAssetLoader.clear_alpha_cache_for_path(ROAD_SNOW_TILE_DIR + "road_crater")
 
 
 static func _ensure_prop_textures() -> void:

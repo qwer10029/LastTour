@@ -6,7 +6,7 @@
 			"entries": [
 				{
 					"enemy": "drone",
-					"count": 8,
+					"count": 6,
 					"spawn_interval": 0.9,
 					"pre_delay": 0,
 					"move_speed": 52,
@@ -15,7 +15,7 @@
 				},
 				{
 					"enemy": "armored",
-					"count": 2,
+					"count": 1,
 					"spawn_interval": 3.5,
 					"pre_delay": 6.0,
 					"move_speed": 26,
@@ -38,7 +38,7 @@
 				},
 				{
 					"enemy": "swarm",
-					"count": 10,
+					"count": 8,
 					"spawn_interval": 0.5,
 					"pre_delay": 5.0,
 					"move_speed": 60,

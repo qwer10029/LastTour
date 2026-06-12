@@ -52,6 +52,9 @@ var _projectiles: Array[Dictionary] = []
 # --- 流场寻路（P1）---
 const SEPARATION_WEIGHT := 0.6   # 分离转向权重：防止同场单位排成一条龙
 const BARRIER_FLOW_COST := 6.0   # 路障作为软性高代价格：流场优先绕行，被逼到墙角才硬挤
+# 分离转向的空间哈希：每帧建一次，把 O(n²) 的两两比较降到只查邻近网格 ≈ O(n)。
+const SEPARATION_CELL_SIZE := 48.0   # 哈希格边长（像素），约等于一个布防格
+var _sep_buckets: Dictionary = {}    # Vector2i(格坐标) -> Array[int]（_enemies 下标）
 var _flow: NightTdFlowField = null
 var _flow_dirty := true
 var _flow_rebuild_cooldown := 0.0    # 流场重建最小间隔（秒），防止 brownout 振荡导致每帧 Dijkstra
@@ -86,6 +89,8 @@ var _next_enemy_id := 1
 var _selected_hacker_id := -1       # 已点选、等待指派目标的入侵天线
 var _shepherd_degrade_until := 0.0  # 此刻之前指挥官退化为 base-rush
 var _combat_time := 0.0
+var _placement_warning_30_fired := false
+var _seen_enemy_types: Array[String] = []
 
 # --- 资源经济（P6）---
 # _local_backpack 是白天背包的快照副本（非 live 引用），TD 期间所有建造/回收/偷窃
@@ -240,6 +245,8 @@ func start_session(
 	_selected_hacker_id = -1
 	_shepherd_degrade_until = 0.0
 	_combat_time = 0.0
+	_placement_warning_30_fired = false
+	_seen_enemy_types.clear()
 	_activate_screen_camera()
 	_flow_dirty = true
 	_flow_rebuild_cooldown = 0.0
@@ -268,6 +275,8 @@ func start_session(
 		hud.show_session_ui()
 		if hud.has_method("set_overlay_active"):
 			hud.set_overlay_active(show_overlay)
+		if hud.has_method("set_seen_enemy_types"):
+			hud.set_seen_enemy_types([])
 		_sync_vehicle_durability_hud(false)
 		_refresh_resource_hud()
 		if phase == Phase.PLACE:
@@ -447,6 +456,12 @@ func _update_screen_camera() -> void:
 
 func _process_place(delta: float) -> void:
 	placement_remaining = maxf(placement_remaining - delta, 0.0)
+	if placement_remaining <= 30.0 and not _placement_warning_30_fired:
+		_placement_warning_30_fired = true
+		if is_instance_valid(hud):
+			hud.append_log("布防只剩 30 秒！", Color("#f0a040"))
+			if hud.has_method("show_placement_warning"):
+				hud.show_placement_warning(30)
 	if is_instance_valid(hud):
 		hud.set_placement_timer(placement_remaining)
 		_refresh_fuel_boost_hud()
@@ -573,11 +588,13 @@ func _spawn_from_spec(spec: Dictionary) -> void:
 	var def: Dictionary = NightTdDefs.get_enemy_def(type_id)
 	if def.is_empty():
 		return
+	_notify_enemy_type_seen(type_id)
 	var move_speed := float(spec.get("move_speed", -1.0))
 	if move_speed <= 0.0:
 		move_speed = float(def.get("speed", 50))
 	# Speed jitter ±15% so enemies in the same wave spread out
 	move_speed *= randf_range(0.85, 1.15)
+	move_speed *= _scale_enemy_stat(1.0, type_id, "speed")
 	var route_id := str(spec.get("route_id", ""))
 	var spawn_point := str(spec.get("spawn_point", ""))
 	var spawn_side := str(spec.get("spawn_side", ""))
@@ -597,10 +614,10 @@ func _spawn_from_spec(spec: Dictionary) -> void:
 		"type": type_id,
 		"name": str(def.get("name", type_id)),
 		"pos": pos,
-		"hp": float(def.get("hp", 20)),
-		"max_hp": float(def.get("hp", 20)),
+		"hp": _scale_enemy_stat(float(def.get("hp", 20)), type_id, "hp"),
+		"max_hp": _scale_enemy_stat(float(def.get("hp", 20)), type_id, "hp"),
 		"speed": move_speed,
-		"base_damage": float(def.get("base_damage", 5)),
+		"base_damage": _scale_enemy_stat(float(def.get("base_damage", 5)), type_id, "damage"),
 		"color": def.get("color", Color.WHITE),
 		"radius": float(def.get("radius", 10)),
 		"move_dir": Vector2.LEFT,
@@ -609,17 +626,17 @@ func _spawn_from_spec(spec: Dictionary) -> void:
 		"faction": "enemy",
 		"hacked_by": -1,
 		"is_shepherd": bool(def.get("is_shepherd", false)),
-		"hack_resist": float(def.get("hack_resist", 1.0)),
+		"hack_resist": _scale_enemy_stat(float(def.get("hack_resist", 1.0)), type_id, "hack"),
 		"hack_immune": bool(def.get("hack_immune", false)),
 		"effect_immune": bool(def.get("effect_immune", false)),
 		"breach_damage_factor": float(def.get("breach_damage_factor", -1.0)),
 		"summon_enemy": str(def.get("summon_enemy", "")),
-		"summon_interval_sec": float(def.get("summon_interval_sec", 0.0)),
-		"summon_timer": float(def.get("summon_interval_sec", 0.0)),
+		"summon_interval_sec": _scale_enemy_stat(float(def.get("summon_interval_sec", 0.0)), type_id, "summon_interval"),
+		"summon_timer": _scale_enemy_stat(float(def.get("summon_interval_sec", 0.0)), type_id, "summon_interval"),
 		"max_summoned_alive": int(def.get("max_summoned_alive", 0)),
 		"summoned_by": int(spec.get("summoned_by", -1)),
 		"heal_radius": float(def.get("heal_radius", 0.0)),
-		"heal_per_sec": float(def.get("heal_per_sec", 0.0)),
+		"heal_per_sec": _scale_enemy_stat(float(def.get("heal_per_sec", 0.0)), type_id, "heal"),
 	})
 	_enemy_index_by_eid[eid] = _enemies.size() - 1
 	_enemies_spawned += 1
@@ -633,6 +650,46 @@ func _spawn_from_spec(spec: Dictionary) -> void:
 				NightTdWavePlan.cell_label(spawn_cell),
 				route_hint,
 			])
+
+
+func _notify_enemy_type_seen(type_id: String) -> void:
+	if _seen_enemy_types.has(type_id):
+		return
+	_seen_enemy_types.append(type_id)
+	if not is_instance_valid(hud):
+		return
+	if hud.has_method("set_seen_enemy_types"):
+		hud.set_seen_enemy_types(_seen_enemy_types)
+	if hud.has_method("show_enemy_first_seen"):
+		hud.show_enemy_first_seen(type_id)
+
+
+func _scale_enemy_stat(value: float, type_id: String, stat: String) -> float:
+	if value <= 0.0:
+		return value
+	var diff_hp := {0: 0.82, 1: 1.0, 2: 1.24}
+	var diff_damage := {0: 0.78, 1: 1.0, 2: 1.20}
+	var diff_speed := {0: 0.94, 1: 1.0, 2: 1.05}
+	var diff_hack := {0: 0.85, 1: 1.0, 2: 1.14}
+	var day_step := clampi(day_index - 1, 0, 8)
+	match stat:
+		"hp":
+			return value * float(diff_hp.get(difficulty, 1.0)) * (1.0 + float(day_step) * 0.09)
+		"damage":
+			return value * float(diff_damage.get(difficulty, 1.0)) * (1.0 + float(day_step) * 0.07)
+		"speed":
+			return value * float(diff_speed.get(difficulty, 1.0)) * (1.0 + float(day_step) * 0.015)
+		"hack":
+			if bool(NightTdDefs.get_enemy_def(type_id).get("hack_immune", false)):
+				return value
+			return value * float(diff_hack.get(difficulty, 1.0)) * (1.0 + float(day_step) * 0.06)
+		"heal":
+			return value * float(diff_hp.get(difficulty, 1.0)) * (1.0 + float(day_step) * 0.06)
+		"summon_interval":
+			var pressure := float(diff_speed.get(difficulty, 1.0)) * (1.0 + float(day_step) * 0.03)
+			return maxf(value / maxf(pressure, 0.1), 1.0)
+		_:
+			return value
 
 
 func _resolve_spawn_cell(_route_id: String, _spawn_point: String, spawn_side: String = "") -> Vector2i:
@@ -797,6 +854,8 @@ func _breach_damage_for(enemy: Dictionary) -> float:
 
 func _update_enemies(delta: float) -> void:
 	var base_pos: Vector2 = field.get_vehicle_center_world()
+	# 分离转向空间哈希每帧重建一次（下标对应本帧 _enemies；移除发生在帧末，不影响本帧查询）。
+	_rebuild_separation_buckets()
 	# 流场按需重建（P1.3）：dirty 标记由放/拆塔、供电、黑入等触发。
 	# 加冷却时间防止 brownout 振荡导致每帧 Dijkstra（504 格 × 5 场 = 极高开销）。
 	if _flow_dirty and _flow_rebuild_cooldown <= 0.0:
@@ -1241,8 +1300,16 @@ func _update_hackers(delta: float) -> void:
 		var tdef: Dictionary = NightTdDefs.get_tower_def(str(tower["type"]))
 		if not bool(tdef.get("is_hack_tower", false)):
 			continue
+		var power_scale := float(tower.get("power_scale", 1.0))
+		if power_scale <= 0.05:
+			tower["target_eid"] = -1
+			tower["hack_progress"] = 0.0
+			continue
 		var target_eid := int(tower.get("target_eid", -1))
 		if target_eid < 0:
+			var auto_target := _find_hack_target_for_tower(tower, tdef)
+			if auto_target >= 0:
+				tower["target_eid"] = auto_target
 			tower["hack_progress"] = 0.0
 			continue
 		var enemy := _enemy_by_eid(target_eid)
@@ -1254,6 +1321,7 @@ func _update_hackers(delta: float) -> void:
 		var dist: float = (tower["world_pos"] as Vector2).distance_to(enemy["pos"])
 		if dist > float(tdef.get("range", 150.0)):
 			tower["hack_progress"] = maxf(float(tower.get("hack_progress", 0.0)) - delta * 10.0, 0.0)
+			tower["target_eid"] = -1
 			continue
 		enemy["hacked_by"] = int(tower.get("id", -1))
 		var curve: Dictionary = tdef.get("power_curve", {})
@@ -1321,6 +1389,43 @@ func _enemy_by_eid(eid: int) -> Dictionary:
 	return {}
 
 
+func _find_hack_target_for_tower(tower: Dictionary, tdef: Dictionary) -> int:
+	var origin: Vector2 = tower["world_pos"]
+	var range_px := float(tdef.get("range", 150.0))
+	var range_sq := range_px * range_px
+	var best_eid := -1
+	var best_score := -1.0
+	for enemy in _enemies:
+		if str(enemy.get("faction", "enemy")) != "enemy":
+			continue
+		if float(enemy.get("hp", 0.0)) <= 0.0:
+			continue
+		if bool(enemy.get("hack_immune", false)):
+			continue
+		var dist_sq := origin.distance_squared_to(enemy["pos"])
+		if dist_sq > range_sq:
+			continue
+		var score := _enemy_hack_value(enemy)
+		if score > best_score:
+			best_score = score
+			best_eid = int(enemy.get("eid", -1))
+	return best_eid
+
+
+func _enemy_hack_value(enemy: Dictionary) -> float:
+	var value := float(enemy.get("max_hp", enemy.get("hp", 1.0)))
+	value += float(enemy.get("base_damage", 0.0)) * 18.0
+	value += float(enemy.get("speed", 0.0)) * 1.2
+	value += maxf(float(enemy.get("hack_resist", 1.0)) - 1.0, 0.0) * 120.0
+	if bool(enemy.get("is_shepherd", false)):
+		value += 300.0
+	if float(enemy.get("heal_per_sec", 0.0)) > 0.0:
+		value += float(enemy.get("heal_per_sec", 0.0)) * 25.0
+	if str(enemy.get("summon_enemy", "")) != "":
+		value += 180.0
+	return value
+
+
 ## 战斗中左键点选（功率调度走右侧常驻列表，这里只管黑入指派）：
 ##   1) 已选入侵天线 + 点到敌人 → 指派黑入目标。
 ##   2) 点到一座入侵天线 → 选中它，等待指派目标。
@@ -1328,26 +1433,41 @@ func _enemy_by_eid(eid: int) -> Dictionary:
 func _on_cell_combat_clicked(cell: Vector2i) -> void:
 	if phase != Phase.COMBAT:
 		return
+	var tw := _tower_at_cell(cell)
 	# 1) 已选入侵天线 + 点到敌人 → 指派目标
 	if _selected_hacker_id >= 0:
 		var enemy := _enemy_at_cell(cell)
 		if not enemy.is_empty() and str(enemy.get("faction", "enemy")) == "enemy":
+			var hacker := _tower_by_id(_selected_hacker_id)
+			if hacker.is_empty():
+				return
+			var hack_def: Dictionary = NightTdDefs.get_tower_def(str(hacker.get("type", "")))
+			var dist: float = (hacker["world_pos"] as Vector2).distance_to(enemy["pos"])
+			if dist > float(hack_def.get("range", 150.0)):
+				if is_instance_valid(hud):
+					hud.append_log("目标超出入侵范围。", Color("#e87840"))
+				return
 			if bool(enemy.get("hack_immune", false)):
 				if is_instance_valid(hud):
 					var immune_name := str(NightTdDefs.get_enemy_def(str(enemy["type"])).get("name", enemy["type"]))
 					hud.append_log("%s 拒绝入侵：目标具备黑入免疫。" % immune_name, Color("#e87840"))
-				_selected_hacker_id = -1
 				return
-			var hacker := _tower_by_id(_selected_hacker_id)
-			if not hacker.is_empty():
-				hacker["target_eid"] = int(enemy["eid"])
-				hacker["hack_progress"] = float(hacker.get("hack_progress", 0.0))
+			hacker["target_eid"] = int(enemy["eid"])
+			hacker["hack_progress"] = float(hacker.get("hack_progress", 0.0))
+			if is_instance_valid(hud):
+				var en := str(NightTdDefs.get_enemy_def(str(enemy["type"])).get("name", enemy["type"]))
+				hud.append_log("入侵天线锁定目标：%s" % en)
+			_selected_hacker_id = -1
+			return
+		if not tw.is_empty() and tw.has("id"):
+			var tdef: Dictionary = NightTdDefs.get_tower_def(str(tw["type"]))
+			if bool(tdef.get("is_hack_tower", false)):
+				_selected_hacker_id = int(tw["id"])
 				if is_instance_valid(hud):
-					var en := str(NightTdDefs.get_enemy_def(str(enemy["type"])).get("name", enemy["type"]))
-					hud.append_log("入侵天线锁定目标：%s" % en)
+					hud.append_log("已切换入侵天线：继续指派目标")
 				return
+		return
 	# 2) 点到入侵天线 → 选中等待指派
-	var tw := _tower_at_cell(cell)
 	if not tw.is_empty() and tw.has("id"):
 		var tdef: Dictionary = NightTdDefs.get_tower_def(str(tw["type"]))
 		if bool(tdef.get("is_hack_tower", false)):
@@ -1611,15 +1731,35 @@ func _flow_dir_at(pos: Vector2, base_pos: Vector2) -> Vector2:
 func _separation_dir(index: int, pos: Vector2, radius: float) -> Vector2:
 	var push := Vector2.ZERO
 	var r2 := radius * radius
-	for j in range(_enemies.size()):
-		if j == index:
-			continue
-		var other_pos: Vector2 = _enemies[j]["pos"]
-		var delta := pos - other_pos
-		var d2 := delta.length_squared()
-		if d2 > 0.0001 and d2 < r2:
-			push += delta / d2  # 越近推力越大
+	# 只扫描本格 + 周围 8 格的单位（半径 < 2 格时足够覆盖），
+	# 而非遍历全场，避免敌群规模上升时的 O(n²) 卡顿。
+	var base_cell := _sep_cell_of(pos)
+	for oy in range(-1, 2):
+		for ox in range(-1, 2):
+			var bucket: Array = _sep_buckets.get(base_cell + Vector2i(ox, oy), [])
+			for j in bucket:
+				if j == index:
+					continue
+				var other_pos: Vector2 = _enemies[j]["pos"]
+				var delta := pos - other_pos
+				var d2 := delta.length_squared()
+				if d2 > 0.0001 and d2 < r2:
+					push += delta / d2  # 越近推力越大
 	return push.normalized() if push.length_squared() > 0.0001 else Vector2.ZERO
+
+
+func _sep_cell_of(pos: Vector2) -> Vector2i:
+	return Vector2i(floori(pos.x / SEPARATION_CELL_SIZE), floori(pos.y / SEPARATION_CELL_SIZE))
+
+
+## 每帧重建分离哈希：把所有单位按所在格归桶，供 _separation_dir 邻域查询。
+func _rebuild_separation_buckets() -> void:
+	_sep_buckets.clear()
+	for i in range(_enemies.size()):
+		var cell := _sep_cell_of(_enemies[i]["pos"])
+		var bucket: Array = _sep_buckets.get(cell, [])
+		bucket.append(i)
+		_sep_buckets[cell] = bucket
 
 
 func _on_cell_clicked(cell: Vector2i) -> void:
@@ -1761,6 +1901,10 @@ func _refresh_resource_hud() -> void:
 
 func _on_tower_selected(type_id: String) -> void:
 	_selected_tower = type_id
+
+
+func get_selected_tower_type() -> String:
+	return _selected_tower
 
 
 func _begin_combat() -> void:
@@ -1919,7 +2063,8 @@ func _fmt_items(d: Variant) -> String:
 
 
 func _resolve_wave_plan_path(day: int, diff: int) -> String:
-	if day >= 6 or diff >= 2:
+	var _unused_diff := diff
+	if day >= 6:
 		return "res://data/night_td/waves/night_wave_heavy.json"
 	if day >= 3:
 		return "res://data/night_td/waves/night_wave_mid.json"
@@ -2105,15 +2250,9 @@ func _build_wave_queue() -> Array[String]:
 	var queue: Array[String] = []
 	var rng := RandomNumberGenerator.new()
 	rng.seed = day_index * 997 + difficulty * 131
-	var drone_count: int = 5
-	var scout_count: int = 2
-	match difficulty:
-		0:
-			drone_count = 4
-			scout_count = 1
-		2:
-			drone_count = 6
-			scout_count = 4
+	var day_step := clampi(day_index - 1, 0, 4)
+	var drone_count: int = 15 + day_step * 2
+	var scout_count: int = 8 + day_step
 	for _i in range(drone_count):
 		queue.append("drone")
 	for _i in range(scout_count):
