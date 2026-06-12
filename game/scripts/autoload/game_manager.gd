@@ -3,6 +3,7 @@ extends Node
 const RunStateClass = preload("res://scripts/run_state.gd")
 const DifficultySelectScript := preload("res://scripts/menu/difficulty_select.gd")
 const RunLoadingScene := preload("res://scenes/menu/run_loading.tscn")
+const DayNightLoadingScene := preload("res://scenes/menu/day_night_loading.tscn")
 
 enum Difficulty { EASY, NORMAL, HARD }
 const RUN_CONFIG_PATH := "res://data/run_config.json"
@@ -12,7 +13,7 @@ const SCENE_OPENING_PROLOGUE := "res://scenes/menu/opening_prologue.tscn"
 const SCENE_DIFFICULTY := "res://scenes/menu/difficulty_select.tscn"
 const SCENE_SQUAD := "res://scenes/menu/squad_select.tscn"
 const SCENE_RUN_LOADING := "res://scenes/menu/run_loading.tscn"
-const SCENE_GAME := "res://scenes/main.tscn"
+const SCENE_GAME := "res://scenes/day_exploration.tscn"
 const SCENE_DAY := "res://scenes/day_exploration.tscn"
 const SCENE_NIGHT_TD := "res://scenes/night_td/night_td_standalone.tscn"
 
@@ -26,14 +27,12 @@ var _squad_defs := {
 	"scavenger": {
 		"name": "拾荒者",
 		"description": "开箱与拾取时更容易获得额外资源。",
-		"inventory_bonus": 1,
 		"repair_discount": 0,
 		"fuel_multiplier": 1.0,
 	},
 	"logistics": {
 		"name": "后勤型",
 		"description": "修复电梯时消耗的资源更少。",
-		"inventory_bonus": 0,
 		"repair_discount": 1,
 		"fuel_multiplier": 1.0,
 	},
@@ -48,12 +47,38 @@ var _pending_load_save := false
 var _run_bootstrap: Dictionary = {}
 var _preloaded_game_scene: PackedScene = null
 var _await_enter_overlay_dismiss := false
+var _preloaded_transition_scene: PackedScene = null
+var _await_transition_overlay_dismiss := false
+var _transition_direction := 0
+var _transition_target_scene := ""
+const OVERLAY_SAFETY_DISMISS_SEC := 12.0
 
 # -- 场景切换模式（方案四）：Day/Night 独立场景之间的状态传递 --
 var run_state = null   # RunState — 跨场景共享状态（类型在 preload 中解析）
 var _game_paused := false           # 暂停状态（NightTdRoot 需要查询）
 
-## 请求切换到夜间塔防场景。
+## 启动昼夜切换加载页，进入夜间塔防场景（有加载画面）。
+func go_to_night_with_loading(rs) -> void:
+	if rs != null:
+		rs.night_session_options = {}
+		rs.night_context = "normal"
+		rs.pending_open_terminal = false
+	run_state = rs
+	_preloaded_transition_scene = null
+	_await_transition_overlay_dismiss = true
+	_transition_direction = 0   # DAY_TO_NIGHT
+	_transition_target_scene = SCENE_NIGHT_TD
+	_play_music_cue("night_setup", 1.0)
+	var transition := _run_transition()
+	if transition != null:
+		if transition.has_method("preload_background"):
+			transition.preload_background()
+		if transition.has_method("show_cover"):
+			transition.show_cover()
+	get_tree().change_scene_to_packed(DayNightLoadingScene)
+
+
+## 请求切换到夜间塔防场景（无加载画面，直接切换，保留兼容）。
 func request_night_defense(rs, session_options: Dictionary = {}) -> void:
 	if rs != null:
 		rs.night_session_options = session_options.duplicate(true)
@@ -81,7 +106,7 @@ func apply_night_result_and_continue(result: Dictionary) -> void:
 			run_state.thunder_leiting_defeated = true
 		elif not no_day_advance:
 			run_state.advance_after_normal_night()
-	start_day_exploration(run_state)
+	start_day_via_loading(run_state)
 
 
 ## 返回当前 RunState。夜战结束前不能清空，否则结果无法回写。
@@ -89,7 +114,7 @@ func consume_run_state():
 	return run_state
 
 
-## 启动白天探索场景（方案四入口）。
+## 启动白天探索场景（方案四入口，无加载画面，保留兼容）。
 func start_day_exploration(rs = null) -> void:
 	run_state = rs
 	_pending_new_game = false
@@ -99,6 +124,82 @@ func start_day_exploration(rs = null) -> void:
 	else:
 		_play_music_cue("day_exploration", 1.2)
 	get_tree().change_scene_to_file(SCENE_DAY)
+
+
+## 启动白天探索场景（通过加载页）。
+func start_day_via_loading(rs = null) -> void:
+	run_state = rs
+	_pending_new_game = false
+	_pending_load_save = false
+	_preloaded_transition_scene = null
+	_await_transition_overlay_dismiss = true
+	_transition_direction = 1   # NIGHT_TO_DAY
+	_transition_target_scene = SCENE_DAY
+	if rs != null and bool(rs.pending_open_terminal):
+		_play_music_cue("terminal", 0.9)
+	else:
+		_play_music_cue("day_exploration", 1.2)
+	var transition := _run_transition()
+	if transition != null:
+		if transition.has_method("preload_background"):
+			transition.preload_background()
+		if transition.has_method("show_cover"):
+			transition.show_cover()
+	get_tree().change_scene_to_packed(DayNightLoadingScene)
+
+
+## 加载页预加载完成后，进入夜间塔防场景。
+func enter_night_td_after_loading() -> void:
+	_await_transition_overlay_dismiss = true
+	var transition := _run_transition()
+	if transition != null and transition.has_method("show_cover"):
+		transition.show_cover()
+	if _preloaded_transition_scene != null:
+		get_tree().change_scene_to_packed(_preloaded_transition_scene)
+		_preloaded_transition_scene = null
+	else:
+		get_tree().change_scene_to_file(SCENE_NIGHT_TD)
+	_schedule_overlay_safety_dismiss()
+
+
+## 加载页预加载完成后，进入白天探索场景。
+func enter_day_after_loading() -> void:
+	_await_transition_overlay_dismiss = true
+	var transition := _run_transition()
+	if transition != null and transition.has_method("show_cover"):
+		transition.show_cover()
+	if _preloaded_transition_scene != null:
+		get_tree().change_scene_to_packed(_preloaded_transition_scene)
+		_preloaded_transition_scene = null
+	else:
+		get_tree().change_scene_to_file(SCENE_DAY)
+	_schedule_overlay_safety_dismiss()
+
+
+## 供 DayNightLoading 存储预加载完成的 PackedScene。
+func set_preloaded_scene_for_transition(scene: PackedScene) -> void:
+	_preloaded_transition_scene = scene
+
+
+## 供 DayNightLoading 读取过渡方向与目标场景路径。
+func get_day_night_loading_params() -> Dictionary:
+	return {
+		"direction": _transition_direction,
+		"target_scene": _transition_target_scene,
+	}
+
+
+## 目标场景 _ready() 中检查是否需要关闭过渡遮罩。
+func should_dismiss_transition_overlay() -> bool:
+	return _await_transition_overlay_dismiss
+
+
+## 目标场景 _ready() 中调用，淡出过渡遮罩。
+func dismiss_transition_overlay() -> void:
+	if not _await_transition_overlay_dismiss:
+		return
+	_await_transition_overlay_dismiss = false
+	await _fade_out_or_hide_overlay()
 
 
 ## 检查游戏是否暂停（供 NightTdController 查询）。
@@ -150,6 +251,8 @@ func go_to_main_menu() -> void:
 	_run_bootstrap = {}
 	_preloaded_game_scene = null
 	_await_enter_overlay_dismiss = false
+	_await_transition_overlay_dismiss = false
+	_preloaded_transition_scene = null
 	var transition := _run_transition()
 	if transition != null and transition.has_method("hide_cover"):
 		transition.hide_cover()
@@ -241,17 +344,11 @@ func dismiss_enter_overlay() -> void:
 	if not _await_enter_overlay_dismiss:
 		return
 	_await_enter_overlay_dismiss = false
-	var transition := _run_transition()
-	if (
-		transition != null
-		and transition.has_method("is_covering")
-		and transition.has_method("fade_out_cover")
-		and bool(transition.is_covering())
-	):
-		await transition.fade_out_cover()
+	await _fade_out_or_hide_overlay()
 
 
 func enter_game_after_bootstrap() -> void:
+	_await_enter_overlay_dismiss = true
 	_play_music_cue("day_exploration", 1.0)
 	var transition := _run_transition()
 	if transition != null and transition.has_method("show_cover"):
@@ -261,6 +358,41 @@ func enter_game_after_bootstrap() -> void:
 		_preloaded_game_scene = null
 	else:
 		get_tree().change_scene_to_file(SCENE_GAME)
+	_schedule_overlay_safety_dismiss()
+
+
+func _fade_out_or_hide_overlay() -> void:
+	var transition := _run_transition()
+	if transition == null:
+		return
+	if (
+		transition.has_method("is_covering")
+		and transition.has_method("fade_out_cover")
+		and bool(transition.is_covering())
+	):
+		await transition.fade_out_cover()
+		return
+	if transition.has_method("hide_cover"):
+		transition.hide_cover()
+
+
+func _schedule_overlay_safety_dismiss() -> void:
+	call_deferred("_overlay_safety_dismiss_job")
+
+
+func _overlay_safety_dismiss_job() -> void:
+	var waited := 0.0
+	while waited < OVERLAY_SAFETY_DISMISS_SEC:
+		if not _await_enter_overlay_dismiss and not _await_transition_overlay_dismiss:
+			return
+		await get_tree().create_timer(0.25).timeout
+		waited += 0.25
+	if _await_enter_overlay_dismiss:
+		push_warning("GameManager: 入场遮罩超时，强制淡出。")
+		await dismiss_enter_overlay()
+	if _await_transition_overlay_dismiss:
+		push_warning("GameManager: 过渡遮罩超时，强制淡出。")
+		await dismiss_transition_overlay()
 
 
 func _run_transition() -> Node:
@@ -319,17 +451,12 @@ func get_elevator_repair_cost(base: int) -> int:
 	return cost
 
 
-func get_starting_inventory() -> int:
-	var squad_def: Dictionary = _squad_defs.get(squad_id, {})
-	return int(squad_def.get("inventory_bonus", 0))
-
-
 func get_starting_items() -> Dictionary:
 	var items := {
 		"supplies": 4,
 		"wood": 1,
 		"parts": 1,
-		"scrap": 1,
+		"scrap": 40,
 	}
 	var start_cfg: Dictionary = _run_config.get("starting_items", {})
 	var default_items: Dictionary = start_cfg.get("default", {})

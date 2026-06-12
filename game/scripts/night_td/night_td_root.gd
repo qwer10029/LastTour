@@ -11,11 +11,18 @@ var _run_state  # RunState
 
 
 func _ready() -> void:
+	var should_dismiss_overlay := GameManager.should_dismiss_transition_overlay()
+	call_deferred("_boot_night_td_scene", should_dismiss_overlay)
+
+
+func _boot_night_td_scene(should_dismiss_overlay: bool) -> void:
 	# 从 GameManager 获取 RunState
 	_run_state = GameManager.consume_run_state()
 	if _run_state == null:
 		print("NightTdRoot: no GameManager.run_state; starting standalone demo session.")
 		_start_demo_session()
+		if should_dismiss_overlay or GameManager.should_dismiss_transition_overlay():
+			await GameManager.dismiss_transition_overlay()
 		return
 
 	# 加载 NightTd 子场景
@@ -44,6 +51,9 @@ func _ready() -> void:
 	if GameManager.has_method("is_game_paused") and GameManager.is_game_paused():
 		if _td.has_method("set_session_paused"):
 			_td.set_session_paused(true)
+
+	if should_dismiss_overlay or GameManager.should_dismiss_transition_overlay():
+		await GameManager.dismiss_transition_overlay()
 
 
 func _instantiate_td() -> void:

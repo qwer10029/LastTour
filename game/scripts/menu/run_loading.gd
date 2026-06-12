@@ -192,7 +192,20 @@ func _run_bootstrap_pipeline() -> void:
 		manager.store_run_bootstrap(RunBootstrapScript.pack_bootstrap(map))
 	_set_progress(0.94, "加载游戏场景…")
 	await _preload_game_scene()
+	await _animate_progress_complete()
+	_enter_game_scene()
+
+
+func _animate_progress_complete() -> void:
 	_set_progress(1.0, "准备就绪")
+	if not is_instance_valid(progress_bar):
+		await get_tree().create_timer(0.25).timeout
+		return
+	var tween := create_tween()
+	tween.tween_property(progress_bar, "value", 1.0, 0.35)\
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	await tween.finished
+	await get_tree().create_timer(0.12).timeout
 
 
 func _preload_game_scene() -> void:
@@ -233,9 +246,14 @@ func _set_progress(ratio: float, label: String) -> void:
 func _enter_game_scene() -> void:
 	var manager := _game_manager()
 	if manager != null and manager.has_method("enter_game_after_bootstrap"):
-		manager.enter_game_after_bootstrap()
+		call_deferred("_invoke_enter_game_after_bootstrap", manager)
 		return
 	get_tree().change_scene_to_file("res://scenes/main.tscn")
+
+
+func _invoke_enter_game_after_bootstrap(manager: Node) -> void:
+	if manager != null and manager.has_method("enter_game_after_bootstrap"):
+		manager.enter_game_after_bootstrap()
 
 
 func _run_transition() -> Node:

@@ -1559,7 +1559,14 @@ static func draw_roadside_entrance(
 		door_color = Color("#9ef0ff")
 		canvas.draw_rect(door_rect.grow(4.0), Color("#f0c168", 0.55), true)
 	canvas.draw_rect(door_rect.grow(-1.5), door_color, true)
-	canvas.draw_string(ThemeDB.fallback_font, edge - Vector2(6, 4), "门", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#f8ecd8"))
+	# 门口提示：E键进入房间
+	var hint_text := "E 进入"
+	var hint_w := float(hint_text.length()) * 7.0 + 10.0
+	var hint_h := 14.0
+	var hint_pos := Vector2(edge.x - hint_w * 0.5, edge.y - door_h * 0.5 - hint_h - 10.0)
+	canvas.draw_rect(Rect2(hint_pos, Vector2(hint_w, hint_h)), Color(0.05, 0.09, 0.13, 0.74), true)
+	canvas.draw_rect(Rect2(hint_pos, Vector2(hint_w, hint_h)), Color("#88c8a0", 0.45), false, 1.0)
+	HudTheme.draw_string(canvas, hint_pos + Vector2(4.0, 10.0), hint_text, 10, Color("#d8ffe8"))
 	return edge
 
 

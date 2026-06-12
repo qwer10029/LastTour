@@ -1034,26 +1034,35 @@ func restore_after_load() -> void:
 	_try_reveal_tactical_sites_from_inventory()
 
 
-func _reveal_tactical_hidden_sites(source_id: String = "") -> void:
+func _reveal_tactical_hidden_sites(source_id: String = "", auto_open_map: bool = false) -> void:
 	var map: WorldMapData = _map()
 	if map == null:
 		return
 	if not map.reveal_tactical_hidden_sites(source_id):
 		return
 	if _host != null and _host.has_method("_on_tactical_sites_revealed"):
-		_host.call("_on_tactical_sites_revealed", source_id)
+		_host.call("_on_tactical_sites_revealed", source_id, auto_open_map)
 
 
 func _try_reveal_tactical_sites_from_inventory() -> void:
 	var backpack: InventoryData = _backpack()
-	if backpack == null:
-		return
-	if backpack.has("data_chip_tactical_map", 1):
-		_reveal_tactical_hidden_sites("staff_officer_07")
-	if backpack.has("data_chip_radar_coords", 1):
-		_reveal_tactical_hidden_sites("ad_1_radar")
-	if backpack.has("data_chip_supply_registry", 1):
-		_reveal_tactical_hidden_sites("chronicler_04")
+	var journal: RunJournal = _journal()
+	# 兼容旧存档：检查背包中的数据片
+	if backpack != null:
+		if backpack.has("data_chip_tactical_map", 1):
+			_reveal_tactical_hidden_sites("staff_officer_07")
+		if backpack.has("data_chip_radar_coords", 1):
+			_reveal_tactical_hidden_sites("ad_1_radar")
+		if backpack.has("data_chip_supply_registry", 1):
+			_reveal_tactical_hidden_sites("chronicler_04")
+	# 新流程：通过日记条目判断是否已获得坐标（不依赖数据片）
+	if journal != null:
+		if journal.has_encounter("staff_officer_07_calibrate"):
+			_reveal_tactical_hidden_sites("staff_officer_07")
+		if journal.has_encounter("ad_1_radar_coords"):
+			_reveal_tactical_hidden_sites("ad_1_radar")
+		if journal.has_encounter("chronicler_repair"):
+			_reveal_tactical_hidden_sites("chronicler_04")
 
 
 func to_save_dict() -> Dictionary:
@@ -1164,13 +1173,13 @@ func _on_npc_story_completed(story_id: String, result: Dictionary) -> void:
 	var loot_key := str(result.get("reward_loot_key", ""))
 	var district := run_state.get_district(story_id)
 	if loot_key == "tactical_map" or encounter_id == "staff_officer_07_calibrate":
-		_reveal_tactical_hidden_sites("staff_officer_07")
+		_reveal_tactical_hidden_sites("staff_officer_07", true)
 	if encounter_id == "ad_1_radar_coords":
-		_reveal_tactical_hidden_sites("ad_1_radar")
+		_reveal_tactical_hidden_sites("ad_1_radar", true)
 	if encounter_id == "chronicler_repair" or loot_key == "supply_map":
 		if district >= 0:
 			_clear_unlocked_loot_for_district(district)
-		_reveal_tactical_hidden_sites("chronicler_04")
+		_reveal_tactical_hidden_sites("chronicler_04", true)
 	if loot_key != "" and not (story_id == "chronicler_04" and loot_key == "supply_map"):
 		var loot_def: Dictionary = StoryData.reward_loot_def(story_id, loot_key)
 		var pickups: Variant = loot_def.get("pickups", [])

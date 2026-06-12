@@ -3,11 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://csopty8bp2t42"
-valid=false
+path="res://.godot/imported/card_scavenger.png-5c451e118a81396935d6276e343997ed.ctex"
+metadata={
+"vram_texture": false
+}
 
 [deps]
 
 source_file="res://assets/menu/squad/card_scavenger.png"
+dest_files=["res://.godot/imported/card_scavenger.png-5c451e118a81396935d6276e343997ed.ctex"]
 
 [params]
 
@@ -27,7 +31,7 @@ process/channel_remap/red=0
 process/channel_remap/green=1
 process/channel_remap/blue=2
 process/channel_remap/alpha=3
-process/fix_alpha_border=true
+process/fix_alpha_border=false
 process/premult_alpha=false
 process/normal_map_invert_y=false
 process/hdr_as_srgb=false
