@@ -38,6 +38,11 @@ func _boot_night_td_session() -> void:
 	for key in snapshot.keys():
 		backpack_total += int(snapshot[key])
 
+	var session_options: Dictionary = _run_state.night_session_options.duplicate(true)
+	if str(_run_state.run_context) == "tutorial":
+		session_options["tutorial_phase"] = _run_state.tutorial_phase
+		session_options["tutorial_step"] = _run_state.tutorial_step
+
 	_td.start_session(
 		backpack_total,
 		_run_state.difficulty,
@@ -46,7 +51,7 @@ func _boot_night_td_session() -> void:
 		_run_state.vehicle_hp,
 		_run_state.vehicle_hp_max,
 		snapshot,
-		_run_state.night_session_options,
+		session_options,
 		_run_state.fuel,
 		_run_state.fuel_max,
 	)

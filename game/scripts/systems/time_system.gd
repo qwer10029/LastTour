@@ -19,7 +19,7 @@ const PHASE_NAMES := {
 	Phase.NIGHT_RESOLVE: "夜晚·结算",
 }
 
-@export var day_duration_sec: float = 30.0
+@export var day_duration_sec: float = 180.0
 @export var evening_warning_sec: float = 25.0
 @export var night_resolve_display_sec: float = 1.5
 @export var auto_start: bool = true

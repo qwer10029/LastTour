@@ -13,9 +13,9 @@ const DAY_STEPS := [
 ]
 
 const NIGHT_STEPS := [
-	"pick_tower",
 	"place_tower",
-	"start_wave",
+	"withdraw_tower",
+	"build_more",
 	"survive",
 ]
 
@@ -32,9 +32,9 @@ const OBJECTIVES := {
 	"craft": "点击高亮的「合成零件」按钮，合成 1 个零件",
 	"return": "按 E 上车；若背包仍打开，先按 B 关闭",
 	"evening": "在车上按 F 进入布防",
-	"pick_tower": "在左侧选择一座炮塔",
-	"place_tower": "在地图上放置炮塔",
-	"start_wave": "点击开始接敌，或等待倒计时结束",
+	"place_tower": "左键地图格子放置一座炮塔",
+	"withdraw_tower": "右键炮塔所在格子撤销（资源全额退还）",
+	"build_more": "试试左侧其他防御设施；准备好后点击「开始接敌」或等倒计时结束",
 	"survive": "守住车辆直到波次清空",
 	"go_elevator": "WASD驾驶车辆，前往东侧电梯枢纽，按 E 进入电梯房",
 	"repair_elevator": "在电梯控制台按  F 修复电梯",

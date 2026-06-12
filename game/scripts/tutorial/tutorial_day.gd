@@ -285,6 +285,8 @@ func _on_night_setup_scene_switch(day_index: int, _manual_setup: bool) -> void:
 	if is_instance_valid(evening_notice) and evening_notice.has_method("hide_notice"):
 		evening_notice.hide_notice()
 
+	if is_instance_valid(_tutorial_director):
+		_tutorial_director.set_phase("night", "place_tower")
 	var rs = export_run_state()
 	if is_instance_valid(_backpack) and _backpack.has_method("to_dictionary"):
 		rs.backpack_dict = _backpack.to_dictionary().duplicate()

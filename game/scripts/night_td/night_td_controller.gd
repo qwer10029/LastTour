@@ -3,6 +3,7 @@ class_name NightTdController
 
 const NightTdSpritesScript = preload("res://scripts/night_td/night_td_sprites.gd")
 const BlueprintCatalog := preload("res://scripts/night_td/blueprint_catalog.gd")
+const TutorialDirectorScript := preload("res://scripts/tutorial/tutorial_director.gd")
 
 signal session_finished(result: Dictionary)
 signal enemy_breached(enemy_type: String, pos: Vector2)
@@ -120,6 +121,9 @@ const SIM_SPEED_NORMAL := 1.0
 const SIM_SPEED_FAST := 2.0
 
 var _sim_speed := SIM_SPEED_NORMAL
+var _tutorial_director: TutorialDirector = null
+var _tutorial_place_done := false
+var _tutorial_features_revealed := false
 
 
 func _ready() -> void:
@@ -317,6 +321,8 @@ func start_session(
 		if upgrade_summary != "":
 			hud.append_log("防御塔强化生效：%s" % upgrade_summary, Color("#88e8b0"))
 		if _session_kind == "tutorial":
+			_reset_tutorial_night_state()
+			_setup_tutorial_director()
 			if is_instance_valid(hud):
 				var tutorial_flags: Dictionary = _session_options.get("tutorial_flags", {})
 				# 教学首塔只开放炮塔，避免误选路障/信标
@@ -331,7 +337,8 @@ func start_session(
 					hud.heatmap_switch.hide()
 				hud.set_unlocked_towers(tutorial_towers)
 				_selected_tower = hud.get_selected_tower() if hud.has_method("get_selected_tower") else "sniper"
-				hud.set_hint("%s · %s" % [NightTdHintText.TUTORIAL_PLACE_SHORT, NightTdHintText.PLACE_BACKPACK_SHORT])
+				hud.set_hint("")
+				_restore_tutorial_night_progress()
 		if hud.has_method("set_unlocked_towers") and _session_kind != "tutorial":
 			hud.set_unlocked_towers(_blueprint_state.get("unlocked_towers", []))
 		_notify_debug_skip_available()
@@ -351,19 +358,71 @@ func _apply_tutorial_session_flags() -> void:
 		placement_time_sec = maxf(float(flags["setup_time_sec"]), 30.0)
 
 
-func _reveal_tutorial_night_features_after_place() -> void:
+func _reset_tutorial_night_state() -> void:
+	_tutorial_place_done = false
+	_tutorial_features_revealed = false
+	if is_instance_valid(_tutorial_director):
+		_tutorial_director.queue_free()
+		_tutorial_director = null
+
+
+func _setup_tutorial_director() -> void:
+	if _session_kind != "tutorial":
+		return
+	if is_instance_valid(_tutorial_director):
+		return
+	_tutorial_director = TutorialDirectorScript.new()
+	_tutorial_director.name = "TutorialDirector"
+	add_child(_tutorial_director)
+	var step := str(_session_options.get("tutorial_step", "place_tower"))
+	if step == "" or step in ["evening", "pick_tower", "start_wave"]:
+		step = "place_tower"
+	_tutorial_director.set_phase("night", step)
+
+
+func _restore_tutorial_night_progress() -> void:
+	var step := str(_session_options.get("tutorial_step", "place_tower"))
+	match step:
+		"withdraw_tower":
+			_tutorial_place_done = true
+		"build_more", "survive", "start_wave":
+			_tutorial_place_done = true
+			_reveal_tutorial_night_features()
+			if is_instance_valid(_tutorial_director):
+				_tutorial_director.advance_to("build_more" if step != "survive" else "survive")
+
+
+func _on_tutorial_tower_placed() -> void:
+	if _session_kind != "tutorial" or phase != Phase.PLACE or _tutorial_place_done:
+		return
+	_tutorial_place_done = true
+	if is_instance_valid(_tutorial_director):
+		_tutorial_director.advance_to("withdraw_tower")
+
+
+func _on_tutorial_tower_withdrawn() -> void:
 	if _session_kind != "tutorial" or phase != Phase.PLACE:
+		return
+	if not _tutorial_place_done or _tutorial_features_revealed:
+		return
+	if _count_active_towers() > 0:
+		return
+	_reveal_tutorial_night_features()
+	if is_instance_valid(_tutorial_director):
+		_tutorial_director.advance_to("build_more")
+
+
+func _reveal_tutorial_night_features() -> void:
+	if _session_kind != "tutorial" or _tutorial_features_revealed or not is_instance_valid(hud):
 		return
 	var flags: Dictionary = _session_options.get("tutorial_flags", {})
 	if not bool(flags.get("gradual_features", false)):
 		return
-	if _count_active_towers() != 1 or not is_instance_valid(hud):
-		return
+	_tutorial_features_revealed = true
 	if bool(flags.get("hide_heatmap_until_place", false)) and is_instance_valid(hud.heatmap_switch):
 		hud.heatmap_switch.show()
 	if bool(flags.get("hide_power_panel", true)):
 		hud.show_power_panel(true)
-		hud.set_hint(NightTdHintText.TUTORIAL_AFTER_PLACE_SHORT)
 	if hud.has_method("set_unlocked_towers"):
 		hud.set_unlocked_towers(["sniper", "barrier", "trap", "jammer"])
 		_blueprint_state["unlocked_towers"] = ["sniper", "barrier", "trap", "jammer"]
@@ -488,6 +547,7 @@ func hide_session() -> void:
 		if hud.has_method("set_overlay_active"):
 			hud.set_overlay_active(false)
 		hud.hide_session_ui()
+	_reset_tutorial_night_state()
 
 
 func _ensure_screen_camera() -> void:
@@ -524,7 +584,9 @@ func _update_screen_camera() -> void:
 
 
 func _process_place(delta: float) -> void:
-	placement_remaining = maxf(placement_remaining - delta, 0.0)
+	var freeze_timer := _session_kind == "tutorial" and not _tutorial_features_revealed
+	if not freeze_timer:
+		placement_remaining = maxf(placement_remaining - delta, 0.0)
 	if placement_remaining <= 30.0 and not _placement_warning_30_fired:
 		_placement_warning_30_fired = true
 		if is_instance_valid(hud):
@@ -1935,7 +1997,7 @@ func _on_cell_clicked(cell: Vector2i) -> void:
 	if is_instance_valid(hud):
 		_refresh_resource_hud()
 		hud.append_log("已部署 %s" % tdef.get("name", ""))
-	_reveal_tutorial_night_features_after_place()
+	_on_tutorial_tower_placed()
 
 
 func _on_cell_right_clicked(cell: Vector2i) -> void:
@@ -1945,6 +2007,7 @@ func _on_cell_right_clicked(cell: Vector2i) -> void:
 	if removed and is_instance_valid(hud):
 		_refresh_resource_hud()
 		hud.append_log("已撤销 %s（资源已退还）" % removed)
+		_on_tutorial_tower_withdrawn()
 	elif is_instance_valid(hud):
 		hud.append_log("该格没有可撤销的防御")
 
@@ -2047,6 +2110,10 @@ func get_selected_tower_type() -> String:
 func _begin_combat() -> void:
 	if phase == Phase.COMBAT:
 		return
+	if _session_kind == "tutorial" and not _tutorial_features_revealed:
+		if is_instance_valid(hud):
+			hud.append_log("先按底部教学提示放置并撤销炮塔", Color("#f0a040"))
+		return
 	# 快照：进入战斗时实际放置的塔（排除布防阶段已撤销的）
 	_combat_tower_ids.clear()
 	for tower in _towers:
@@ -2061,7 +2128,12 @@ func _begin_combat() -> void:
 	if is_instance_valid(hud):
 		hud.set_combat_mode()
 		hud.set_phase_text(_session_phase_title("接敌中"))
-		hud.set_hint(NightTdHintText.COMBAT_ACTIVE_SHORT)
+		if _session_kind == "tutorial":
+			hud.set_hint("")
+			if is_instance_valid(_tutorial_director):
+				_tutorial_director.advance_to("survive")
+		else:
+			hud.set_hint(NightTdHintText.COMBAT_ACTIVE_SHORT)
 		var total := _wave_scheduler.total_spawn_events if _wave_scheduler != null else _enemies_spawned + _wave_queue.size()
 		hud.set_combat_status("波次 %d/%d · 场上 %d 敌" % [_enemies_spawned, total, _count_hostiles()])
 		hud.append_log("—— 夜间威胁来袭 ——")

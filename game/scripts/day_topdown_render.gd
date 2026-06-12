@@ -1484,14 +1484,19 @@ static func _building_colors(building_type: String) -> Dictionary:
 	return {"wall": wall_fill, "roof": roof_fill}
 
 
-static func district_building_sign_rect(district_rect: Rect2, toward_road: Vector2) -> Rect2:
+static func district_building_sign_rect(district_rect: Rect2, toward_road: Vector2, label: String = "") -> Rect2:
 	var unit := minf(district_rect.size.x, district_rect.size.y)
 	var center := district_rect.position + district_rect.size * 0.5
 	if toward_road.length_squared() > 0.01:
 		center += toward_road.normalized() * unit * 0.16
 	var body_size := unit * 0.42
 	var body := Rect2(center - Vector2(body_size, body_size) * 0.5, Vector2(body_size, body_size))
-	return Rect2(body.position + Vector2(body_size * 0.5 - 36.0, -10.0), Vector2(72, 14))
+	const SIGN_FONT_SIZE := 14
+	const SIGN_H := 24.0
+	var label_w := maxf(96.0, float(label.length()) * float(SIGN_FONT_SIZE) + 24.0)
+	var sign_x := body.position.x + (body_size - label_w) * 0.5
+	var sign_y := body.position.y - SIGN_H - 6.0
+	return Rect2(sign_x, sign_y, label_w, SIGN_H)
 
 
 static func draw_district_building(
@@ -1531,17 +1536,10 @@ static func draw_district_building(
 		canvas.draw_rect(body.grow(4.0), Color("#f0c168", 0.35), false, 2.0)
 	if not show_label or label.is_empty():
 		return
-	var sign_rect := district_building_sign_rect(district_rect, toward_road)
-	canvas.draw_rect(sign_rect, Color("#2a2218", 0.9), true)
-	canvas.draw_string(
-		ThemeDB.fallback_font,
-		sign_rect.position + Vector2(4, 10),
-		label,
-		HORIZONTAL_ALIGNMENT_LEFT,
-		-1,
-		10,
-		Color("#f8ecd8"),
-	)
+	var sign_rect := district_building_sign_rect(district_rect, toward_road, label)
+	canvas.draw_rect(sign_rect, Color("#2a2218", 0.92), true)
+	canvas.draw_rect(sign_rect, Color("#6a8ca8", 0.58), false, 1.0)
+	HudTheme.draw_string(canvas, sign_rect.position + Vector2(10.0, 16.0), label, 14, Color("#f8ecd8"))
 
 
 static func draw_roadside_entrance(
