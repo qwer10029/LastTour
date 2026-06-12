@@ -159,6 +159,13 @@
 			"stack_max": 99,
 			"color": "#e8c060",
 			"usable": true
+		},
+		"blueprint:armory": {
+			"name": "军用防御蓝图",
+			"desc": "战前兵工厂封印的防御塔改良图。拾取后解析为一种夜间强化方案。",
+			"stack_max": 1,
+			"color": "#9ec0e8",
+			"usable": false
 		}
 	},
 	"loot_by_building": {
@@ -170,6 +177,7 @@
 		"hub": ["supplies", "fuel", "scrap"],
 		"command": ["scrap", "parts", "supplies", "fuel"],
 		"radar": ["parts", "scrap", "fuel", "supplies"],
+		"armory": ["parts", "scrap"],
 		"default": ["wood", "parts", "supplies", "fuel"]
 	}
 }

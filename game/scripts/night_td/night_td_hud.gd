@@ -320,6 +320,20 @@ func _select(type_id: String) -> void:
 func refresh_tool_buttons() -> void:
 	_refresh_card_highlights()
 
+
+func set_unlocked_towers(tower_ids: Array) -> void:
+	var allowed: Array[String] = []
+	for entry in tower_ids:
+		var tid := str(entry)
+		if tid != "":
+			allowed.append(tid)
+	for tid in _tower_cards.keys():
+		var card: PanelContainer = _tower_cards[tid]["panel"]
+		card.visible = allowed.has(tid)
+	if not allowed.has(_selected) and not allowed.is_empty():
+		_select(allowed[0])
+
+
 func get_selected_tower() -> String:
 	return _selected
 

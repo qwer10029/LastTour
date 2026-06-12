@@ -1,0 +1,56 @@
+{
+  "_comment": "兵工厂遗址标牌可具名；室内蓝图从 blueprint_roll_pool 随机，道具名不含建筑名。",
+  "layer_count_range": {
+    "1": [2, 3],
+    "2": [2, 3],
+    "3": [1, 2]
+  },
+  "blueprint_roll_pool": [
+    "blueprint:armory"
+  ],
+  "sites": [
+    {
+      "site_id": "inst_308",
+      "building_label": "308所封存库",
+      "blueprint_count": 1
+    },
+    {
+      "site_id": "bifeng_lab",
+      "building_label": "碧峰研究院",
+      "blueprint_count": 1
+    },
+    {
+      "site_id": "north_factory",
+      "building_label": "北方兵工厂遗址",
+      "blueprint_count": 1,
+      "extra_loot": ["composite_armor_panel"]
+    },
+    {
+      "site_id": "seven_machine",
+      "building_label": "七机部封存车间",
+      "blueprint_count": 1
+    },
+    {
+      "site_id": "redstar_assembly",
+      "building_label": "红星精密装配站",
+      "blueprint_count": 1
+    },
+    {
+      "site_id": "northwest_electro",
+      "building_label": "西北机电封存库",
+      "blueprint_count": 1,
+      "extra_loot": ["data_chip_radar_tower_mod"]
+    },
+    {
+      "site_id": "south_armory",
+      "building_label": "华南军工存档点",
+      "blueprint_count": 1
+    },
+    {
+      "site_id": "aviation_yard",
+      "building_label": "航空装备封存场",
+      "blueprint_count": 1,
+      "extra_loot": ["auto_turret_auth"]
+    }
+  ]
+}

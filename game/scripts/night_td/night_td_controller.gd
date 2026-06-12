@@ -107,6 +107,7 @@ var _session_kind: String = "normal"
 var _phase_title_override: String = ""
 var _no_day_advance := false
 var _tower_upgrades: Dictionary = NightTdUpgrades.default_state()
+var _blueprint_state: Dictionary = BlueprintCatalog.default_run_state()
 var _screen_camera: Camera2D = null
 var _enemy_index_by_eid: Dictionary = {}
 var _active_slow_towers: Array[Dictionary] = []
@@ -189,6 +190,7 @@ func start_session(
 	_no_day_advance = bool(_session_options.get("no_day_advance", false))
 	# 防御塔强化（Part B）：从白天安装的升级道具累加而来，建塔时乘到属性上。
 	_tower_upgrades = NightTdUpgrades.sanitize(_session_options.get("tower_upgrades", {}))
+	_blueprint_state = BlueprintCatalog.sanitize_run_state(_session_options.get("blueprint_state", {}))
 	_allow_placement = allow_placement
 	# 从快照创建本地背包副本（切断对白天状态的引用）
 	_local_backpack = InventoryData.new()
@@ -223,7 +225,7 @@ func start_session(
 	_fuel_boost_spent = 0.0
 	_healer_aura_accum = 0.0
 	placement_remaining = placement_time_sec if allow_placement else 0.0
-	_selected_tower = "jammer"
+	_selected_tower = _default_unlocked_tower()
 	_towers.clear()
 	_occupied_cells.clear()
 	_enemies.clear()
@@ -239,6 +241,12 @@ func start_session(
 	_commander.configure(diff, field.grid_cols, field.grid_rows, field.vehicle_cells)
 	if _energy == null:
 		_energy = NightTdEnergy.load_config(ENERGY_CONFIG_PATH)
+	else:
+		var fresh_energy := NightTdEnergy.load_config(ENERGY_CONFIG_PATH)
+		_energy.production_rate = fresh_energy.production_rate
+		_energy.capacity = fresh_energy.capacity
+		_energy.current = fresh_energy.current
+	BlueprintCatalog.apply_reactor_mods(_energy, _blueprint_state)
 	_energy.reset()
 	_next_tower_id = 1
 	_next_enemy_id = 1
@@ -302,6 +310,8 @@ func start_session(
 		var upgrade_summary := NightTdUpgrades.summary_text(_tower_upgrades)
 		if upgrade_summary != "":
 			hud.append_log("防御塔强化生效：%s" % upgrade_summary, Color("#88e8b0"))
+		if hud.has_method("set_unlocked_towers"):
+			hud.set_unlocked_towers(_blueprint_state.get("unlocked_towers", []))
 		_notify_debug_skip_available()
 		_refresh_fuel_boost_hud()
 	_update_hud_tools()
@@ -391,6 +401,23 @@ func _compute_deploy_budget() -> int:
 		2:
 			pts -= 2
 	return maxi(pts, 10)
+
+
+func _default_unlocked_tower() -> String:
+	var unlocked: Array = _blueprint_state.get("unlocked_towers", [])
+	if unlocked.is_empty():
+		return "jammer"
+	if unlocked.has(_selected_tower):
+		return _selected_tower
+	return str(unlocked[0])
+
+
+func _is_tower_unlocked(tower_type: String) -> bool:
+	return (_blueprint_state.get("unlocked_towers", []) as Array).has(tower_type)
+
+
+func _tower_blueprint_mult(tower_type: String, stat: String) -> float:
+	return BlueprintCatalog.mult_for_tower(_blueprint_state, tower_type, stat)
 
 
 func _update_hud_tools() -> void:
@@ -831,13 +858,18 @@ func _slow_factor_at(pos: Vector2, enemy: Dictionary) -> float:
 	var slow := 1.0
 	for tower in _active_slow_towers:
 		var tdef: Dictionary = NightTdDefs.get_tower_def(str(tower["type"]))
-		var range_px := float(tdef.get("range", 0.0))
+		var tower_type := str(tower.get("type", ""))
+		var range_px := float(tdef.get("range", 0.0)) * float(tower.get("range_mult", 1.0))
 		if range_px <= 0.0 or (tower["world_pos"] as Vector2).distance_squared_to(pos) > range_px * range_px:
 			continue
 		var scale := float(tower.get("power_scale", 1.0))
 		if scale <= 0.05:
 			continue
 		var factor := clampf(float(tdef.get("slow_factor", 1.0)), 0.05, 1.0)
+		var slow_boost := _tower_blueprint_mult(tower_type, "slow_mult")
+		if slow_boost > 1.0:
+			var slow_strength := 1.0 - factor
+			factor = clampf(1.0 - slow_strength * slow_boost, 0.05, 1.0)
 		var curve: Dictionary = tdef.get("power_curve", {})
 		var extra := maxf(scale - 1.0, 0.0) * float(curve.get("slow_per_power", 0.0))
 		slow = minf(slow, clampf(factor - extra, 0.05, 1.0))
@@ -1044,8 +1076,9 @@ func _update_towers(delta: float) -> void:
 		var curve: Dictionary = tdef.get("power_curve", {})
 		var dmg_mul := maxf(1.0 + float(curve.get("damage_per_power", 0.0)) * (scale - 1.0), 0.05)
 		var rate_mul := maxf(1.0 + float(curve.get("firerate_per_power", 0.0)) * (scale - 1.0), 0.2)
+		var firerate_mult := float(tower.get("firerate_mult", 1.0))
 		var hit_dmg := base_damage * dmg_mul
-		var splash := float(tdef.get("splash_radius", 0.0))
+		var splash := float(tdef.get("splash_radius", 0.0)) * float(tower.get("splash_radius_mult", 1.0))
 		if splash > 0.0:
 			# 溅射：对目标点附近所有敌人造成伤害。
 			var center: Vector2 = enemy["pos"]
@@ -1064,7 +1097,7 @@ func _update_towers(delta: float) -> void:
 			"color": tdef.get("color", Color.WHITE),
 			"splash": splash,
 		})
-		tower["cooldown"] = fire_interval / rate_mul
+		tower["cooldown"] = fire_interval / (rate_mul * firerate_mult)
 
 	for i in range(_projectiles.size() - 1, -1, -1):
 		_projectiles[i]["life"] = float(_projectiles[i]["life"]) - delta
@@ -1121,7 +1154,8 @@ func _tower_at_cell(cell: Vector2i) -> Dictionary:
 
 func _trigger_trap(tower: Dictionary, enemy: Dictionary) -> void:
 	var tdef: Dictionary = NightTdDefs.get_tower_def("trap")
-	enemy["hp"] = float(enemy["hp"]) - float(tdef.get("damage", 40))
+	var damage := float(tdef.get("damage", 40)) * float(tower.get("damage_mult", 1.0))
+	enemy["hp"] = float(enemy["hp"]) - damage
 	tower["removed"] = true
 	tower["target_eid"] = -1
 	_mark_tower_cache_dirty()
@@ -1238,8 +1272,9 @@ func _update_energy(delta: float) -> void:
 			continue
 		if not tower.has("id"):
 			continue
-		var tdef: Dictionary = NightTdDefs.get_tower_def(str(tower["type"]))
-		var up := float(tdef.get("upkeep", 0.0))
+		var tower_type := str(tower["type"])
+		var tdef: Dictionary = NightTdDefs.get_tower_def(tower_type)
+		var up := float(tdef.get("upkeep", 0.0)) * _tower_blueprint_mult(tower_type, "upkeep_mult")
 		if up > 0.0:
 			upkeeps[int(tower["id"])] = up
 	_energy.tick(delta, upkeeps, _fuel_boost_bonus())
@@ -1326,15 +1361,17 @@ func _update_hackers(delta: float) -> void:
 			tower["hack_progress"] = 0.0
 			continue
 		var dist: float = (tower["world_pos"] as Vector2).distance_to(enemy["pos"])
-		if dist > float(tdef.get("range", 150.0)):
+		var hack_range := float(tdef.get("range", 150.0)) * float(tower.get("range_mult", 1.0))
+		if dist > hack_range:
 			tower["hack_progress"] = maxf(float(tower.get("hack_progress", 0.0)) - delta * 10.0, 0.0)
 			tower["target_eid"] = -1
 			continue
 		enemy["hacked_by"] = int(tower.get("id", -1))
 		var curve: Dictionary = tdef.get("power_curve", {})
+		var hack_rate := float(tdef.get("hack_rate", 25.0)) * float(tower.get("hack_rate_mult", 1.0))
 		var inc := NightTdHacking.progress_delta(
 			delta,
-			float(tdef.get("hack_rate", 25.0)),
+			hack_rate,
 			float(tower.get("power_scale", 1.0)),
 			float(curve.get("hackrate_per_power", 0.0)),
 			float(enemy.get("hack_resist", 1.0)),
@@ -1772,6 +1809,10 @@ func _rebuild_separation_buckets() -> void:
 func _on_cell_clicked(cell: Vector2i) -> void:
 	if phase != Phase.PLACE:
 		return
+	if not _is_tower_unlocked(_selected_tower):
+		if is_instance_valid(hud):
+			hud.append_log("该防御设施尚未解锁")
+		return
 	var tdef: Dictionary = NightTdDefs.get_tower_def(_selected_tower)
 	if tdef.is_empty():
 		return
@@ -1788,10 +1829,11 @@ func _on_cell_clicked(cell: Vector2i) -> void:
 	resources_spent += cost
 	var tower_id := _next_tower_id
 	_next_tower_id += 1
-	var tower_hp_mult := float(_tower_upgrades.get("tower_hp_mult", 1.0))
+	var tower_type := _selected_tower
+	var tower_hp_mult := float(_tower_upgrades.get("tower_hp_mult", 1.0)) * _tower_blueprint_mult(tower_type, "hp_mult")
 	var tower := {
 		"id": tower_id,
-		"type": _selected_tower,
+		"type": tower_type,
 		"cell": cell,
 		"world_pos": field.cell_to_world(cell),
 		"cooldown": 0.0,
@@ -1799,8 +1841,11 @@ func _on_cell_clicked(cell: Vector2i) -> void:
 		"hp": float(tdef.get("hp", 30)) * tower_hp_mult,
 		"removed": false,
 		"power_scale": 1.0,
-		"damage_mult": float(_tower_upgrades.get("damage_mult", 1.0)),
-		"range_mult": float(_tower_upgrades.get("range_mult", 1.0)),
+		"damage_mult": float(_tower_upgrades.get("damage_mult", 1.0)) * _tower_blueprint_mult(tower_type, "damage_mult"),
+		"range_mult": float(_tower_upgrades.get("range_mult", 1.0)) * _tower_blueprint_mult(tower_type, "range_mult"),
+		"firerate_mult": _tower_blueprint_mult(tower_type, "firerate_mult"),
+		"hack_rate_mult": _tower_blueprint_mult(tower_type, "hack_rate_mult"),
+		"splash_radius_mult": _tower_blueprint_mult(tower_type, "splash_radius_mult"),
 	}
 	_towers.append(tower)
 	# 耗电塔登记进能源系统（额定功率 1.0）。upkeep=0 的塔登记后不影响电池。
@@ -1907,6 +1952,8 @@ func _refresh_resource_hud() -> void:
 
 
 func _on_tower_selected(type_id: String) -> void:
+	if not _is_tower_unlocked(type_id):
+		return
 	_selected_tower = type_id
 
 
@@ -2186,8 +2233,19 @@ func _settle_salvage() -> Dictionary:
 			src = tdef.get("salvage", {})        # 被毁 → 少量残骸
 		else:
 			src = tdef.get("build_cost", {})     # 幸存 → 全额退还
+		var tower_type := str(tower.get("type", ""))
+		var salvage_mult := 1.0
+		if tower.get("removed", false):
+			salvage_mult = _tower_blueprint_mult(tower_type, "salvage_mult")
 		for item_id: String in src.keys():
-			out[item_id] = int(out.get(item_id, 0)) + int(src[item_id])
+			var amount := int(src[item_id])
+			if tower.get("removed", false):
+				amount = int(round(float(amount) * salvage_mult))
+			out[item_id] = int(out.get(item_id, 0)) + amount
+	var global_salvage := maxf(float(_blueprint_state.get("salvage_mult", 1.0)), 0.0)
+	if global_salvage != 1.0:
+		for item_id: String in out.keys():
+			out[item_id] = int(round(float(out[item_id]) * global_salvage))
 	return out
 
 

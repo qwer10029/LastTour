@@ -170,8 +170,8 @@
       "spawn_layer": 2,
       "spawn_near_start": true,
       "interior_encounter": true,
-      "lock_exit_until_resolved": true,
       "prompt_disembark": "进入公寓",
+      "prompt_return": "E 与玛丽安交谈",
       "dialogue_path": "res://data/dialogues/marian_k142.json"
     },
     {

@@ -256,11 +256,14 @@ static func loot_display_name(item_id: String, fallback: String = "") -> String:
 
 
 static func _load_loot_sprite(item_id: String) -> Texture2D:
-	if _file_cache.has(item_id):
-		return _file_cache[item_id]
-	var path := LOOT_SPRITE_DIR + item_id + ".png"
+	var sprite_id := item_id
+	if item_id.begins_with("blueprint:"):
+		sprite_id = "blueprint_armory"
+	if _file_cache.has(sprite_id):
+		return _file_cache[sprite_id]
+	var path := LOOT_SPRITE_DIR + sprite_id + ".png"
 	var tex := ArtAssetLoader.load_texture_loot_alpha_key(path)
-	_file_cache[item_id] = tex
+	_file_cache[sprite_id] = tex
 	return tex
 
 

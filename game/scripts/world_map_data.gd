@@ -29,6 +29,9 @@ const TERRAIN_PROP_TYPES := [
 const ROAD_BLOCKAGE_TYPES := ["crater", "wreck_tank", "wreck_truck", "rubble_barricade"]
 ## 预览干净焦土地表时关闭路边杂物与路障装饰
 const OVERWORLD_DECOR_ENABLED := false
+## 程序化资源区数量：约为旧版 (columns+rows)/3 的 1.5 倍
+const DISTRICT_COUNT_MIN := 12
+const DISTRICT_COUNT_MAX := 24
 
 var columns: int = 0
 var rows: int = 0
@@ -80,7 +83,7 @@ func generate(
 
 	report.call(0.18, "规划资源区…")
 	var district_coords: Array[Vector2i] = _pick_district_coords(
-		rng, max(8, min(16, (columns + rows) / 3)), hub_coords
+		rng, _target_district_count(columns, rows), hub_coords
 	)
 	var district_total := maxi(district_coords.size(), 1)
 	var district_step := 0
@@ -568,6 +571,9 @@ func collect_resource(index: int) -> bool:
 func building_label(index: int) -> String:
 	if not is_valid_index(index):
 		return "未知建筑"
+	var label_override := str(cells[index].get("building_label_override", ""))
+	if label_override != "":
+		return label_override
 	var tactical_label := str(cells[index].get("tactical_label", ""))
 	if tactical_label != "" and bool(cells[index].get("tactical_revealed", false)):
 		return tactical_label
@@ -616,6 +622,8 @@ func building_label(index: int) -> String:
 				if market_label != "":
 					return market_label
 			return "集市"
+		"armory":
+			return "兵工厂遗址"
 		_:
 			return "建筑群"
 
@@ -685,6 +693,8 @@ func _create_empty_cell(coord: Vector2i) -> Dictionary:
 		"tactical_building_type": "",
 		"tactical_label": "",
 		"tactical_source": "",
+		"building_label_override": "",
+		"armory_site_id": "",
 	}
 
 func _pick_cells(rng: RandomNumberGenerator, count: int) -> Array[Vector2i]:
@@ -706,6 +716,10 @@ func _pick_cells(rng: RandomNumberGenerator, count: int) -> Array[Vector2i]:
 	return result
 
 
+func _target_district_count(map_columns: int, map_rows: int) -> int:
+	return clampi(roundi((map_columns + map_rows) / 2.0), DISTRICT_COUNT_MIN, DISTRICT_COUNT_MAX)
+
+
 func _pick_district_coords(
 	rng: RandomNumberGenerator,
 	count: int,
@@ -713,7 +727,7 @@ func _pick_district_coords(
 ) -> Array[Vector2i]:
 	var result: Array[Vector2i] = []
 	var attempts := 0
-	var max_attempts := maxi(count * 80, 320)
+	var max_attempts := maxi(count * 120, 480)
 	while result.size() < count and attempts < max_attempts:
 		attempts += 1
 		var coord := Vector2i(rng.randi_range(0, columns - 1), rng.randi_range(0, rows - 1))
@@ -1658,6 +1672,121 @@ func has_tactical_hidden_sites(source_id: String = "") -> bool:
 	return false
 
 
+func place_blueprint_armories(
+	site_defs: Array,
+	rng: RandomNumberGenerator,
+	blueprint_roll_pool: Array = [],
+) -> void:
+	if site_defs.is_empty():
+		return
+	var roll_pool: Array[String] = []
+	if blueprint_roll_pool is Array:
+		for entry in blueprint_roll_pool:
+			var item_id := str(entry)
+			if item_id != "":
+				roll_pool.append(item_id)
+	var candidates: Array[int] = []
+	for index in district_indices:
+		if not is_valid_index(index):
+			continue
+		var cell := cells[index]
+		if str(cell.get("story_id", "")) != "":
+			continue
+		if str(cell.get("special_encounter", "")) != "":
+			continue
+		if str(cell.get("armory_site_id", "")) != "":
+			continue
+		if bool(cell.get("has_elevator", false)) or bool(cell.get("has_kunlun_control", false)):
+			continue
+		if bool(cell.get("tactical_hidden", false)):
+			continue
+		candidates.append(index)
+	if candidates.is_empty():
+		return
+	for i in range(candidates.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var tmp: int = candidates[i]
+		candidates[i] = candidates[j]
+		candidates[j] = tmp
+	var pick_count := mini(site_defs.size(), candidates.size())
+	for i in range(pick_count):
+		var index: int = candidates[i]
+		var def: Dictionary = site_defs[i] if typeof(site_defs[i]) == TYPE_DICTIONARY else {}
+		var site_id := str(def.get("site_id", "armory_%d" % i))
+		var label := str(def.get("building_label", "兵工厂遗址"))
+		var loot_ids: Array[String] = []
+		var blueprint_count := int(def.get("blueprint_count", 1))
+		if blueprint_count <= 0:
+			var legacy_loot: Variant = def.get("loot", [])
+			if legacy_loot is Array:
+				blueprint_count = (legacy_loot as Array).size()
+		blueprint_count = clampi(blueprint_count, 0, 2)
+		for _slot in range(blueprint_count):
+			if roll_pool.is_empty():
+				break
+			loot_ids.append(roll_pool[rng.randi_range(0, roll_pool.size() - 1)])
+		var extra_loot: Variant = def.get("extra_loot", [])
+		if extra_loot is Array:
+			for entry in extra_loot:
+				var extra_id := str(entry)
+				if extra_id != "" and loot_ids.size() < 2:
+					loot_ids.append(extra_id)
+		if loot_ids.is_empty():
+			continue
+		loot_ids = loot_ids.slice(0, mini(loot_ids.size(), 2))
+		cells[index]["building_type"] = "armory"
+		cells[index]["building_label_override"] = label
+		cells[index]["armory_site_id"] = site_id
+		cells[index]["district_tag"] = "armory:%s" % site_id
+		var foot_layout := {
+			"cols": int(cells[index].get("foot_grid_cols", INTERIOR_COLS)),
+			"rows": int(cells[index].get("foot_grid_rows", INTERIOR_ROWS)),
+			"blocked": cells[index].get("foot_blocked", []),
+		}
+		var foot_area := Vector2(
+			float(int(foot_layout["cols"]) * FOOT_TILE_SIZE),
+			float(int(foot_layout["rows"]) * FOOT_TILE_SIZE),
+		)
+		var foot_origin_offset := (Vector2(cell_size) - foot_area) * 0.5
+		cells[index]["resource_total"] = loot_ids.size()
+		cells[index]["resource_remaining"] = loot_ids.size()
+		cells[index]["resource_spawns"] = _generate_fixed_loot_spawns(
+			rng, loot_ids, foot_layout, foot_origin_offset
+		)
+		cells[index]["collected_resource_spawns"] = []
+
+
+func _generate_fixed_loot_spawns(
+	rng: RandomNumberGenerator,
+	item_ids: Array[String],
+	foot_layout: Dictionary,
+	foot_origin_offset: Vector2,
+) -> Array:
+	var walkable := _get_walkable_tiles(foot_layout)
+	if walkable.is_empty():
+		return []
+	var pool := walkable.duplicate()
+	for i in range(pool.size() - 1, 0, -1):
+		var j: int = rng.randi_range(0, i)
+		var tmp: Vector2i = pool[i]
+		pool[i] = pool[j]
+		pool[j] = tmp
+	var result: Array = []
+	var spawn_count := mini(item_ids.size(), pool.size())
+	for i in range(spawn_count):
+		var tile: Vector2i = pool[i]
+		var center := Vector2(
+			float(tile.x) * FOOT_TILE_SIZE + FOOT_TILE_SIZE * 0.5,
+			float(tile.y) * FOOT_TILE_SIZE + FOOT_TILE_SIZE * 0.5
+		)
+		result.append({
+			"x": foot_origin_offset.x + center.x + rng.randf_range(-4.0, 4.0),
+			"y": foot_origin_offset.y + center.y + rng.randf_range(-4.0, 4.0),
+			"item_id": item_ids[i],
+		})
+	return result
+
+
 func prepare_tactical_hidden_sites(site_defs: Array, source_id: String = "") -> void:
 	if site_defs.is_empty():
 		return
@@ -1852,6 +1981,8 @@ func _serialize_cell(cell: Dictionary) -> Dictionary:
 		"tactical_building_type": str(cell.get("tactical_building_type", "")),
 		"tactical_label": str(cell.get("tactical_label", "")),
 		"tactical_source": str(cell.get("tactical_source", "")),
+		"building_label_override": str(cell.get("building_label_override", "")),
+		"armory_site_id": str(cell.get("armory_site_id", "")),
 	}
 
 
@@ -1947,6 +2078,8 @@ func _deserialize_cell(data: Dictionary) -> Dictionary:
 		"tactical_building_type": str(data.get("tactical_building_type", "")),
 		"tactical_label": str(data.get("tactical_label", "")),
 		"tactical_source": str(data.get("tactical_source", "")),
+		"building_label_override": str(data.get("building_label_override", "")),
+		"armory_site_id": str(data.get("armory_site_id", "")),
 	}
 
 

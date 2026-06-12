@@ -398,7 +398,15 @@ func blocks_foot_exit(district_index: int) -> bool:
 	var story_id := _story_id_of_district(district_index)
 	if story_id == "" or run_state.is_completed(story_id):
 		return false
-	return StoryData.locks_exit_until_resolved(story_id)
+	if StoryData.locks_exit_until_resolved(story_id):
+		return true
+	return _blocks_foot_exit_for_story(story_id)
+
+
+func _blocks_foot_exit_for_story(story_id: String) -> bool:
+	if story_id == "marian_k142":
+		return bool(run_state.get_variable(story_id, "marian_choice_pending", false))
+	return false
 
 
 func on_exited_district_to_drive(district_index: int) -> bool:
@@ -932,7 +940,7 @@ func build_prompt(story_id: String) -> Dictionary:
 		elif npc_dialogue.phase == _NpcDialogueRunner.Phase.LINE:
 			var body := npc_dialogue.panel_text.strip_edges()
 			out["text"] = body if body != "" else "……"
-			out["continue_hint"] = "按 F 继续"
+			out["continue_hint"] = "按 E 继续"
 			out["speaker"] = npc_dialogue.current_speaker
 		return out
 	if StoryData.is_interior_encounter(story_id):
@@ -957,7 +965,7 @@ func build_prompt(story_id: String) -> Dictionary:
 			StoryGateDialogue.Phase.INTRO:
 				var intro_body := gate_dialogue.npc_bubble.strip_edges()
 				out["text"] = intro_body if intro_body != "" else "……"
-				out["continue_hint"] = "按 F 继续"
+				out["continue_hint"] = "按 E 继续"
 			StoryGateDialogue.Phase.INTRO_CHOICE:
 				out["text"] = StoryData.gate_field(story_id, "choice_npc", "能帮我吗？")
 				out["disembark"] = "帮忙"
@@ -997,6 +1005,11 @@ func build_prompt(story_id: String) -> Dictionary:
 func foot_door_hint(district_index: int) -> String:
 	var story_id := _story_id_of_district(district_index)
 	if story_id != "" and blocks_foot_exit(district_index):
+		if _uses_dialogue_file(story_id):
+			var npc := npc_dialogue
+			if is_instance_valid(npc) and npc.is_active() and npc.story_id == story_id:
+				if npc.phase == _NpcDialogueRunner.Phase.OPTIONS:
+					return "先完成抉择"
 		return "先完成抉择"
 	if story_id != "" and _uses_dialogue_file(story_id):
 		var quest: Dictionary = StoryData.quest_def(story_id)

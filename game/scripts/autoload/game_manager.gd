@@ -52,6 +52,7 @@ var _await_transition_overlay_dismiss := false
 var _transition_direction := 0
 var _transition_target_scene := ""
 const OVERLAY_SAFETY_DISMISS_SEC := 12.0
+const BOOT_HANDOFF_RATIO := 0.98
 
 # -- 场景切换模式（方案四）：Day/Night 独立场景之间的状态传递 --
 var run_state = null   # RunState — 跨场景共享状态（类型在 preload 中解析）
@@ -74,7 +75,7 @@ func go_to_night_with_loading(rs) -> void:
 		if transition.has_method("preload_background"):
 			transition.preload_background()
 		if transition.has_method("show_cover"):
-			transition.show_cover()
+			transition.show_cover(BOOT_HANDOFF_RATIO, "正在准备夜间布防…")
 	get_tree().change_scene_to_packed(DayNightLoadingScene)
 
 
@@ -144,7 +145,7 @@ func start_day_via_loading(rs = null) -> void:
 		if transition.has_method("preload_background"):
 			transition.preload_background()
 		if transition.has_method("show_cover"):
-			transition.show_cover()
+			transition.show_cover(BOOT_HANDOFF_RATIO, "正在加载探索区域…")
 	get_tree().change_scene_to_packed(DayNightLoadingScene)
 
 
@@ -153,7 +154,7 @@ func enter_night_td_after_loading() -> void:
 	_await_transition_overlay_dismiss = true
 	var transition := _run_transition()
 	if transition != null and transition.has_method("show_cover"):
-		transition.show_cover()
+		transition.show_cover(BOOT_HANDOFF_RATIO, "正在准备夜间布防…")
 	if _preloaded_transition_scene != null:
 		get_tree().change_scene_to_packed(_preloaded_transition_scene)
 		_preloaded_transition_scene = null
@@ -167,7 +168,7 @@ func enter_day_after_loading() -> void:
 	_await_transition_overlay_dismiss = true
 	var transition := _run_transition()
 	if transition != null and transition.has_method("show_cover"):
-		transition.show_cover()
+		transition.show_cover(BOOT_HANDOFF_RATIO, "正在加载探索区域…")
 	if _preloaded_transition_scene != null:
 		get_tree().change_scene_to_packed(_preloaded_transition_scene)
 		_preloaded_transition_scene = null
@@ -199,6 +200,7 @@ func dismiss_transition_overlay() -> void:
 	if not _await_transition_overlay_dismiss:
 		return
 	_await_transition_overlay_dismiss = false
+	await _finish_overlay_progress("就绪")
 	await _fade_out_or_hide_overlay()
 
 
@@ -344,7 +346,14 @@ func dismiss_enter_overlay() -> void:
 	if not _await_enter_overlay_dismiss:
 		return
 	_await_enter_overlay_dismiss = false
+	await _finish_overlay_progress("准备就绪")
 	await _fade_out_or_hide_overlay()
+
+
+func report_overlay_boot_progress(ratio: float, label: String) -> void:
+	var transition := _run_transition()
+	if transition != null and transition.has_method("set_cover_progress"):
+		transition.set_cover_progress(ratio, label)
 
 
 func enter_game_after_bootstrap() -> void:
@@ -352,7 +361,7 @@ func enter_game_after_bootstrap() -> void:
 	_play_music_cue("day_exploration", 1.0)
 	var transition := _run_transition()
 	if transition != null and transition.has_method("show_cover"):
-		transition.show_cover()
+		transition.show_cover(BOOT_HANDOFF_RATIO, "正在初始化世界…")
 	if _preloaded_game_scene != null:
 		get_tree().change_scene_to_packed(_preloaded_game_scene)
 		_preloaded_game_scene = null
@@ -374,6 +383,12 @@ func _fade_out_or_hide_overlay() -> void:
 		return
 	if transition.has_method("hide_cover"):
 		transition.hide_cover()
+
+
+func _finish_overlay_progress(done_label: String) -> void:
+	var transition := _run_transition()
+	if transition != null and transition.has_method("finish_cover_progress"):
+		await transition.finish_cover_progress(done_label)
 
 
 func _schedule_overlay_safety_dismiss() -> void:

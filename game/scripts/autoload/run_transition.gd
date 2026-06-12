@@ -1,5 +1,6 @@
 extends CanvasLayer
 ## 跨场景持久入场遮罩：在场景切换与主场景初始化期间盖住视口，避免露出灰色空帧。
+## 遮罩上可显示进度条，承接加载页未完成的最后一段（boot 阶段）。
 
 const BACKGROUND_PATH := "res://assets/menu/difficulty/background.png"
 const BACKGROUND_BRIGHTNESS := Color(1.18, 1.18, 1.14, 1.0)
@@ -10,6 +11,9 @@ var _root: Control
 var _fallback: ColorRect
 var _background: TextureRect
 var _mask: ColorRect
+var _progress_panel: PanelContainer
+var _progress_bar: ProgressBar
+var _status_label: Label
 var _covering := false
 var _cached_texture: Texture2D
 
@@ -25,17 +29,55 @@ func preload_background() -> void:
 	_ensure_texture()
 
 
-func show_cover() -> void:
+func show_cover(initial_progress: float = -1.0, status: String = "") -> void:
 	_ensure_texture()
 	_covering = true
 	visible = true
 	if is_instance_valid(_root):
 		_root.visible = true
 		_root.modulate = Color.WHITE
+	if initial_progress >= 0.0:
+		_show_progress_ui()
+		set_cover_progress(initial_progress, status)
+	else:
+		_hide_progress_ui()
 
 
 func is_covering() -> bool:
 	return _covering and visible
+
+
+func set_cover_progress(ratio: float, status: String = "") -> void:
+	if not is_instance_valid(_progress_bar):
+		return
+	_show_progress_ui()
+	_progress_bar.value = clampf(ratio, 0.0, 1.0)
+	if is_instance_valid(_status_label) and not status.is_empty():
+		_status_label.text = status
+
+
+func finish_cover_progress(status: String = "准备就绪") -> void:
+	if not is_instance_valid(_progress_bar):
+		await get_tree().create_timer(0.12).timeout
+		return
+	_show_progress_ui()
+	if is_instance_valid(_status_label):
+		_status_label.text = status
+	var start_value := _progress_bar.value
+	if start_value >= 1.0:
+		await get_tree().create_timer(0.12).timeout
+		return
+	var tween := create_tween()
+	tween.tween_method(
+		func(value: float) -> void:
+			if is_instance_valid(_progress_bar):
+				_progress_bar.value = value,
+		start_value,
+		1.0,
+		0.35,
+	).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	await tween.finished
+	await get_tree().create_timer(0.12).timeout
 
 
 func fade_out_cover(duration: float = 0.45) -> void:
@@ -54,6 +96,7 @@ func fade_out_cover(duration: float = 0.45) -> void:
 func hide_cover() -> void:
 	_covering = false
 	visible = false
+	_hide_progress_ui()
 	if is_instance_valid(_root):
 		_root.modulate = Color.WHITE
 
@@ -87,6 +130,72 @@ func _build_nodes() -> void:
 	_mask.color = COLOR_MASK
 	_mask.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_mask)
+
+	_build_progress_ui()
+
+
+func _build_progress_ui() -> void:
+	var bottom := MarginContainer.new()
+	bottom.name = "ProgressBottom"
+	bottom.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	bottom.offset_top = -108.0
+	bottom.add_theme_constant_override("margin_left", 72)
+	bottom.add_theme_constant_override("margin_right", 72)
+	bottom.add_theme_constant_override("margin_bottom", 36)
+	bottom.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(bottom)
+
+	_progress_panel = PanelContainer.new()
+	_progress_panel.name = "ProgressPanel"
+	_progress_panel.visible = false
+	bottom.add_child(_progress_panel)
+
+	var panel_style := StyleBoxFlat.new()
+	panel_style.bg_color = Color(0.05, 0.08, 0.12, 0.72)
+	panel_style.border_color = Color(0.35, 0.48, 0.62, 0.45)
+	panel_style.set_border_width_all(1)
+	panel_style.set_corner_radius_all(10)
+	panel_style.content_margin_left = 18
+	panel_style.content_margin_right = 18
+	panel_style.content_margin_top = 12
+	panel_style.content_margin_bottom = 12
+	_progress_panel.add_theme_stylebox_override("panel", panel_style)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 8)
+	_progress_panel.add_child(vbox)
+
+	_status_label = Label.new()
+	_status_label.text = "正在初始化…"
+	_status_label.add_theme_font_size_override("font_size", 13)
+	_status_label.add_theme_color_override("font_color", Color("#b8c8d8"))
+	vbox.add_child(_status_label)
+
+	_progress_bar = ProgressBar.new()
+	_progress_bar.custom_minimum_size = Vector2(0, 14)
+	_progress_bar.min_value = 0.0
+	_progress_bar.max_value = 1.0
+	_progress_bar.value = 0.0
+	_progress_bar.show_percentage = false
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = Color(0.35, 0.78, 0.95, 0.95)
+	fill.set_corner_radius_all(4)
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.10, 0.14, 0.20, 0.85)
+	bg.set_corner_radius_all(4)
+	_progress_bar.add_theme_stylebox_override("fill", fill)
+	_progress_bar.add_theme_stylebox_override("background", bg)
+	vbox.add_child(_progress_bar)
+
+
+func _show_progress_ui() -> void:
+	if is_instance_valid(_progress_panel):
+		_progress_panel.visible = true
+
+
+func _hide_progress_ui() -> void:
+	if is_instance_valid(_progress_panel):
+		_progress_panel.visible = false
 
 
 func _ensure_texture() -> void:
