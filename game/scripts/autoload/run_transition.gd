@@ -14,6 +14,8 @@ var _mask: ColorRect
 var _progress_panel: PanelContainer
 var _progress_bar: ProgressBar
 var _status_label: Label
+var _header_layer: VBoxContainer
+var _header_title: Label
 var _covering := false
 var _cached_texture: Texture2D
 
@@ -29,13 +31,14 @@ func preload_background() -> void:
 	_ensure_texture()
 
 
-func show_cover(initial_progress: float = -1.0, status: String = "") -> void:
+func show_cover(initial_progress: float = -1.0, status: String = "", header_title: String = "") -> void:
 	_ensure_texture()
 	_covering = true
 	visible = true
 	if is_instance_valid(_root):
 		_root.visible = true
 		_root.modulate = Color.WHITE
+	_set_header_title(header_title)
 	if initial_progress >= 0.0:
 		_show_progress_ui()
 		set_cover_progress(initial_progress, status)
@@ -97,6 +100,7 @@ func hide_cover() -> void:
 	_covering = false
 	visible = false
 	_hide_progress_ui()
+	_hide_header_ui()
 	if is_instance_valid(_root):
 		_root.modulate = Color.WHITE
 
@@ -131,7 +135,44 @@ func _build_nodes() -> void:
 	_mask.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_mask)
 
+	_build_header_ui()
 	_build_progress_ui()
+
+
+func _build_header_ui() -> void:
+	_header_layer = VBoxContainer.new()
+	_header_layer.name = "HeaderLayer"
+	_header_layer.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_header_layer.offset_left = -320.0
+	_header_layer.offset_top = 120.0
+	_header_layer.offset_right = 320.0
+	_header_layer.offset_bottom = 200.0
+	_header_layer.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_header_layer.alignment = BoxContainer.ALIGNMENT_CENTER
+	_header_layer.add_theme_constant_override("separation", 10)
+	_header_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_header_layer.visible = false
+	_root.add_child(_header_layer)
+	_header_title = Label.new()
+	_header_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	MenuStyles.style_title(_header_title, 38)
+	_header_layer.add_child(_header_title)
+
+
+func _set_header_title(text: String) -> void:
+	if not is_instance_valid(_header_layer) or not is_instance_valid(_header_title):
+		return
+	if text.strip_edges().is_empty():
+		_hide_header_ui()
+		return
+	_header_title.text = text
+	_header_title.modulate = Color.WHITE
+	_header_layer.visible = true
+
+
+func _hide_header_ui() -> void:
+	if is_instance_valid(_header_layer):
+		_header_layer.visible = false
 
 
 func _build_progress_ui() -> void:

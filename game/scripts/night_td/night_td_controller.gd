@@ -116,6 +116,10 @@ var _cell_tower_map: Dictionary = {}
 var _tower_cache_dirty := true
 var _healer_aura_accum := 0.0
 const HEALER_AURA_INTERVAL := 0.2
+const SIM_SPEED_NORMAL := 1.0
+const SIM_SPEED_FAST := 2.0
+
+var _sim_speed := SIM_SPEED_NORMAL
 
 
 func _ready() -> void:
@@ -135,6 +139,7 @@ func _ready() -> void:
 		hud.power_tower_selected.connect(_on_power_tower_selected)
 		hud.overlay_toggled.connect(_on_overlay_toggled)
 		hud.fuel_boost_pressed.connect(_on_fuel_boost_pressed)
+		hud.sim_speed_toggled.connect(_on_sim_speed_toggled)
 
 
 func set_session_paused(paused: bool) -> void:
@@ -157,11 +162,12 @@ func _process(delta: float) -> void:
 	if not visible:
 		return
 	_update_screen_camera()
+	var sim_delta := delta * _sim_speed
 	match phase:
 		Phase.PLACE:
-			_process_place(delta)
+			_process_place(sim_delta)
 		Phase.COMBAT:
-			_process_combat(delta)
+			_process_combat(sim_delta)
 		Phase.RESULT:
 			pass
 	# 节流重绘：每 3 帧 (~20fps) 才触发一次 _draw，避免 60fps 下 GPU 被 2000+ 绘制命令淹没。
@@ -275,6 +281,7 @@ func start_session(
 	_enemies_reached = 0
 	_combat_done = false
 	_last_result = {}
+	_sim_speed = SIM_SPEED_NORMAL
 	phase = Phase.PLACE if allow_placement and placement_time_sec > 0.0 else Phase.COMBAT
 	show_route_overlay = phase == Phase.PLACE
 	show_overlay = true
@@ -283,8 +290,11 @@ func start_session(
 		if not hud.intro_finished.is_connected(_on_hud_intro_finished):
 			hud.intro_finished.connect(_on_hud_intro_finished, CONNECT_ONE_SHOT)
 		hud.show_session_ui()
+		if hud.has_method("set_sim_speed_active"):
+			hud.set_sim_speed_active(false)
 		if hud.has_method("set_overlay_active"):
 			hud.set_overlay_active(show_overlay)
+		_sync_commander_brief_hud()
 		if hud.has_method("set_seen_enemy_types"):
 			hud.set_seen_enemy_types(_seen_enemy_types)
 		_sync_vehicle_durability_hud(false)
@@ -294,14 +304,14 @@ func start_session(
 			hud.set_phase_text(_session_phase_title("布防阶段"))
 			hud.set_placement_timer(placement_remaining)
 			if _local_backpack != null:
-				hud.set_hint(NightTdHintText.PLACE_BACKPACK)
+				hud.set_hint(NightTdHintText.PLACE_BACKPACK_SHORT)
 			else:
-				hud.set_hint(NightTdHintText.PLACE_DEPLOY_BUDGET)
+				hud.set_hint(NightTdHintText.PLACE_DEPLOY_BUDGET_SHORT)
 		else:
 			hud.set_place_mode(false)
 			hud.set_combat_mode()
 			hud.set_phase_text(_session_phase_title("接敌中"))
-			hud.set_hint(NightTdHintText.COMBAT_NO_PLACE)
+			hud.set_hint(NightTdHintText.COMBAT_NO_PLACE_SHORT)
 		hud.clear_log()
 		var upgrade_summary := NightTdUpgrades.summary_text(_tower_upgrades)
 		if upgrade_summary != "":
@@ -309,14 +319,19 @@ func start_session(
 		if _session_kind == "tutorial":
 			if is_instance_valid(hud):
 				var tutorial_flags: Dictionary = _session_options.get("tutorial_flags", {})
+				# 教学首塔只开放炮塔，避免误选路障/信标
+				var tutorial_towers: Array = ["sniper"]
+				_blueprint_state["unlocked_towers"] = tutorial_towers.duplicate()
+				_selected_tower = "sniper"
 				if bool(tutorial_flags.get("hide_power_panel", true)):
 					hud.show_power_panel(false)
 				if bool(tutorial_flags.get("hide_emergency_fuel", true)) and is_instance_valid(hud._fuel_boost_btn):
 					hud._fuel_boost_btn.hide()
 				if bool(tutorial_flags.get("hide_heatmap_until_place", false)) and is_instance_valid(hud.heatmap_switch):
 					hud.heatmap_switch.hide()
-				hud.set_unlocked_towers(["sniper", "barrier", "trap", "jammer"])
-				hud.set_hint(NightTdHintText.TUTORIAL_PLACE)
+				hud.set_unlocked_towers(tutorial_towers)
+				_selected_tower = hud.get_selected_tower() if hud.has_method("get_selected_tower") else "sniper"
+				hud.set_hint("%s · %s" % [NightTdHintText.TUTORIAL_PLACE_SHORT, NightTdHintText.PLACE_BACKPACK_SHORT])
 		if hud.has_method("set_unlocked_towers") and _session_kind != "tutorial":
 			hud.set_unlocked_towers(_blueprint_state.get("unlocked_towers", []))
 		_notify_debug_skip_available()
@@ -348,7 +363,12 @@ func _reveal_tutorial_night_features_after_place() -> void:
 		hud.heatmap_switch.show()
 	if bool(flags.get("hide_power_panel", true)):
 		hud.show_power_panel(true)
-		hud.set_hint(NightTdHintText.TUTORIAL_AFTER_PLACE)
+		hud.set_hint(NightTdHintText.TUTORIAL_AFTER_PLACE_SHORT)
+	if hud.has_method("set_unlocked_towers"):
+		hud.set_unlocked_towers(["sniper", "barrier", "trap", "jammer"])
+		_blueprint_state["unlocked_towers"] = ["sniper", "barrier", "trap", "jammer"]
+		if hud.has_method("get_selected_tower"):
+			_selected_tower = hud.get_selected_tower()
 
 
 func _debug_skip_available() -> bool:
@@ -613,9 +633,11 @@ func _process_combat(delta: float) -> void:
 	if is_instance_valid(hud) and int(Engine.get_frames_drawn()) % 15 == 0:
 		var total := _wave_scheduler.total_spawn_events if _wave_scheduler != null else _enemies_spawned + _wave_queue.size()
 		var remain := _wave_scheduler.remaining_count() if _wave_scheduler != null else _wave_queue.size()
-		hud.set_combat_status("波次 %d/%d · 待刷 %d · 场上 %d 敌 · 车辆 HP %.0f" % [
-			_enemies_spawned, total, remain, _count_hostiles(), base_hp
+		hud.set_combat_status("波次 %d/%d · 待刷 %d · 场上 %d 敌" % [
+			_enemies_spawned, total, remain, _count_hostiles()
 		])
+		if show_overlay:
+			_sync_commander_brief_hud()
 	var waves_done := false
 	if _wave_scheduler != null:
 		waves_done = _wave_scheduler.is_finished(_count_hostiles())
@@ -1593,6 +1615,13 @@ func _on_overlay_toggled(state: bool) -> void:
 	_display_influence_dirty = true
 	if is_instance_valid(field):
 		field.queue_redraw()
+	_sync_commander_brief_hud()
+
+
+func _on_sim_speed_toggled(fast: bool) -> void:
+	_sim_speed = SIM_SPEED_FAST if fast else SIM_SPEED_NORMAL
+	if is_instance_valid(hud):
+		hud.append_log("游戏速度 ×%.0f" % _sim_speed, Color("#8ec8e8"))
 
 
 func _on_hud_intro_finished() -> void:
@@ -1664,6 +1693,15 @@ func get_commander_display_data() -> Dictionary:
 		"assault_keys": _commander.last_assault_keys,
 		"suppressed": _commander.suppressed,
 	}
+
+
+func _sync_commander_brief_hud() -> void:
+	if not is_instance_valid(hud) or not hud.has_method("update_commander_brief"):
+		return
+	if not show_overlay:
+		hud.update_commander_brief({})
+		return
+	hud.update_commander_brief(get_commander_display_data())
 
 
 func _enemy_at_cell(cell: Vector2i) -> Dictionary:
@@ -1982,7 +2020,10 @@ func _refresh_resource_hud() -> void:
 		return
 	var parts := int(_local_backpack.count("parts"))
 	var scrap := int(_local_backpack.count("scrap"))
-	hud.set_resource_text("零件 %d · 废料 %d" % [parts, scrap])
+	if hud.has_method("set_resource_counts"):
+		hud.set_resource_counts(parts, scrap)
+	else:
+		hud.set_resource_text("零件 %d · 废料 %d" % [parts, scrap])
 	# Also update card costs so they show (剩余 N)
 	if hud.has_method("update_card_costs"):
 		var counts := {"parts": parts, "scrap": scrap}
@@ -2020,7 +2061,7 @@ func _begin_combat() -> void:
 	if is_instance_valid(hud):
 		hud.set_combat_mode()
 		hud.set_phase_text(_session_phase_title("接敌中"))
-		hud.set_hint(NightTdHintText.COMBAT_ACTIVE)
+		hud.set_hint(NightTdHintText.COMBAT_ACTIVE_SHORT)
 		var total := _wave_scheduler.total_spawn_events if _wave_scheduler != null else _enemies_spawned + _wave_queue.size()
 		hud.set_combat_status("波次 %d/%d · 场上 %d 敌" % [_enemies_spawned, total, _count_hostiles()])
 		hud.append_log("—— 夜间威胁来袭 ——")

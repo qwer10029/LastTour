@@ -20,7 +20,7 @@ const PHASE_NAMES := {
 }
 
 @export var day_duration_sec: float = 30.0
-@export var evening_warning_sec: float = 8.0
+@export var evening_warning_sec: float = 25.0
 @export var night_resolve_display_sec: float = 1.5
 @export var auto_start: bool = true
 

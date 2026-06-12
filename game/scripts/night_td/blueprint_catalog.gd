@@ -28,7 +28,7 @@ static func _config() -> Dictionary:
 
 
 static func default_run_state() -> Dictionary:
-	var starters: Array = _config().get("starter_unlocked_towers", ["jammer", "barrier"])
+	var starters: Array = _config().get("starter_unlocked_towers", ["jammer", "barrier", "cryo_beacon"])
 	return {
 		"unlocked_towers": (starters as Array).duplicate(),
 		"global": {},

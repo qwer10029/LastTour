@@ -48,7 +48,8 @@ func _ready() -> void:
 	_prepare_intro_state()
 	_begin_threaded_scene_load()
 	_play_entrance_animation()
-	await get_tree().create_timer(INTRO_FADE_SEC * 0.35).timeout
+	await get_tree().create_timer(INTRO_FADE_SEC).timeout
+	_ensure_header_visible()
 	await _preload_and_enter()
 
 
@@ -85,10 +86,10 @@ func _setup_labels() -> void:
 	match _direction:
 		TransitionDirection.DAY_TO_NIGHT:
 			title_label.text = "夜幕降临"
-			subtitle_label.text = "正在准备夜间布防…"
+			subtitle_label.text = "夜间布防 · 守住车辆与物资"
 		TransitionDirection.NIGHT_TO_DAY:
 			title_label.text = "黎明将至"
-			subtitle_label.text = "正在加载探索区域…"
+			subtitle_label.text = "重返废墟 · 继续探索"
 
 
 func _setup_progress_ui() -> void:
@@ -125,14 +126,18 @@ func _setup_progress_ui() -> void:
 func _prepare_intro_state() -> void:
 	if is_instance_valid(intro_overlay):
 		intro_overlay.color = Color(0.02, 0.04, 0.07, 1.0)
-	if is_instance_valid(title_label):
-		title_label.modulate = Color(1.0, 1.0, 1.0, 0.0)
-	if is_instance_valid(subtitle_label):
-		subtitle_label.modulate.a = 0.0
+	_ensure_header_visible()
 	if is_instance_valid(progress_panel):
 		progress_panel.modulate.a = 0.0
 	if is_instance_valid(sweep_glare):
 		sweep_glare.color = Color(0.72, 0.95, 1.0, 0.0)
+
+
+func _ensure_header_visible() -> void:
+	if is_instance_valid(title_label):
+		title_label.modulate = Color.WHITE
+	if is_instance_valid(subtitle_label):
+		subtitle_label.modulate = Color.WHITE
 
 
 func _play_entrance_animation() -> void:
@@ -140,18 +145,10 @@ func _play_entrance_animation() -> void:
 		var fade := create_tween()
 		fade.tween_property(intro_overlay, "color:a", 0.0, INTRO_FADE_SEC)\
 			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	if is_instance_valid(title_label):
-		var t := create_tween()
-		t.tween_property(title_label, "modulate:a", 1.0, INTRO_FADE_SEC * 0.7)\
-			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	if is_instance_valid(subtitle_label):
-		var t := create_tween()
-		t.tween_property(subtitle_label, "modulate:a", 1.0, INTRO_FADE_SEC * 0.75)\
-			.set_delay(0.10).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 	if is_instance_valid(progress_panel):
 		var t := create_tween()
 		t.tween_property(progress_panel, "modulate:a", 1.0, 0.35)\
-			.set_delay(INTRO_FADE_SEC * 0.3).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+			.set_delay(INTRO_FADE_SEC * 0.25).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 	_play_screen_sweep()
 
 
@@ -198,6 +195,7 @@ func _preload_and_enter() -> void:
 	if _preload_started:
 		return
 	_preload_started = true
+	_ensure_header_visible()
 	_set_progress(0.08, "准备加载…")
 	await get_tree().process_frame
 
@@ -276,6 +274,7 @@ func _wait_min_display() -> void:
 
 
 func _set_progress(ratio: float, label: String) -> void:
+	_ensure_header_visible()
 	if is_instance_valid(progress_bar):
 		progress_bar.value = clampf(ratio, 0.0, 1.0)
 	if is_instance_valid(status_label) and not label.is_empty():

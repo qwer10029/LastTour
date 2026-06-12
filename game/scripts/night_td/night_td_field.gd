@@ -258,21 +258,13 @@ func _is_pointer_over_ui() -> bool:
 func _draw() -> void:
 	var grid_color := Color("#05080c")
 	var line_color := Color("#8ec7ff")
-	var spawn_color := Color(0.95, 0.2, 0.2, 0.55)
 	var field_rect := get_field_rect_local()
 	draw_rect(field_rect, grid_color, true)
 	draw_rect(field_rect, Color("#d7f1ff"), false, 4.0)
 	draw_rect(field_rect.grow(-5.0), Color(0.0, 0.0, 0.0, 0.10), false, 1.0)
-	draw_string(_font, field_origin + Vector2(8, -10), "布防区", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#eef8ff"))
+	_draw_line_grid(line_color)
 
-	for x in range(grid_cols + 1):
-		var px := field_origin.x + x * _layout_tile_size
-		draw_line(Vector2(px, field_origin.y), Vector2(px, field_origin.y + grid_rows * _layout_tile_size), line_color, 1.5)
-	for y in range(grid_rows + 1):
-		var py := field_origin.y + y * _layout_tile_size
-		draw_line(Vector2(field_origin.x, py), Vector2(field_origin.x + grid_cols * _layout_tile_size, py), line_color, 1.5)
-
-	# 可建造区域：整块填充 + 逐行棋盘格（18 行 vs 504 格，draw_rect 从 1200 降到 ~25）
+	# 可建造区：整块填充 + 逐行棋盘格
 	var buildable_rect := get_field_rect_local()
 	draw_rect(buildable_rect, Color(0.14, 0.52, 0.28, 0.14), true)
 	for y in range(grid_rows):
@@ -282,13 +274,6 @@ func _draw() -> void:
 				Vector2(grid_cols * _layout_tile_size, _layout_tile_size)
 			)
 			draw_rect(row_rect, Color(0.14, 0.52, 0.28, 0.08), true)
-
-	# 出生带：4 个矩形替代 ~60 个格子绘制
-	var ts := _layout_tile_size
-	draw_rect(Rect2(field_origin, Vector2(2 * ts, grid_rows * ts)), spawn_color, true)
-	draw_rect(Rect2(field_origin + Vector2((grid_cols - 2) * ts, 0), Vector2(2 * ts, grid_rows * ts)), spawn_color, true)
-	draw_rect(Rect2(field_origin, Vector2(grid_cols * ts, 2 * ts)), spawn_color, true)
-	draw_rect(Rect2(field_origin + Vector2(0, (grid_rows - 2) * ts), Vector2(grid_cols * ts, 2 * ts)), spawn_color, true)
 
 	for cell in vehicle_cells:
 		var rect := Rect2(field_origin + Vector2(cell.x * _layout_tile_size, cell.y * _layout_tile_size), Vector2(_layout_tile_size, _layout_tile_size))
@@ -312,6 +297,44 @@ func _draw() -> void:
 		_draw_breach_flashes()
 		if _is_dragging:
 			_draw_selection_rect()
+
+
+func _draw_field_frame(field_rect: Rect2) -> void:
+	draw_rect(field_rect, Color("#3a6a8a", 0.22), false, 2.0)
+	draw_rect(field_rect.grow(-3.0), Color("#5ec8ff", 0.12), false, 1.0)
+	var corner := 10.0
+	var glow := Color("#5ec8ff", 0.35)
+	var inset := field_rect.grow(-2.0)
+	draw_line(inset.position, inset.position + Vector2(corner, 0), glow, 2.0)
+	draw_line(inset.position, inset.position + Vector2(0, corner), glow, 2.0)
+	var top_right := Vector2(inset.end.x, inset.position.y)
+	draw_line(top_right, top_right + Vector2(-corner, 0), glow, 2.0)
+	draw_line(top_right, top_right + Vector2(0, corner), glow, 2.0)
+	var bottom_left := Vector2(inset.position.x, inset.end.y)
+	draw_line(bottom_left, bottom_left + Vector2(corner, 0), glow, 2.0)
+	draw_line(bottom_left, bottom_left + Vector2(0, -corner), glow, 2.0)
+	var bottom_right := inset.end
+	draw_line(bottom_right, bottom_right + Vector2(-corner, 0), glow, 2.0)
+	draw_line(bottom_right, bottom_right + Vector2(0, -corner), glow, 2.0)
+
+
+func _draw_line_grid(line_color: Color) -> void:
+	for x in range(grid_cols + 1):
+		var px := field_origin.x + x * _layout_tile_size
+		draw_line(
+			Vector2(px, field_origin.y),
+			Vector2(px, field_origin.y + grid_rows * _layout_tile_size),
+			line_color,
+			1.5,
+		)
+	for y in range(grid_rows + 1):
+		var py := field_origin.y + y * _layout_tile_size
+		draw_line(
+			Vector2(field_origin.x, py),
+			Vector2(field_origin.x + grid_cols * _layout_tile_size, py),
+			line_color,
+			1.5,
+		)
 
 
 func _draw_arrow_head(tip: Vector2, direction: Vector2, size: float, color: Color) -> void:
@@ -384,20 +407,10 @@ func _draw_commander_overlay() -> void:
 	if cd.is_empty():
 		return
 	if bool(cd.get("suppressed", false)):
-		draw_string(_font, field_origin + Vector2(8, -44),
-			"指挥官: 失能中", HORIZONTAL_ALIGNMENT_LEFT, -1, 11,
-			Color(0.8, 0.4, 0.3, 0.9))
 		return
 
 	var missions: Array = cd.get("missions", [])
 	var pressure_active: bool = bool(cd.get("pressure_active", false))
-
-	var label_text := "指挥官: 活跃"
-	if missions.is_empty():
-		label_text += " (暂无攻坚任务)"
-	draw_string(_font, field_origin + Vector2(8, -44),
-		label_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11,
-		Color(1.0, 0.82, 0.29, 0.9))
 
 	for m in missions:
 		var target_cell: Vector2i = m["target_cell"]
@@ -464,8 +477,6 @@ func _draw_flow_overlay() -> void:
 	var ff: NightTdFlowField = _controller._flow
 	if ff == null or ff.cols == 0:
 		return
-	draw_string(_font, field_origin + Vector2(8, -58), "流场方向 →",
-		HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.55, 0.85, 0.95, 0.75))
 	var arrow_len := _layout_tile_size * 0.3
 	var int_max := maxf(
 		ff.integration_at(Vector2i(0, 0)),

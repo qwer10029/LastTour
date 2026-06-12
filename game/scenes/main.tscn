@@ -24,7 +24,7 @@ vehicle_scene = ExtResource("4_vehicle")
 script = ExtResource("6_time")
 auto_start = false
 day_duration_sec = 30.0
-evening_warning_sec = 8.0
+evening_warning_sec = 25.0
 
 [node name="NightDefenseSystem" type="Node" parent="Systems"]
 script = ExtResource("7_night")

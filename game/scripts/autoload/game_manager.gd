@@ -82,7 +82,7 @@ func go_to_night_with_loading(rs) -> void:
 		if transition.has_method("preload_background"):
 			transition.preload_background()
 		if transition.has_method("show_cover"):
-			transition.show_cover(BOOT_HANDOFF_RATIO, "正在准备夜间布防…")
+			transition.show_cover(BOOT_HANDOFF_RATIO, "正在准备夜间布防…", "夜幕降临")
 	get_tree().change_scene_to_packed(DayNightLoadingScene)
 
 
@@ -155,7 +155,7 @@ func start_day_via_loading(rs = null) -> void:
 		if transition.has_method("preload_background"):
 			transition.preload_background()
 		if transition.has_method("show_cover"):
-			transition.show_cover(BOOT_HANDOFF_RATIO, "正在加载探索区域…")
+			transition.show_cover(BOOT_HANDOFF_RATIO, "正在加载探索区域…", "黎明将至")
 	get_tree().change_scene_to_packed(DayNightLoadingScene)
 
 
@@ -164,7 +164,7 @@ func enter_night_td_after_loading() -> void:
 	_await_transition_overlay_dismiss = true
 	var transition := _run_transition()
 	if transition != null and transition.has_method("show_cover"):
-		transition.show_cover(BOOT_HANDOFF_RATIO, "正在准备夜间布防…")
+		transition.show_cover(BOOT_HANDOFF_RATIO, "正在准备夜间布防…", "夜幕降临")
 	if _preloaded_transition_scene != null:
 		get_tree().change_scene_to_packed(_preloaded_transition_scene)
 		_preloaded_transition_scene = null
@@ -178,7 +178,7 @@ func enter_day_after_loading() -> void:
 	_await_transition_overlay_dismiss = true
 	var transition := _run_transition()
 	if transition != null and transition.has_method("show_cover"):
-		transition.show_cover(BOOT_HANDOFF_RATIO, "正在加载探索区域…")
+		transition.show_cover(BOOT_HANDOFF_RATIO, "正在加载探索区域…", "黎明将至")
 	if _preloaded_transition_scene != null:
 		get_tree().change_scene_to_packed(_preloaded_transition_scene)
 		_preloaded_transition_scene = null
