@@ -10,20 +10,12 @@ var _tween: Tween
 var _bar_tex: Texture2D
 var _fill_rect: ColorRect
 var _track: TextureRect
-var _title: Label
 
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	custom_minimum_size = Vector2(320, 28)
 	_bar_tex = NightTdUiTheme.load_texture(NightTdUiTheme.BAR_DURABILITY_SEGMENTS)
-
-	_title = Label.new()
-	_title.name = "Title"
-	_title.text = "车辆耐久"
-	_title.position = Vector2(0, -18)
-	NightTdUiTheme.apply_holo_label(_title)
-	add_child(_title)
 
 	_track = TextureRect.new()
 	_track.name = "Track"

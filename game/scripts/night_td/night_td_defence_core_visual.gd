@@ -1,7 +1,9 @@
 extends Node2D
 class_name NightTdDefenceCoreVisual
 
-## 战场中央防御核心：unit_defence_core + effect_energy_shield 护盾激活动画。
+const DayTopdownRender = preload("res://scripts/day_topdown_render.gd")
+
+## 战场中央基地标识：车辆俯视图 + effect_energy_shield 护盾激活动画。
 
 var _field: NightTdField
 var _core_tex: Texture2D
@@ -17,7 +19,9 @@ func bind_field(field: NightTdField) -> void:
 
 
 func _ready() -> void:
-	_core_tex = NightTdUiTheme.load_texture(NightTdUiTheme.UNIT_DEFENCE_CORE)
+	_core_tex = DayTopdownRender.vehicle_texture()
+	if _core_tex == null:
+		_core_tex = NightTdUiTheme.load_texture(NightTdUiTheme.UNIT_DEFENCE_CORE)
 	_shield_tex = NightTdUiTheme.load_texture(NightTdUiTheme.EFFECT_ENERGY_SHIELD)
 
 	_core_sprite = Sprite2D.new()
