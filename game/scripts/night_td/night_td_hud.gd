@@ -59,6 +59,11 @@ const HOVER_DELAY: float = 0.45
 # Power
 var _power_panel: VBoxContainer = null
 var _energy_label: Label = null
+var _energy_rate_row: HBoxContainer = null
+var _energy_production_label: Label = null
+var _energy_production_bar: ProgressBar = null
+var _energy_draw_label: Label = null
+var _energy_draw_bar: ProgressBar = null
 var _fuel_boost_btn: Button = null
 var _fuel_boost_label: Label = null
 var _power_list: VBoxContainer = null
@@ -553,7 +558,7 @@ func show_enemy_gallery(type_id: String = "", first_seen: bool = false) -> void:
 		_gallery_list.select(0)
 		_on_gallery_enemy_selected(0)
 	else:
-		_gallery_detail.text = "尚未遭遇新的敌方机体。"
+		_gallery_detail.text = "尚未遭遇已知敌方机体。"
 
 
 func hide_enemy_gallery() -> void:
@@ -569,11 +574,13 @@ func _refresh_enemy_gallery_list() -> void:
 	for type_id in all_types:
 		var def := NightTdDefs.get_enemy_def(type_id)
 		var seen := _seen_enemy_types.has(type_id)
-		var label := str(def.get("name", type_id)) if seen else "%s（未遭遇）" % str(def.get("name", type_id))
+		if not seen:
+			continue
+		var label := str(def.get("name", type_id))
 		var idx := _gallery_list.add_item(label)
 		_gallery_list.set_item_metadata(idx, type_id)
 		var color: Color = def.get("color", Color.WHITE)
-		_gallery_list.set_item_custom_fg_color(idx, color if seen else Color(COLORS["subtitle"]))
+		_gallery_list.set_item_custom_fg_color(idx, color)
 
 
 func _select_gallery_type(type_id: String) -> void:
@@ -889,11 +896,26 @@ func _build_power_panel() -> void:
 	_power_panel.add_child(title)
 
 	_energy_label = Label.new()
-	_energy_label.text = "反应堆: --"
+	_energy_label.text = "储能: --"
 	_energy_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_energy_label.add_theme_font_size_override("font_size", 11)
-	_energy_label.add_theme_color_override("font_color", Color(COLORS["subtitle"]))
+	_energy_label.add_theme_font_size_override("font_size", 15)
+	_energy_label.add_theme_color_override("font_color", Color(COLORS["title"]))
 	_power_panel.add_child(_energy_label)
+
+	_energy_rate_row = HBoxContainer.new()
+	_energy_rate_row.add_theme_constant_override("separation", 8)
+	_energy_rate_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_power_panel.add_child(_energy_rate_row)
+
+	var production_box := _make_energy_rate_box("发电", Color("#6ed08b"))
+	_energy_rate_row.add_child(production_box)
+	_energy_production_label = production_box.get_node("ValueLabel") as Label
+	_energy_production_bar = production_box.get_node("Bar") as ProgressBar
+
+	var draw_box := _make_energy_rate_box("耗电", Color("#f0a040"))
+	_energy_rate_row.add_child(draw_box)
+	_energy_draw_label = draw_box.get_node("ValueLabel") as Label
+	_energy_draw_bar = draw_box.get_node("Bar") as ProgressBar
 
 	_fuel_boost_btn = Button.new()
 	_fuel_boost_btn.text = "应急供能"
@@ -917,6 +939,36 @@ func _build_power_panel() -> void:
 	_power_empty_label.text = "（暂无耗电设施）"
 	_power_empty_label.add_theme_color_override("font_color", Color(COLORS["subtitle"]))
 	_power_panel.add_child(_power_empty_label)
+
+
+func _make_energy_rate_box(title: String, accent: Color) -> VBoxContainer:
+	var box := VBoxContainer.new()
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.add_theme_constant_override("separation", 3)
+	var label := Label.new()
+	label.name = "ValueLabel"
+	label.text = "%s 0.0/s" % title
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 18)
+	label.add_theme_color_override("font_color", Color(COLORS["title"]))
+	box.add_child(label)
+	var bar := ProgressBar.new()
+	bar.name = "Bar"
+	bar.show_percentage = false
+	bar.min_value = 0.0
+	bar.max_value = 1.0
+	bar.value = 0.0
+	bar.custom_minimum_size = Vector2(0, 14)
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.08, 0.11, 0.16, 0.82)
+	bg.set_corner_radius_all(4)
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = accent
+	fill.set_corner_radius_all(4)
+	bar.add_theme_stylebox_override("background", bg)
+	bar.add_theme_stylebox_override("fill", fill)
+	box.add_child(bar)
+	return box
 
 
 func _build_night_status_meters() -> void:
@@ -980,9 +1032,25 @@ func _set_status_meter(bar: ProgressBar, label: Label, title: String, current: f
 	label.text = "%s %.0f/%.0f" % [title, clampf(current, 0.0, safe_max), maximum]
 
 
-func set_energy_status(current: float, capacity: float, demand: float) -> void:
+func set_energy_status(current: float, capacity: float, _planned_demand: float, production: float, actual_draw: float, brownout: float) -> void:
 	if is_instance_valid(_energy_label):
-		_energy_label.text = "反应堆 %.0f/%.0f\n耗能 %.1f/s" % [current, capacity, demand]
+		_energy_label.text = "储能 %.0f/%.0f · 供电 %.0f%%" % [
+			clampf(current, 0.0, capacity),
+			capacity,
+			clampf(brownout * 100.0, 0.0, 100.0),
+		]
+	var displayed_draw := minf(actual_draw, production) if current <= 0.01 else actual_draw
+	var rate_scale := maxf(maxf(production, displayed_draw), 1.0)
+	if is_instance_valid(_energy_production_label):
+		_energy_production_label.text = "发电 +%.1f/s" % production
+	if is_instance_valid(_energy_production_bar):
+		_energy_production_bar.max_value = rate_scale
+		_energy_production_bar.value = clampf(production, 0.0, rate_scale)
+	if is_instance_valid(_energy_draw_label):
+		_energy_draw_label.text = "耗电 -%.1f/s" % displayed_draw
+	if is_instance_valid(_energy_draw_bar):
+		_energy_draw_bar.max_value = rate_scale
+		_energy_draw_bar.value = clampf(displayed_draw, 0.0, rate_scale)
 
 
 func set_fuel_boost_status(fuel: float, fuel_max: float, active: bool, remaining: float, burn_rate: float, production_bonus: float) -> void:

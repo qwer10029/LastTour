@@ -19,6 +19,10 @@ const POWER_STEP := 0.5  # UI 调档步长
 var production_rate := 4.0
 var capacity := 60.0
 var current := 20.0
+var last_production_rate := 4.0
+var last_planned_demand := 0.0
+var last_actual_draw := 0.0
+var last_brownout := 1.0
 
 # tower_id(int) -> power_level(float)
 var _levels: Dictionary = {}
@@ -45,6 +49,10 @@ func reset() -> void:
 	_levels.clear()
 	_effective.clear()
 	current = clampf(current, 0.0, capacity)
+	last_production_rate = production_rate
+	last_planned_demand = 0.0
+	last_actual_draw = 0.0
+	last_brownout = 1.0
 
 
 ## 注册一座耗电塔（默认额定功率 1.0）。无耗电的塔（upkeep=0）也可注册，level 不影响电池。
@@ -81,11 +89,13 @@ func effective_scale(tower_id: int) -> float:
 ## 返回 brownout 系数（1=供电充足，<1=本帧限电）。
 func tick(delta: float, upkeeps: Dictionary, production_bonus: float = 0.0) -> float:
 	var production := maxf(production_rate + production_bonus, 0.0)
+	last_production_rate = production
 	# 计划总功耗
 	var demand := 0.0
 	for tower_id: int in _levels.keys():
 		var up := float(upkeeps.get(tower_id, 0.0))
 		demand += up * float(_levels[tower_id])
+	last_planned_demand = demand
 	# 可用功率 = 反应堆产能 + 电池放电（本帧最多放 current/delta）
 	var available := production
 	if delta > 0.0:
@@ -93,8 +103,10 @@ func tick(delta: float, upkeeps: Dictionary, production_bonus: float = 0.0) -> f
 	var brownout := 1.0
 	if demand > available and demand > 0.0:
 		brownout = available / demand
+	last_brownout = brownout
 	# 结算电池：净流入 =（产能 − 实际功耗）
 	var actual_draw := demand * brownout
+	last_actual_draw = actual_draw
 	current = clampf(current + (production - actual_draw) * delta, 0.0, capacity)
 	# 写每塔有效系数
 	for tower_id: int in _levels.keys():

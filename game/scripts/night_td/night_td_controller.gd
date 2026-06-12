@@ -1259,7 +1259,14 @@ func _update_energy(delta: float) -> void:
 		_mark_flow_dirty()
 	# 刷新 HUD 能源显示与始终在场的功率列表。
 	if is_instance_valid(hud):
-		hud.set_energy_status(_energy.current, _energy.capacity, _energy.current_demand(upkeeps))
+		hud.set_energy_status(
+			_energy.current,
+			_energy.capacity,
+			_energy.last_planned_demand,
+			_energy.last_production_rate,
+			_energy.last_actual_draw,
+			_energy.last_brownout,
+		)
 		hud.update_power_list(_powered_tower_rows())
 		_refresh_fuel_boost_hud()
 
