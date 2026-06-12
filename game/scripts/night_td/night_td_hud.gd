@@ -472,7 +472,7 @@ func _build_enemy_gallery() -> void:
 	shell.add_child(_gallery_overlay)
 
 	var dim := ColorRect.new()
-	dim.color = Color(0.0, 0.0, 0.0, 0.24)
+	dim.color = Color(0.0, 0.0, 0.0, 0.0)
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_gallery_overlay.add_child(dim)

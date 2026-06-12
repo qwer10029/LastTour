@@ -732,9 +732,6 @@ func _draw_tower_range_fx(
 			draw_circle(local_pos, range_px, Color(0.48, 0.65, 1.0, 0.07 * alpha_mul))
 			draw_arc(local_pos, range_px, 0.0, TAU, sniper_seg, Color(0.55, 0.74, 1.0, 0.44 * alpha_mul), 2.4 * width_mul)
 		"splash":
-			var splash_r := float(tdef.get("splash_radius", 56.0))
-			draw_circle(local_pos, splash_r, Color(0.95, 0.68, 0.24, 0.18 * alpha_mul))
-			draw_arc(local_pos, splash_r, 0.0, TAU, arc_seg, Color(1.0, 0.72, 0.28, 0.50 * alpha_mul), 2.2 * width_mul)
 			draw_circle(local_pos, range_px, Color(0.88, 0.64, 0.23, 0.08 * alpha_mul))
 			draw_arc(local_pos, range_px, 0.0, TAU, arc_seg, Color(1.0, 0.76, 0.32, 0.46 * alpha_mul), 2.8 * width_mul)
 
