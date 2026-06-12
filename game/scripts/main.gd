@@ -3,6 +3,7 @@ extends Node2D
 const RunEndOverlayScript = preload("res://scripts/ui/run_end_overlay.gd")
 const CommunicationTerminalScript = preload("res://scripts/ui/communication_terminal.gd")
 const EndingOutcomeOverlayScript = preload("res://scripts/ui/ending_outcome_overlay.gd")
+const StartGuideOverlayScript = preload("res://scripts/ui/start_guide_overlay.gd")
 const DayTopdownRender = preload("res://scripts/day_topdown_render.gd")
 const RunStateClass = preload("res://scripts/run_state.gd")
 const NpcDialogueRunnerScript = preload("res://scripts/story/npc_dialogue_runner.gd")
@@ -93,6 +94,7 @@ var _pending_thunder_district := -1
 var _run_end_overlay: CanvasLayer
 var _communication_terminal: CanvasLayer
 var _ending_outcome_overlay: CanvasLayer
+var _start_guide_overlay: CanvasLayer
 var _base_fuel_max: float = 999.0
 var _base_elevator_repair_cost: int = 3
 var _run_difficulty_name: String = "普通"
@@ -706,6 +708,8 @@ func _start_new_run() -> void:
 	if is_instance_valid(time_system):
 		time_system.start_day(1)
 	_play_music_cue("day_exploration", 1.0)
+	if is_instance_valid(_start_guide_overlay):
+		_start_guide_overlay.show_guide()
 
 func _ensure_input_actions() -> void:
 	for action_name in ["move_up", "move_down", "move_left", "move_right", "interact", "repair", "pause", "enter_defense_mode", "toggle_backpack", "toggle_journal", "toggle_world_map", "cycle_building"]:
@@ -2416,6 +2420,9 @@ func _setup_run_end_ui() -> void:
 	_ending_outcome_overlay = EndingOutcomeOverlayScript.new()
 	add_child(_ending_outcome_overlay)
 	_ending_outcome_overlay.closed.connect(_on_ending_outcome_closed)
+	_start_guide_overlay = StartGuideOverlayScript.new()
+	add_child(_start_guide_overlay)
+	_start_guide_overlay.guide_closed.connect(_on_start_guide_closed)
 
 
 func _check_vehicle_destroyed() -> bool:
@@ -2662,6 +2669,11 @@ func _on_ending_outcome_closed() -> void:
 	if is_instance_valid(_ending_outcome_overlay):
 		_ending_outcome_overlay.hide_overlay()
 	_show_run_summary()
+
+
+func _on_start_guide_closed() -> void:
+	if is_instance_valid(_start_guide_overlay):
+		_start_guide_overlay.hide_overlay()
 
 
 func _show_run_summary() -> void:
