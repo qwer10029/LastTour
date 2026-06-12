@@ -1,10 +1,8 @@
 extends Control
 
-const TYPEWRITER_CHAR_SEC := 0.038
 const NARRATION_WIDTH_RATIO := 0.55
-const NARRATION_TOP_RATIO := 0.66
-const NARRATION_BOTTOM_RATIO := 0.80
-const MAX_VISIBLE_LINES := 2
+const NARRATION_TOP_RATIO := 0.62
+const NARRATION_BOTTOM_RATIO := 0.88
 const BOTTOM_FADE_HEIGHT_RATIO := 0.38
 const BOTTOM_FADE_ALPHA := 0.76
 
@@ -17,10 +15,6 @@ const BOTTOM_FADE_ALPHA := 0.76
 @onready var _skip_button: Button = %SkipButton
 
 var _slide_index := 0
-var _line_index := 0
-var _lines: PackedStringArray = []
-var _prefix_text := ""
-var _is_typing := false
 
 
 func _ready() -> void:
@@ -87,10 +81,6 @@ func _layout_narration_area() -> void:
 	_narration_anchor.size = Vector2(width, height)
 
 
-func _exit_tree() -> void:
-	_stop_typewriter()
-
-
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_accept"):
 		_advance()
@@ -119,8 +109,7 @@ func _apply_narration_style(label: Label) -> void:
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.max_lines_visible = MAX_VISIBLE_LINES
-	label.clip_text = true
+	label.clip_text = false
 	label.text_direction = Control.TEXT_DIRECTION_AUTO
 
 
@@ -176,22 +165,21 @@ func _style_skip_button(button: Button) -> void:
 
 
 func _show_slide(index: int) -> void:
-	_stop_typewriter()
 	_slide_index = clampi(index, 0, OpeningPrologueDefs.slide_count() - 1)
 	var data := OpeningPrologueDefs.slide(_slide_index)
 	var image_path := str(data.get("image", ""))
 	if image_path != "" and ResourceLoader.exists(image_path):
 		var tex := load(image_path) as Texture2D
 		_texture_rect.texture = tex
-	_lines = PackedStringArray()
+	# 直接显示当前页的全部文字
+	var all_text := ""
 	for raw in data.get("lines", []):
-		_lines.append(str(raw))
-	_line_index = 0
-	_prefix_text = ""
-	_set_narration_text("")
+		if not all_text.is_empty():
+			all_text += "\n"
+		all_text += str(raw)
+	_narration_label.text = all_text
 	_update_page_label()
 	_update_next_button_text()
-	_begin_current_line_typewriter()
 
 
 func _update_page_label() -> void:
@@ -201,89 +189,13 @@ func _update_page_label() -> void:
 
 func _update_next_button_text() -> void:
 	var is_last_slide := _slide_index >= OpeningPrologueDefs.slide_count() - 1
-	var is_last_line := _line_index >= _lines.size() - 1
-	if is_last_slide and is_last_line and not _is_typing:
+	if is_last_slide:
 		_next_button.text = "开始游戏  ▶"
-	elif _is_typing:
-		_next_button.text = "下一段  ▶"
 	else:
-		_next_button.text = "下一段  ▶"
-
-
-func _begin_current_line_typewriter() -> void:
-	if _line_index >= _lines.size():
-		return
-	_is_typing = true
-	_update_next_button_text()
-	_play_typewriter()
-
-
-func _play_typewriter() -> void:
-	var prefix := _prefix_text
-	var line := _lines[_line_index]
-	if not prefix.is_empty():
-		prefix += "\n"
-	for i in range(line.length()):
-		if not _is_typing:
-			return
-		_set_narration_text(prefix + line.substr(0, i + 1))
-		await get_tree().create_timer(TYPEWRITER_CHAR_SEC).timeout
-	if not _is_typing:
-		return
-	_prefix_text = _joined_lines_through(_line_index)
-	_set_narration_text(_prefix_text)
-	_is_typing = false
-	_update_next_button_text()
-
-
-func _stop_typewriter() -> void:
-	_is_typing = false
-
-
-func _complete_current_line() -> void:
-	if not _is_typing:
-		return
-	_is_typing = false
-	if _line_index < _lines.size():
-		_prefix_text = _joined_lines_through(_line_index)
-		_set_narration_text(_prefix_text)
-	_update_next_button_text()
-
-
-func _set_narration_text(raw: String) -> void:
-	_narration_label.text = _window_narration_text(raw)
-
-
-func _window_narration_text(raw: String) -> String:
-	if raw.is_empty():
-		return ""
-	var logical_lines := raw.split("\n", false)
-	if logical_lines.size() <= MAX_VISIBLE_LINES:
-		return "\n".join(logical_lines)
-	var start := logical_lines.size() - MAX_VISIBLE_LINES
-	var windowed: PackedStringArray = []
-	for i in range(start, logical_lines.size()):
-		windowed.append(logical_lines[i])
-	return "\n".join(windowed)
-
-
-func _joined_lines_through(index: int) -> String:
-	if index < 0 or _lines.is_empty():
-		return ""
-	var parts: PackedStringArray = []
-	for i in range(index + 1):
-		parts.append(_lines[i])
-	return "\n".join(parts)
+		_next_button.text = "下一页  ▶"
 
 
 func _advance() -> void:
-	if _is_typing:
-		_complete_current_line()
-		return
-	if _line_index < _lines.size() - 1:
-		_line_index += 1
-		_begin_current_line_typewriter()
-		return
 	if _slide_index >= OpeningPrologueDefs.slide_count() - 1:
 		_finish()
 	else:
@@ -295,10 +207,8 @@ func _on_next_pressed() -> void:
 
 
 func _on_skip_pressed() -> void:
-	_stop_typewriter()
 	_finish()
 
 
 func _finish() -> void:
-	_stop_typewriter()
 	GameManager.go_to_difficulty_select()

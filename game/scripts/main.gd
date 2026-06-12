@@ -3,6 +3,7 @@ extends Node2D
 const RunEndOverlayScript = preload("res://scripts/ui/run_end_overlay.gd")
 const CommunicationTerminalScript = preload("res://scripts/ui/communication_terminal.gd")
 const EndingOutcomeOverlayScript = preload("res://scripts/ui/ending_outcome_overlay.gd")
+const StartGuideOverlayScript = preload("res://scripts/ui/start_guide_overlay.gd")
 const DayTopdownRender = preload("res://scripts/day_topdown_render.gd")
 const RunStateClass = preload("res://scripts/run_state.gd")
 const NpcDialogueRunnerScript = preload("res://scripts/story/npc_dialogue_runner.gd")
@@ -93,6 +94,7 @@ var _pending_thunder_district := -1
 var _run_end_overlay: CanvasLayer
 var _communication_terminal: CanvasLayer
 var _ending_outcome_overlay: CanvasLayer
+var _start_guide_overlay: CanvasLayer
 var _base_fuel_max: float = 999.0
 var _base_elevator_repair_cost: int = 3
 var _run_difficulty_name: String = "普通"
@@ -123,6 +125,7 @@ var _pda_panel: PdaHudPanel
 @onready var night_defense: NightDefenseSystem = $Systems/NightDefenseSystem
 @onready var time_hud: Control = $HUD/TimePanel/MarginContainer/TimeHud
 @onready var evening_notice: PanelContainer = $HUD/EveningNotice
+@onready var low_stamina_warning: PanelContainer = $HUD/LowStaminaWarning
 var night_td: NightTdController = null  # 由子场景决定是否存在（main.tscn 有，day_exploration.tscn 无）
 @onready var fuel_label: Label = $HUD/InfoPanel/MarginContainer/VBoxContainer/FuelLabel
 @onready var inventory_label: Label = $HUD/InfoPanel/MarginContainer/VBoxContainer/InventoryLabel
@@ -706,6 +709,8 @@ func _start_new_run() -> void:
 	if is_instance_valid(time_system):
 		time_system.start_day(1)
 	_play_music_cue("day_exploration", 1.0)
+	if is_instance_valid(_start_guide_overlay):
+		_start_guide_overlay.show_guide()
 
 func _ensure_input_actions() -> void:
 	for action_name in ["move_up", "move_down", "move_left", "move_right", "interact", "repair", "pause", "enter_defense_mode", "toggle_backpack", "toggle_journal", "toggle_world_map", "cycle_building"]:
@@ -911,6 +916,7 @@ func _physics_process(delta: float) -> void:
 	_check_vehicle_destroyed()
 	_tick_survival(delta)
 	_check_player_vitals_failure()
+	_check_low_stamina_warning()
 
 	if Input.is_action_just_pressed("interact"):
 		if _try_story_e_action_overlay():
@@ -2213,6 +2219,7 @@ func _use_backpack_item(item_id: String) -> bool:
 		"supplies":
 			_backpack.remove("supplies", 1)
 			_survival.use_supplies()
+			_check_low_stamina_warning()
 			return true
 		"fuel":
 			_backpack.remove("fuel", 1)
@@ -2310,6 +2317,22 @@ func _check_player_vitals_failure() -> void:
 	if is_instance_valid(_vehicle):
 		_vehicle.set_active(false)
 	_show_run_summary()
+
+
+func _check_low_stamina_warning() -> void:
+	if not is_instance_valid(low_stamina_warning):
+		return
+	var should_show := (
+		_survival.stamina < 20.0
+		and _survival.stamina > 0.0
+		and _is_exploration_allowed()
+		and not _is_night_phase()
+		and not _run_ended
+	)
+	if should_show and not low_stamina_warning.visible:
+		low_stamina_warning.show_warning()
+	elif not should_show and low_stamina_warning.visible:
+		low_stamina_warning.hide_warning()
 
 
 func _inventory_summary() -> String:
@@ -2461,6 +2484,9 @@ func _setup_run_end_ui() -> void:
 	_ending_outcome_overlay = EndingOutcomeOverlayScript.new()
 	add_child(_ending_outcome_overlay)
 	_ending_outcome_overlay.closed.connect(_on_ending_outcome_closed)
+	_start_guide_overlay = StartGuideOverlayScript.new()
+	add_child(_start_guide_overlay)
+	_start_guide_overlay.guide_closed.connect(_on_start_guide_closed)
 
 
 func _check_vehicle_destroyed() -> bool:
@@ -2707,6 +2733,11 @@ func _on_ending_outcome_closed() -> void:
 	if is_instance_valid(_ending_outcome_overlay):
 		_ending_outcome_overlay.hide_overlay()
 	_show_run_summary()
+
+
+func _on_start_guide_closed() -> void:
+	if is_instance_valid(_start_guide_overlay):
+		_start_guide_overlay.hide_overlay()
 
 
 func _show_run_summary() -> void:
@@ -3135,6 +3166,8 @@ func _restore_time_phase_after_load(keep_terminal_music: bool = false) -> void:
 			time_system.resume()
 			if is_instance_valid(evening_notice) and evening_notice.has_method("show_evening_warning"):
 				evening_notice.show_evening_warning(time_system.get_day_remaining_sec())
+			if is_instance_valid(low_stamina_warning) and low_stamina_warning.has_method("hide_warning"):
+				low_stamina_warning.hide_warning()
 			if not keep_terminal_music:
 				_play_music_cue("day_exploration", 1.0)
 		_:
@@ -3262,6 +3295,8 @@ func _update_evening_tint(delta: float) -> void:
 func _on_evening_warning(remaining_sec: float) -> void:
 	if is_instance_valid(evening_notice) and evening_notice.has_method("show_evening_warning"):
 		evening_notice.show_evening_warning(remaining_sec)
+	if is_instance_valid(low_stamina_warning) and low_stamina_warning.has_method("hide_warning"):
+		low_stamina_warning.hide_warning()
 	_play_music_stinger("evening_warning", -11.0)
 
 
