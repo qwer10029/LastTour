@@ -82,6 +82,10 @@ var _gallery_title: Label = null
 var _gallery_list: ItemList = null
 var _gallery_detail: Label = null
 var _seen_enemy_types: Array[String] = []
+var _gallery_auto_hide_timer: Timer = null
+var _gallery_fade_tween: Tween = null
+const GALLERY_AUTO_HIDE_SEC := 4.0
+const GALLERY_FADE_SEC := 0.28
 
 # 事件日志：单个 RichTextLabel + 定长环形缓冲，避免每条日志各建一个 Label 节点
 # （旧方案节点数随波次单调增长 → 布局/滚动开销越打越卡）。
@@ -464,43 +468,50 @@ func _build_enemy_gallery() -> void:
 	_gallery_overlay.visible = false
 	_gallery_overlay.z_index = 110
 	_gallery_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_gallery_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	_gallery_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	shell.add_child(_gallery_overlay)
 
 	var dim := ColorRect.new()
-	dim.color = Color(0.0, 0.0, 0.0, 0.56)
+	dim.color = Color(0.0, 0.0, 0.0, 0.24)
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_gallery_overlay.add_child(dim)
 
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_gallery_overlay.add_child(center)
-
 	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(660, 420)
+	panel.name = "EnemyGalleryPanel"
+	panel.custom_minimum_size = Vector2(252, 320)
+	panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	panel.anchor_left = 1.0
+	panel.anchor_right = 1.0
+	panel.anchor_top = 0.0
+	panel.anchor_bottom = 0.0
+	panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	panel.grow_vertical = Control.GROW_DIRECTION_END
+	panel.offset_left = -292.0
+	panel.offset_right = -40.0
+	panel.offset_top = 88.0
+	panel.offset_bottom = 408.0
 	panel.add_theme_stylebox_override("panel", NightTdUiTheme.panel_style(NightTdUiTheme.PANEL_DIALOG_LOG, 18))
-	center.add_child(panel)
+	_gallery_overlay.add_child(panel)
 
 	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 18)
-	margin.add_theme_constant_override("margin_top", 16)
-	margin.add_theme_constant_override("margin_right", 18)
-	margin.add_theme_constant_override("margin_bottom", 16)
+	margin.add_theme_constant_override("margin_left", 14)
+	margin.add_theme_constant_override("margin_top", 12)
+	margin.add_theme_constant_override("margin_right", 14)
+	margin.add_theme_constant_override("margin_bottom", 12)
 	panel.add_child(margin)
 
 	var outer := VBoxContainer.new()
-	outer.add_theme_constant_override("separation", 10)
+	outer.add_theme_constant_override("separation", 8)
 	margin.add_child(outer)
 
 	var top := HBoxContainer.new()
-	top.add_theme_constant_override("separation", 10)
+	top.add_theme_constant_override("separation", 8)
 	outer.add_child(top)
 	_gallery_title = Label.new()
 	_gallery_title.text = "敌情图鉴"
 	_gallery_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_gallery_title.add_theme_font_size_override("font_size", 18)
+	_gallery_title.add_theme_font_size_override("font_size", 16)
 	_gallery_title.add_theme_color_override("font_color", Color(COLORS["title"]))
 	top.add_child(_gallery_title)
 	var close_btn := Button.new()
@@ -509,17 +520,16 @@ func _build_enemy_gallery() -> void:
 	close_btn.pressed.connect(hide_enemy_gallery)
 	top.add_child(close_btn)
 
-	var body := HBoxContainer.new()
-	body.add_theme_constant_override("separation", 14)
+	var body := VBoxContainer.new()
+	body.add_theme_constant_override("separation", 8)
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	outer.add_child(body)
 	_gallery_list = ItemList.new()
-	_gallery_list.custom_minimum_size = Vector2(220, 320)
-	_gallery_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_gallery_list.custom_minimum_size = Vector2(220, 86)
 	_gallery_list.item_selected.connect(_on_gallery_enemy_selected)
 	body.add_child(_gallery_list)
 	var detail_scroll := ScrollContainer.new()
-	detail_scroll.custom_minimum_size = Vector2(390, 320)
+	detail_scroll.custom_minimum_size = Vector2(220, 150)
 	detail_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	detail_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	detail_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -529,6 +539,13 @@ func _build_enemy_gallery() -> void:
 	_gallery_detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_gallery_detail.add_theme_color_override("font_color", Color(COLORS["title"]))
 	detail_scroll.add_child(_gallery_detail)
+
+	_gallery_auto_hide_timer = Timer.new()
+	_gallery_auto_hide_timer.name = "AutoHideTimer"
+	_gallery_auto_hide_timer.one_shot = true
+	_gallery_auto_hide_timer.wait_time = GALLERY_AUTO_HIDE_SEC
+	_gallery_auto_hide_timer.timeout.connect(_on_gallery_auto_hide_timeout)
+	_gallery_overlay.add_child(_gallery_auto_hide_timer)
 
 
 func set_seen_enemy_types(types: Array) -> void:
@@ -549,8 +566,10 @@ func show_enemy_first_seen(type_id: String) -> void:
 func show_enemy_gallery(type_id: String = "", first_seen: bool = false) -> void:
 	if not is_instance_valid(_gallery_overlay):
 		return
+	_cancel_gallery_auto_hide()
 	_refresh_enemy_gallery_list()
 	_gallery_title.text = "新敌人出现" if first_seen else "敌情图鉴"
+	_gallery_overlay.modulate = Color.WHITE
 	_gallery_overlay.show()
 	if type_id != "":
 		_select_gallery_type(type_id)
@@ -559,11 +578,14 @@ func show_enemy_gallery(type_id: String = "", first_seen: bool = false) -> void:
 		_on_gallery_enemy_selected(0)
 	else:
 		_gallery_detail.text = "尚未遭遇已知敌方机体。"
+	_start_gallery_auto_hide()
 
 
 func hide_enemy_gallery() -> void:
 	if is_instance_valid(_gallery_overlay):
+		_cancel_gallery_auto_hide()
 		_gallery_overlay.hide()
+		_gallery_overlay.modulate = Color.WHITE
 
 
 func _refresh_enemy_gallery_list() -> void:
@@ -590,8 +612,10 @@ func _select_gallery_type(type_id: String) -> void:
 		if str(_gallery_list.get_item_metadata(i)) == type_id:
 			_gallery_list.select(i)
 			_on_gallery_enemy_selected(i)
+			_restart_gallery_auto_hide()
 			return
 	_gallery_detail.text = _enemy_gallery_text(type_id)
+	_restart_gallery_auto_hide()
 
 
 func _on_gallery_enemy_selected(index: int) -> void:
@@ -601,6 +625,41 @@ func _on_gallery_enemy_selected(index: int) -> void:
 	if meta == null:
 		return
 	_gallery_detail.text = _enemy_gallery_text(str(meta))
+	_restart_gallery_auto_hide()
+
+
+func _start_gallery_auto_hide() -> void:
+	if not is_instance_valid(_gallery_auto_hide_timer):
+		return
+	_gallery_auto_hide_timer.start(GALLERY_AUTO_HIDE_SEC)
+
+
+func _restart_gallery_auto_hide() -> void:
+	if not is_instance_valid(_gallery_auto_hide_timer) or not _gallery_overlay.visible:
+		return
+	_gallery_auto_hide_timer.start(GALLERY_AUTO_HIDE_SEC)
+
+
+func _cancel_gallery_auto_hide() -> void:
+	if is_instance_valid(_gallery_auto_hide_timer):
+		_gallery_auto_hide_timer.stop()
+	if _gallery_fade_tween != null and _gallery_fade_tween.is_valid():
+		_gallery_fade_tween.kill()
+	_gallery_fade_tween = null
+
+
+func _on_gallery_auto_hide_timeout() -> void:
+	if not is_instance_valid(_gallery_overlay) or not _gallery_overlay.visible:
+		return
+	_cancel_gallery_auto_hide()
+	_gallery_fade_tween = create_tween()
+	_gallery_fade_tween.tween_property(_gallery_overlay, "modulate:a", 0.0, GALLERY_FADE_SEC).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	_gallery_fade_tween.finished.connect(func():
+		if is_instance_valid(_gallery_overlay):
+			_gallery_overlay.hide()
+			_gallery_overlay.modulate = Color.WHITE
+		_gallery_fade_tween = null
+	)
 
 
 func _enemy_gallery_text(type_id: String) -> String:
