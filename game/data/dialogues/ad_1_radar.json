@@ -82,7 +82,7 @@
     "intro_done": {
       "speaker": "System",
       "bubble": "",
-      "text": "委托已接受。绕到掩体后方，找到塌方碎石并按 E 挖掘电机组件。",
+      "text": "委托已接受。绕到掩体后方，找到塌方碎石并按 F 挖掘电机组件。",
       "next": "intro_done_close"
     },
     "intro_done_close": {

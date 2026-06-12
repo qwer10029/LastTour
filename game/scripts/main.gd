@@ -622,7 +622,7 @@ func _has_repair_material(material: String) -> bool:
 	return false
 
 
-func _show_repair_choice_hint(text: String, warning: bool = true) -> void:
+func _show_repair_choicf_hint(text: String, warning: bool = true) -> void:
 	if not is_instance_valid(_repair_hint_label):
 		return
 	if text.is_empty():
@@ -636,7 +636,7 @@ func _show_repair_choice_hint(text: String, warning: bool = true) -> void:
 func _close_repair_choice_popup() -> void:
 	if is_instance_valid(_repair_choice_panel):
 		_repair_choice_panel.visible = false
-	_show_repair_choice_hint("")
+	_show_repair_choicf_hint("")
 
 
 func _refresh_repair_choice_popup(status_text: String = "", status_warning: bool = true) -> void:
@@ -655,11 +655,11 @@ func _refresh_repair_choice_popup(status_text: String = "", status_warning: bool
 		_backpack.has("wood", ItemDefs.REPAIR_WOOD_EACH) and _backpack.has("scrap", ItemDefs.REPAIR_SCRAP_ALT_EACH),
 	)
 	if not status_text.is_empty():
-		_show_repair_choice_hint(status_text, status_warning)
+		_show_repair_choicf_hint(status_text, status_warning)
 	elif _elevator_repair_progress >= total:
-		_show_repair_choice_hint("电梯修复完成", false)
+		_show_repair_choicf_hint("电梯修复完成", false)
 	else:
-		_show_repair_choice_hint("")
+		_show_repair_choicf_hint("")
 
 
 func _on_repair_option_pressed(material: String) -> void:
@@ -729,7 +729,7 @@ func _ensure_input_actions() -> void:
 	_register_key_action("move_left", KEY_LEFT)
 	_register_key_action("move_right", KEY_D)
 	_register_key_action("move_right", KEY_RIGHT)
-	_register_key_action("interact", KEY_E)
+	_register_key_action("interact", KEY_F)
 	_register_key_action("interact", KEY_SPACE)
 	_register_key_action("repair", KEY_R)
 	_register_key_action("pause", KEY_ESCAPE)
@@ -3727,8 +3727,8 @@ func _update_foot_story_prompts() -> bool:
 		for opt_var in prompt.get("dialogue_options", []):
 			option_labels.append(str(opt_var))
 		return _show_story_choice_overlay(str(prompt.get("text", "")), option_labels, "dialogue")
-	if str(prompt.get("continue_hint", "")) != "":
-		return _show_story_narrative_overlay(str(prompt.get("text", "")), str(prompt.get("continue_hint", "")))
+	if str(prompt.get("continuf_hint", "")) != "":
+		return _show_story_narrative_overlay(str(prompt.get("text", "")), str(prompt.get("continuf_hint", "")))
 	return false
 
 
@@ -3755,14 +3755,14 @@ func _show_story_e_action_overlay(body: String, action_label: String, mode: Stri
 	if not is_instance_valid(_story_dialogue_ui):
 		return false
 	var clean_action := _clean_action_button_label(action_label)
-	var e_hint := "按 E %s" % clean_action
+	var f_hint := "按 F %s" % clean_action
 	var text := body.strip_edges()
 	var overlay_key := "%s|%s|%s" % [mode, text, clean_action]
 	if overlay_key == _story_choice_overlay_key and _story_dialogue_ui.visible:
 		return true
 	_story_choice_overlay_key = overlay_key
-	if text != "" and not text.contains(e_hint):
-		text = "%s\n%s" % [text, e_hint]
+	if text != "" and not text.contains(f_hint):
+		text = "%s\n%s" % [text, f_hint]
 	_story_dialogue_ui.show_narrative(text, _current_dialogue_speaker(), false)
 	if has_node("HUD/ActionPanel"):
 		$HUD/ActionPanel.visible = false
@@ -3778,10 +3778,10 @@ func _update_thunder_dialogue_prompts() -> bool:
 	if npc == null or not npc.is_active() or npc.story_id != "thunder_leiting":
 		return false
 	var prompt: Dictionary = _story_controller.build_prompt("thunder_leiting")
-	if str(prompt.get("continue_hint", "")) != "":
+	if str(prompt.get("continuf_hint", "")) != "":
 		return _show_story_narrative_overlay(
 			str(prompt.get("text", "")),
-			str(prompt.get("continue_hint", "")),
+			str(prompt.get("continuf_hint", "")),
 		)
 	return false
 
@@ -3851,10 +3851,10 @@ func _update_story_gate_prompts() -> bool:
 			reward_labels,
 			"reward",
 		)
-	if str(prompt.get("continue_hint", "")) != "":
+	if str(prompt.get("continuf_hint", "")) != "":
 		return _show_story_narrative_overlay(
 			str(prompt.get("text", "")),
-			str(prompt.get("continue_hint", "")),
+			str(prompt.get("continuf_hint", "")),
 		)
 	if bool(prompt.get("show_disembark", false)) and bool(prompt.get("show_decline", false)):
 		var action_labels := _disembark_choice_labels(prompt)
@@ -3876,10 +3876,10 @@ func _update_story_gate_prompts() -> bool:
 
 func _clean_action_button_label(text: String) -> String:
 	var label := text.strip_edges()
-	label = label.replace(" (E)", "").replace("(E)", "")
-	if label.begins_with("E "):
+	label = label.replace(" (F)", "").replace("(F)", "")
+	if label.begins_with("F "):
 		label = label.substr(2).strip_edges()
-	if label.begins_with("按 E "):
+	if label.begins_with("按 F "):
 		label = label.substr(4).strip_edges()
 	return label if label != "" else "确认"
 
@@ -4743,31 +4743,31 @@ func _elevator_repair_progress_ratio() -> float:
 	return clampf(float(_elevator_repair_progress) / float(total), 0.0, 1.0)
 
 
-func _elevator_console_hint_text() -> String:
+func _elevator_consolf_hint_text() -> String:
 	var needed := _current_repair_cost() - _elevator_repair_progress
 	if needed <= 0:
 		return "电梯已就绪"
 	return "F 修复电梯 · %d/%d" % [_elevator_repair_progress, _current_repair_cost()]
 
 
-func _draw_elevator_console_hint(console_rect: Rect2) -> void:
+func _draw_elevator_consolf_hint(console_rect: Rect2) -> void:
 	if not _can_repair_elevator() or not _is_near_elevator_console():
 		return
-	_draw_interior_console_hint(console_rect, _elevator_console_hint_text(), Color("#f0c168"))
+	_draw_interior_consolf_hint(console_rect, _elevator_consolf_hint_text(), Color("#f0c168"))
 
 
-func _draw_kunlun_console_hint(console_rect: Rect2) -> void:
+func _draw_kunlun_consolf_hint(console_rect: Rect2) -> void:
 	if not _can_use_kunlun_control() or not _is_near_kunlun_console():
 		return
 	var hint_text := "F 接入通信终端" if _final_defense_cleared else "F 启动终端防线"
-	_draw_interior_console_hint(console_rect, hint_text, Color("#6eb8ff"))
+	_draw_interior_consolf_hint(console_rect, hint_text, Color("#6eb8ff"))
 
 
-func _draw_interior_console_hint(console_rect: Rect2, text: String, accent: Color) -> void:
-	_draw_interior_console_hint_on_canvas(self, console_rect, text, accent)
+func _draw_interior_consolf_hint(console_rect: Rect2, text: String, accent: Color) -> void:
+	_draw_interior_consolf_hint_on_canvas(self, console_rect, text, accent)
 
 
-func _draw_interior_console_hint_on_canvas(
+func _draw_interior_consolf_hint_on_canvas(
 	canvas: CanvasItem,
 	console_rect: Rect2,
 	text: String,
@@ -4906,10 +4906,10 @@ func _draw_foot_interior_static_layer(canvas: CanvasItem, district_index: int, p
 			)
 			if not npc_hint.is_empty():
 				var hint_center := panel.position + panel.size * Vector2(0.5, 0.34)
-				_draw_interior_console_hint_on_canvas(
+				_draw_interior_consolf_hint_on_canvas(
 					canvas,
 					Rect2(hint_center - Vector2(48.0, 24.0), Vector2(96.0, 48.0)),
-					str(npc_hint.get("text", "E 交谈")),
+					str(npc_hint.get("text", "F 交谈")),
 					Color("#88ffb0"),
 				)
 	elif story_id == "marian_k142":
@@ -4972,7 +4972,7 @@ func _draw_foot_interior() -> void:
 			_is_near_kunlun_console(),
 			0.0,
 		)
-		_draw_kunlun_console_hint(kunlun_rect)
+		_draw_kunlun_consolf_hint(kunlun_rect)
 	elif _map.district_has_elevator(_current_district_index):
 		var console_rect := _elevator_console_panel_rect(_current_district_index)
 		DayTopdownRender.draw_elevator_console(
@@ -4981,7 +4981,7 @@ func _draw_foot_interior() -> void:
 			_is_near_elevator_console(),
 			_elevator_repair_progress_ratio(),
 		)
-		_draw_elevator_console_hint(console_rect)
+		_draw_elevator_consolf_hint(console_rect)
 	_draw_door_exit_hint(door_rect)
 	var player_panel := _foot_local_to_panel(_foot_local_pos, _current_district_index)
 	DayTopdownRender.draw_player_marker(

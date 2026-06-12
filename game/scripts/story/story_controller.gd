@@ -572,7 +572,7 @@ func quest_interact_hint(
 	var prop_local: Vector2 = prop.get("local", Vector2.ZERO)
 	if player_local.distance_to(prop_local) > radius:
 		return {}
-	var hint := str(StoryData.quest_def(story_id).get("interact_hint", "E 交互"))
+	var hint := str(StoryData.quest_def(story_id).get("interact_hint", "F 交互"))
 	return {
 		"text": hint,
 		"local": prop_local,
@@ -607,7 +607,7 @@ func interior_npc_interact_hint(story_id: String, district_index: int, player_lo
 		return {}
 	var hint := StoryData.prompt_return(story_id)
 	if hint.strip_edges() == "":
-		hint = "E 交谈"
+		hint = "F 交谈"
 	return {"text": hint}
 
 
@@ -932,7 +932,7 @@ func build_prompt(story_id: String) -> Dictionary:
 		elif npc_dialogue.phase == _NpcDialogueRunner.Phase.LINE:
 			var body := npc_dialogue.panel_text.strip_edges()
 			out["text"] = body if body != "" else "……"
-			out["continue_hint"] = "按 E 继续"
+			out["continue_hint"] = "按 F 继续"
 			out["speaker"] = npc_dialogue.current_speaker
 		return out
 	if StoryData.is_interior_encounter(story_id):
@@ -957,7 +957,7 @@ func build_prompt(story_id: String) -> Dictionary:
 			StoryGateDialogue.Phase.INTRO:
 				var intro_body := gate_dialogue.npc_bubble.strip_edges()
 				out["text"] = intro_body if intro_body != "" else "……"
-				out["continue_hint"] = "按 E 继续"
+				out["continue_hint"] = "按 F 继续"
 			StoryGateDialogue.Phase.INTRO_CHOICE:
 				out["text"] = StoryData.gate_field(story_id, "choice_npc", "能帮我吗？")
 				out["disembark"] = "帮忙"
