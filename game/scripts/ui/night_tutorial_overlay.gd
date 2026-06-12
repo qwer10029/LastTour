@@ -82,13 +82,19 @@ func _build_ui() -> void:
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(dim)
 
-	# 文本面板：居中偏下，宽度受限，避开左下聚焦点
-	var center := CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(center)
-
+	# 文本面板：锚定到画面右上方，避开左下角色立绘和头发。
+	# 直接锚定（不再用 CenterContainer 垂直居中，否则面板高于居中带时会溢出到脸上）。
 	_panel = PanelContainer.new()
-	_panel.custom_minimum_size = Vector2(720, 0)
+	_panel.custom_minimum_size = Vector2(640, 0)
+	_panel.anchor_left = 1.0
+	_panel.anchor_right = 1.0
+	_panel.anchor_top = 0.0
+	_panel.anchor_bottom = 0.0
+	_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_panel.grow_vertical = Control.GROW_DIRECTION_END
+	_panel.offset_left = -680.0
+	_panel.offset_right = -40.0
+	_panel.offset_top = 40.0
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(0.04, 0.07, 0.11, 0.92)
 	sb.border_color = Color(0.36, 0.66, 0.78, 0.7)
@@ -96,13 +102,13 @@ func _build_ui() -> void:
 	sb.set_corner_radius_all(8)
 	sb.content_margin_left = 28
 	sb.content_margin_right = 28
-	sb.content_margin_top = 22
-	sb.content_margin_bottom = 22
+	sb.content_margin_top = 18
+	sb.content_margin_bottom = 18
 	_panel.add_theme_stylebox_override("panel", sb)
-	center.add_child(_panel)
+	add_child(_panel)
 
 	var vbox := VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 14)
+	vbox.add_theme_constant_override("separation", 10)
 	_panel.add_child(vbox)
 
 	_title_label = Label.new()
@@ -114,7 +120,7 @@ func _build_ui() -> void:
 	_body_label.add_theme_font_size_override("font_size", 15)
 	_body_label.add_theme_color_override("font_color", Color("#b8c8d8"))
 	_body_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_body_label.custom_minimum_size = Vector2(660, 96)
+	_body_label.custom_minimum_size = Vector2(580, 64)
 	vbox.add_child(_body_label)
 
 	var footer := HBoxContainer.new()
@@ -176,4 +182,3 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("ui_accept"):
 		_on_next()
 		get_viewport().set_input_as_handled()
-
