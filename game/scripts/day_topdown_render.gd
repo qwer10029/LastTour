@@ -1478,6 +1478,9 @@ static func _building_colors(building_type: String) -> Dictionary:
 		"market":
 			wall_fill = Color("#6a5540")
 			roof_fill = Color("#4a3c2c")
+		"armory":
+			wall_fill = Color("#5a4a38")
+			roof_fill = Color("#3a3028")
 	return {"wall": wall_fill, "roof": roof_fill}
 
 
@@ -1730,6 +1733,8 @@ static func draw_building_icon(canvas: CanvasItem, center: Vector2, building_typ
 			door = Color("#68e8a0")
 		"market":
 			door = Color("#e8a86e")
+		"armory":
+			door = Color("#d8a060")
 	canvas.draw_rect(Rect2(center - Vector2(10, 12), Vector2(20, 16)), Color("#2a2f34"), true)
 	canvas.draw_rect(Rect2(center - Vector2(4, 2), Vector2(8, 10)), door, true)
 

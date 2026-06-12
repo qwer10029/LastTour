@@ -22,6 +22,7 @@ func _ready() -> void:
 
 
 func _boot_exploration_scene(overlay_flags: Dictionary) -> void:
+	_report_boot_progress(0.985, "加载渲染资源…")
 	# 初始化基础配置
 	_base_fuel_max = fuel_max
 	_base_elevator_repair_cost = base_elevator_repair_cost
@@ -33,6 +34,7 @@ func _boot_exploration_scene(overlay_flags: Dictionary) -> void:
 	# 生物群系变化时 set_overworld_biome() 会自行 reload，故此处不再无条件失效缓存。
 	DayTopdownRender.preload_road_textures()
 	DayTopdownRender.preload_prop_textures()
+	_report_boot_progress(0.992, "布置界面…")
 	if enable_road_tuning_panel:
 		_setup_road_tuning_panel()
 	_ensure_input_actions()
@@ -53,6 +55,7 @@ func _boot_exploration_scene(overlay_flags: Dictionary) -> void:
 	# 用自己的日夜系统（场景切换模式）
 	_setup_day_night_scene_switch()
 
+	_report_boot_progress(0.996, "生成世界…")
 	# 从 GameManager 的 RunState 恢复（场景切换后）、读档或开始新游戏
 	if GameManager.consume_load_save_request():
 		var save_data: Dictionary = SaveManager.load_game()
@@ -69,6 +72,10 @@ func _boot_exploration_scene(overlay_flags: Dictionary) -> void:
 	_refresh_ui()
 	queue_redraw()
 	await _release_pending_overlays(overlay_flags)
+
+
+func _report_boot_progress(ratio: float, label: String) -> void:
+	GameManager.report_overlay_boot_progress(ratio, label)
 
 
 func _release_pending_overlays(overlay_flags: Dictionary) -> void:

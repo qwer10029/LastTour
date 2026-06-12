@@ -1,0 +1,453 @@
+{
+	"_readme": "兵工厂蓝图随机池。拾取 blueprint:armory 时按权重 roll；解锁类蓝图已拥有塔种则跳过。全局增益（all_towers 等）权重更高。",
+	"_balance_notes": {
+		"全局倍率": "写成乘数，如 1.25 表示 ×1.25；与现有 tower_upgrades 累乘时可换算为 delta=0.25",
+		"单塔倍率": "可更激进，如路障耐久 ×2",
+		"电力基准": "见 energy.json：capacity=60, production_rate=4, starting=20",
+		"叠加规则": "同类全局增益建议递减或设上限；单塔增益可叠 2～3 层",
+		"整数资源结算": "背包与夜末回收均为整数。带小数的 salvage_mult / build 类倍率不在单塔上逐件 floor（否则 1×1.25 永远=1），而是夜末按 item_id 汇总基础回收量后一次乘倍率，再 round 到整数；余量写入本局 salvage_fraction_bank，下次同资源结算时并入。示例：3 座被毁路障各掉 1 废料，×1.25 → 3.75 → 实得 4，bank 存 0.25。敌人掉落废料也纳入同 item_id 汇总后再乘全局 salvage_mult。"
+	},
+	"starter_unlocked_towers": ["jammer", "barrier"],
+	"tower_roster": [
+		{
+			"id": "jammer",
+			"name": "干扰信标",
+			"role": "持续单体输出",
+			"starter": true,
+			"upkeep": 1.0,
+			"base": {"damage": 14, "range": 112, "hp": 40, "fire_interval": 0.75}
+		},
+		{
+			"id": "barrier",
+			"name": "物理路障",
+			"role": "阻挡与吸收伤害，无攻击",
+			"starter": true,
+			"upkeep": 0.0,
+			"base": {"damage": 0, "range": 0, "hp": 150}
+		},
+		{
+			"id": "trap",
+			"name": "电磁陷阱",
+			"role": "单次高额伤害，触发后消失",
+			"starter": false,
+			"upkeep": 0.0,
+			"base": {"damage": 45, "hp": 1, "one_shot": true}
+		},
+		{
+			"id": "cryo_beacon",
+			"name": "噪声信标",
+			"role": "范围减速，无直接伤害",
+			"starter": false,
+			"upkeep": 1.0,
+			"base": {"slow_factor": 0.55, "range": 130, "hp": 38}
+		},
+		{
+			"id": "hacker",
+			"name": "入侵天线",
+			"role": "引导策反机械单位",
+			"starter": false,
+			"upkeep": 1.5,
+			"base": {"hack_rate": 80, "range": 150, "hp": 35}
+		},
+		{
+			"id": "sniper",
+			"name": "炮塔",
+			"role": "超远射程高爆发单体",
+			"starter": false,
+			"upkeep": 1.5,
+			"base": {"damage": 40, "range": 220, "hp": 30, "fire_interval": 2.2}
+		},
+		{
+			"id": "splash",
+			"name": "电弧塔",
+			"role": "中射程范围溅射",
+			"starter": false,
+			"upkeep": 1.2,
+			"base": {"damage": 12, "range": 162, "splash_radius": 56, "hp": 45}
+		}
+	],
+	"target_scopes": {
+		"all_towers": "所有已解锁塔（含路障、陷阱）",
+		"all_combat_towers": "有攻击能力的塔：干扰信标、炮塔、电弧塔（不含路障/陷阱/噪声/入侵）",
+		"all_powered_towers": "持续耗电的塔：干扰信标、噪声信标、入侵天线、炮塔、电弧塔",
+		"single_tower": "仅列出的 tower id"
+	},
+	"blueprint_categories": {
+		"unlock": "解锁新塔种，不重复获得",
+		"global_buff": "对所有塔或战斗塔生效，数值偏弱",
+		"tower_buff": "仅对指定塔生效，数值偏强",
+		"power_capacity": "提升电力上限",
+		"power_generation": "提升发电功率",
+		"power_bundle": "同时提升上限与发电"
+	},
+	"blueprints": [
+		{
+			"id": "bp_unlock_trap",
+			"category": "unlock",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "解锁建造：电磁陷阱",
+			"unlocks_tower": "trap",
+			"rarity": "rare",
+			"notes": "一次性；已解锁则_roll 时跳过或转化为全局增益"
+		},
+		{
+			"id": "bp_unlock_cryo_beacon",
+			"category": "unlock",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "解锁建造：噪声信标",
+			"unlocks_tower": "cryo_beacon",
+			"rarity": "rare"
+		},
+		{
+			"id": "bp_unlock_hacker",
+			"category": "unlock",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "解锁建造：入侵天线",
+			"unlocks_tower": "hacker",
+			"rarity": "rare"
+		},
+		{
+			"id": "bp_unlock_sniper",
+			"category": "unlock",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "解锁建造：炮塔",
+			"unlocks_tower": "sniper",
+			"rarity": "rare"
+		},
+		{
+			"id": "bp_unlock_splash",
+			"category": "unlock",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "解锁建造：电弧塔",
+			"unlocks_tower": "splash",
+			"rarity": "rare"
+		},
+
+		{
+			"id": "bp_global_damage_125",
+			"category": "global_buff",
+			"target": "all_combat_towers",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "所有攻击塔伤害 ×1.25",
+			"effects": {"damage_mult": 1.25},
+			"rarity": "common"
+		},
+		{
+			"id": "bp_global_range_120",
+			"category": "global_buff",
+			"target": "all_combat_towers",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "所有攻击塔射程 ×1.20",
+			"effects": {"range_mult": 1.20},
+			"rarity": "common"
+		},
+		{
+			"id": "bp_global_hp_120",
+			"category": "global_buff",
+			"target": "all_towers",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "所有防御塔耐久 ×1.20",
+			"effects": {"hp_mult": 1.20},
+			"rarity": "common"
+		},
+		{
+			"id": "bp_global_firerate_115",
+			"category": "global_buff",
+			"target": "all_combat_towers",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "所有攻击塔射速 ×1.15（开火间隔缩短）",
+			"effects": {"firerate_mult": 1.15},
+			"rarity": "common"
+		},
+		{
+			"id": "bp_global_upkeep_090",
+			"category": "global_buff",
+			"target": "all_powered_towers",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "所有耗电塔维持功耗 ×0.90",
+			"effects": {"upkeep_mult": 0.90},
+			"rarity": "uncommon"
+		},
+		{
+			"id": "bp_global_salvage_125",
+			"category": "global_buff",
+			"target": "all_towers",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "拆除回收资源 ×1.25",
+			"effects": {"salvage_mult": 1.25},
+			"rarity": "uncommon"
+		},
+		{
+			"id": "bp_global_triple_105",
+			"category": "global_buff",
+			"target": "all_combat_towers",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "所有攻击塔伤害/射程/耐久各 ×1.05",
+			"effects": {"damage_mult": 1.05, "range_mult": 1.05, "hp_mult": 1.05},
+			"rarity": "common"
+		},
+		{
+			"id": "bp_global_starting_power_10",
+			"category": "global_buff",
+			"target": "reactor",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "每晚开战时初始储电量 +10",
+			"effects": {"reactor_starting_add": 10},
+			"rarity": "common"
+		},
+
+		{
+			"id": "bp_jammer_damage_150",
+			"category": "tower_buff",
+			"target": "jammer",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "干扰信标伤害 ×1.50",
+			"effects": {"damage_mult": 1.50},
+			"rarity": "uncommon"
+		},
+		{
+			"id": "bp_jammer_range_140",
+			"category": "tower_buff",
+			"target": "jammer",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "干扰信标射程 ×1.40",
+			"effects": {"range_mult": 1.40},
+			"rarity": "uncommon"
+		},
+		{
+			"id": "bp_jammer_firerate_130",
+			"category": "tower_buff",
+			"target": "jammer",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "干扰信标射速 ×1.30",
+			"effects": {"firerate_mult": 1.30},
+			"rarity": "uncommon"
+		},
+		{
+			"id": "bp_jammer_upkeep_080",
+			"category": "tower_buff",
+			"target": "jammer",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "干扰信标维持功耗 ×0.80",
+			"effects": {"upkeep_mult": 0.80},
+			"rarity": "rare"
+		},
+
+		{
+			"id": "bp_barrier_hp_200",
+			"category": "tower_buff",
+			"target": "barrier",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "物理路障耐久 ×2.00",
+			"effects": {"hp_mult": 2.00},
+			"rarity": "uncommon"
+		},
+		{
+			"id": "bp_barrier_salvage_150",
+			"category": "tower_buff",
+			"target": "barrier",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "拆除路障回收废料 ×1.50",
+			"effects": {"salvage_mult": 1.50},
+			"rarity": "common"
+		},
+
+		{
+			"id": "bp_trap_damage_200",
+			"category": "tower_buff",
+			"target": "trap",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "电磁陷阱伤害 ×2.00",
+			"effects": {"damage_mult": 2.00},
+			"rarity": "uncommon",
+			"notes": "需已解锁陷阱"
+		},
+		{
+			"id": "bp_cryo_slow_150",
+			"category": "tower_buff",
+			"target": "cryo_beacon",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "噪声信标减速强度 ×1.50",
+			"effects": {"slow_mult": 1.50},
+			"rarity": "uncommon"
+		},
+		{
+			"id": "bp_cryo_range_140",
+			"category": "tower_buff",
+			"target": "cryo_beacon",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "噪声信标射程 ×1.40",
+			"effects": {"range_mult": 1.40},
+			"rarity": "uncommon"
+		},
+		{
+			"id": "bp_cryo_hp_130",
+			"category": "tower_buff",
+			"target": "cryo_beacon",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "噪声信标耐久 ×1.30",
+			"effects": {"hp_mult": 1.30},
+			"rarity": "common"
+		},
+		{
+			"id": "bp_cryo_upkeep_085",
+			"category": "tower_buff",
+			"target": "cryo_beacon",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "噪声信标维持功耗 ×0.85",
+			"effects": {"upkeep_mult": 0.85},
+			"rarity": "uncommon"
+		},
+
+		{
+			"id": "bp_hacker_rate_200",
+			"category": "tower_buff",
+			"target": "hacker",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "入侵天线策反速度 ×2.00",
+			"effects": {"hack_rate_mult": 2.00},
+			"rarity": "rare"
+		},
+		{
+			"id": "bp_hacker_range_150",
+			"category": "tower_buff",
+			"target": "hacker",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "入侵天线射程 ×1.50",
+			"effects": {"range_mult": 1.50},
+			"rarity": "uncommon"
+		},
+		{
+			"id": "bp_hacker_upkeep_080",
+			"category": "tower_buff",
+			"target": "hacker",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "入侵天线维持功耗 ×0.80",
+			"effects": {"upkeep_mult": 0.80},
+			"rarity": "uncommon"
+		},
+
+		{
+			"id": "bp_sniper_damage_160",
+			"category": "tower_buff",
+			"target": "sniper",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "炮塔伤害 ×1.60",
+			"effects": {"damage_mult": 1.60},
+			"rarity": "uncommon"
+		},
+		{
+			"id": "bp_sniper_range_130",
+			"category": "tower_buff",
+			"target": "sniper",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "炮塔射程 ×1.30",
+			"effects": {"range_mult": 1.30},
+			"rarity": "uncommon"
+		},
+		{
+			"id": "bp_sniper_firerate_125",
+			"category": "tower_buff",
+			"target": "sniper",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "炮塔射速 ×1.25",
+			"effects": {"firerate_mult": 1.25},
+			"rarity": "rare"
+		},
+
+		{
+			"id": "bp_splash_damage_150",
+			"category": "tower_buff",
+			"target": "splash",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "电弧塔伤害 ×1.50",
+			"effects": {"damage_mult": 1.50},
+			"rarity": "uncommon"
+		},
+		{
+			"id": "bp_splash_radius_150",
+			"category": "tower_buff",
+			"target": "splash",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "电弧塔溅射半径 ×1.50",
+			"effects": {"splash_radius_mult": 1.50},
+			"rarity": "uncommon"
+		},
+		{
+			"id": "bp_splash_range_120",
+			"category": "tower_buff",
+			"target": "splash",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "电弧塔射程 ×1.20",
+			"effects": {"range_mult": 1.20},
+			"rarity": "common"
+		},
+
+		{
+			"id": "bp_power_cap_25",
+			"category": "power_capacity",
+			"target": "reactor",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "电力上限 +25",
+			"effects": {"reactor_capacity_add": 25},
+			"rarity": "rare"
+		},
+		{
+			"id": "bp_power_cap_pct_110",
+			"category": "power_capacity",
+			"target": "reactor",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "电力上限 ×1.10",
+			"effects": {"reactor_capacity_mult": 1.10},
+			"rarity": "uncommon"
+		},
+
+		{
+			"id": "bp_power_gen_200",
+			"category": "power_generation",
+			"target": "reactor",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "发电功率 +2.0 / 秒",
+			"effects": {"reactor_production_add": 2.0},
+			"rarity": "rare"
+		},
+		{
+			"id": "bp_power_gen_pct_115",
+			"category": "power_generation",
+			"target": "reactor",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "发电功率 ×1.15",
+			"effects": {"reactor_production_mult": 1.15},
+			"rarity": "uncommon"
+		},
+
+		{
+			"id": "bp_power_bundle_cap20_gen15",
+			"category": "power_bundle",
+			"target": "reactor",
+			"display_name": "军用防御蓝图",
+			"effect_summary": "电力上限 +20，发电功率 +1.5 / 秒",
+			"effects": {"reactor_capacity_add": 20, "reactor_production_add": 1.5},
+			"rarity": "legendary"
+		}
+	],
+	"roll_pool_suggestion": {
+		"_comment": "兵工厂随机池权重示例，实现时可拆成独立表",
+		"weights": {
+			"unlock": 8,
+			"global_buff": 48,
+			"tower_buff": 28,
+			"power_capacity": 8,
+			"power_generation": 8,
+			"power_bundle": 4
+		},
+		"unlock_fallback": "已拥有全部塔种时，unlock 条目重_roll 为 global_buff 或 power 类"
+	},
+	"implementation_checklist": [
+		"扩展 tower_upgrades / run_state：unlocked_towers、per_tower_buffs、reactor_mods",
+		"night_td_hud 仅显示已解锁塔种",
+		"建塔时按 target 应用 global 与 tower 倍率",
+		"电力系统读取 reactor_capacity_add/mult 与 production_add/mult",
+		"armory blueprint_roll_pool 改为引用本表 id"
+	]
+}

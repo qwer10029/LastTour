@@ -8,6 +8,8 @@ const BACKGROUND_BRIGHTNESS := Color(1.18, 1.18, 1.14, 1.0)
 const COLOR_MASK := Color(0.102, 0.118, 0.149, 120.0 / 255.0)
 const INTRO_FADE_SEC := 0.85
 const INTRO_SWEEP_SEC := 0.72
+## 加载页最多到该比例；剩余进度在目标场景 boot 完成前由 RunTransition 遮罩承接。
+const BOOT_HANDOFF_RATIO := 0.98
 @onready var background_texture: TextureRect = %BackgroundTexture
 @onready var color_mask: ColorRect = %ColorMask
 @onready var intro_overlay: ColorRect = %IntroOverlay
@@ -31,7 +33,6 @@ func _ready() -> void:
 	_play_entrance_animation()
 	await get_tree().create_timer(0.18).timeout
 	await _run_bootstrap_pipeline()
-	_enter_game_scene()
 
 
 func _release_transition_cover() -> void:
@@ -192,29 +193,13 @@ func _run_bootstrap_pipeline() -> void:
 		manager.store_run_bootstrap(RunBootstrapScript.pack_bootstrap(map))
 	_set_progress(0.94, "加载游戏场景…")
 	await _preload_game_scene()
-	await _animate_progress_complete()
+	_set_progress(BOOT_HANDOFF_RATIO, "正在初始化世界…")
 	_enter_game_scene()
 
 
-func _animate_progress_complete() -> void:
-	_set_progress(1.0, "准备就绪")
-	if not is_instance_valid(progress_bar):
-		await get_tree().create_timer(0.25).timeout
-		return
-	var tween := create_tween()
-	tween.tween_property(progress_bar, "value", 1.0, 0.35)\
-		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	await tween.finished
-	await get_tree().create_timer(0.12).timeout
-
-
 func _preload_game_scene() -> void:
-	var scene_path := "res://scenes/main.tscn"
+	var scene_path := GameManager.SCENE_GAME
 	var manager := _game_manager()
-	if manager != null:
-		var configured_path: Variant = manager.get("SCENE_GAME")
-		if configured_path != null and str(configured_path) != "":
-			scene_path = str(configured_path)
 	var status := ResourceLoader.load_threaded_request(scene_path)
 	if status != OK:
 		return
@@ -231,7 +216,7 @@ func _preload_game_scene() -> void:
 		if load_status == ResourceLoader.THREAD_LOAD_FAILED:
 			return
 		if not progress.is_empty():
-			var local := 0.94 + float(progress[0]) * 0.05
+			var local := 0.94 + float(progress[0]) * (BOOT_HANDOFF_RATIO - 0.94)
 			_set_progress(local, "加载游戏场景…")
 		await get_tree().process_frame
 

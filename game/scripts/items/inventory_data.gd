@@ -1,6 +1,8 @@
 class_name InventoryData
 extends RefCounted
 
+const BlueprintCatalog := preload("res://scripts/night_td/blueprint_catalog.gd")
+
 var items: Dictionary = {}  # item_id -> int
 
 
@@ -14,7 +16,7 @@ func add(item_id: String, amount: int = 1) -> int:
 	var normalized := ItemDefs.normalize_item_id(item_id)
 	if normalized == "":
 		return 0
-	if ItemDefs.get_def(normalized).is_empty():
+	if ItemDefs.get_def(normalized).is_empty() and not BlueprintCatalog.is_blueprint_item(normalized):
 		return 0
 	var current := int(items.get(normalized, 0))
 	items[normalized] = current + amount
@@ -81,7 +83,7 @@ func load_from_dictionary(data: Variant) -> void:
 			var normalized := ItemDefs.normalize_item_id(source_id)
 			if normalized == "":
 				continue
-			if ItemDefs.get_def(normalized).is_empty():
+			if ItemDefs.get_def(normalized).is_empty() and not BlueprintCatalog.is_blueprint_item(normalized):
 				continue
 			if normalized != source_id:
 				converted_legacy_count += qty

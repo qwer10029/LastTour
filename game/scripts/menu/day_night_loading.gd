@@ -10,6 +10,7 @@ const COLOR_MASK := Color(0.102, 0.118, 0.149, 120.0 / 255.0)
 const INTRO_FADE_SEC := 0.85
 const INTRO_SWEEP_SEC := 0.72
 const MIN_DISPLAY_SEC := 1.35
+const BOOT_HANDOFF_RATIO := 0.98
 
 @onready var background_texture: TextureRect = %BackgroundTexture
 @onready var color_mask: ColorRect = %ColorMask
@@ -206,26 +207,14 @@ func _preload_and_enter() -> void:
 			call_deferred("_enter_target_scene")
 			return
 		if not progress.is_empty():
-			_set_progress(0.1 + float(progress[0]) * 0.88, "加载场景资源…")
+			_set_progress(0.1 + float(progress[0]) * (BOOT_HANDOFF_RATIO - 0.1), "加载场景资源…")
 		await get_tree().process_frame
 
 
 func _finish_loading_and_enter() -> void:
-	await _animate_progress_complete()
+	_set_progress(BOOT_HANDOFF_RATIO, "正在初始化…")
 	await _wait_min_display()
 	call_deferred("_enter_target_scene")
-
-
-func _animate_progress_complete() -> void:
-	_set_progress(1.0, "就绪")
-	if not is_instance_valid(progress_bar):
-		await get_tree().create_timer(0.25).timeout
-		return
-	var tween := create_tween()
-	tween.tween_property(progress_bar, "value", 1.0, 0.35)\
-		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	await tween.finished
-	await get_tree().create_timer(0.12).timeout
 
 
 func _store_preloaded_scene(packed: PackedScene) -> void:

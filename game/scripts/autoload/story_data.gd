@@ -315,6 +315,8 @@ func _assign_story_district(map: WorldMapData, story_id: String, layer: int) -> 
 	var pick := -1
 	if story_id == WorldMapData.SENTINEL_STORY_ID:
 		pick = map.pick_district_with_north_road(candidates)
+	if pick < 0 and story_id == WorldMapData.MARIAN_STORY_ID:
+		pick = _pick_marian_at_spawn(map, candidates)
 	if pick < 0 and bool(story.get("spawn_near_start", false)):
 		pick = _pick_district_near_start(map, candidates)
 	if pick < 0:
@@ -335,6 +337,27 @@ func _apply_story_district_layout(map: WorldMapData, story_id: String, district_
 		map.orient_district_door_north(district_index)
 	if story_id == WorldMapData.MARIAN_STORY_ID:
 		map.clear_interior_obstacles(district_index)
+
+
+func _pick_marian_at_spawn(map: WorldMapData, candidates: Array[int]) -> int:
+	var start_road := map.start_node_index
+	if not map.is_valid_index(start_road):
+		return -1
+	var roadside := map.get_roadside_districts(start_road)
+	for district_index in roadside:
+		if district_index in candidates:
+			return district_index
+	for district_index in roadside:
+		if not map.is_district(district_index):
+			continue
+		if (
+			bool(map.get_cell(district_index).get("has_elevator", false))
+			or bool(map.get_cell(district_index).get("has_kunlun_control", false))
+		):
+			map.relocate_special_building_from(district_index)
+		if district_index in candidates:
+			return district_index
+	return -1
 
 
 func _pick_district_near_start(map: WorldMapData, candidates: Array[int]) -> int:

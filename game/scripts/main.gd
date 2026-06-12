@@ -8,6 +8,9 @@ const DayTopdownRender = preload("res://scripts/day_topdown_render.gd")
 const RunStateClass = preload("res://scripts/run_state.gd")
 const NpcDialogueRunnerScript = preload("res://scripts/story/npc_dialogue_runner.gd")
 const StoryDialogueUIScene = preload("res://scenes/ui/story_dialogue_ui.tscn")
+const BlueprintCatalog := preload("res://scripts/night_td/blueprint_catalog.gd")
+const ArmorySiteData = preload("res://scripts/armory_site_data.gd")
+const BlueprintCatalog = preload("res://scripts/night_td/blueprint_catalog.gd")
 const FUEL_EMPTY_EPSILON := 0.001
 const THUNDER_LEITING_WAVE_PATH := "res://data/night_td/waves/night_wave_thunder_leiting.json"
 var _building_pick_index: int = 0
@@ -90,6 +93,9 @@ var _thunder_leiting_defeated := false
 var _thunder_terminal_sequence_active := false
 # 防御塔强化（Part B）：故事奖励道具安装后累加的乘法系数。随存档/昼夜流转。
 var _tower_upgrades: Dictionary = NightTdUpgrades.default_state()
+# 兵工厂蓝图：解锁塔种 + 全局/单塔/电力倍率。随存档/昼夜流转。
+var _blueprint_state: Dictionary = BlueprintCatalog.default_run_state()
+var _blueprint_roll_rng := RandomNumberGenerator.new()
 var _pending_thunder_district := -1
 var _run_end_overlay: CanvasLayer
 var _communication_terminal: CanvasLayer
@@ -701,6 +707,7 @@ func _start_new_run() -> void:
 	_final_defense_cleared = false
 	_thunder_leiting_defeated = false
 	_tower_upgrades = NightTdUpgrades.default_state()
+	_blueprint_state = BlueprintCatalog.default_run_state()
 	_pending_thunder_district = -1
 	_run_journal = RunJournal.new()
 	_story_controller.reset_for_new_run()
@@ -1153,9 +1160,6 @@ func _process_drive(delta: float) -> void:
 
 func _process_foot(delta: float) -> void:
 	if _current_district_index < 0:
-		return
-	if is_instance_valid(_story_controller) and _story_controller.blocks_foot_exit(_current_district_index):
-		_foot_is_walking = false
 		return
 	var foot_area := _map.get_foot_area_rect(_current_district_index)
 	if foot_area.size == Vector2.ZERO:
@@ -1905,6 +1909,13 @@ func _on_resource_collected(district_index: int, item_id: String, pickup: Area2D
 	var spawn_key := str(pickup.get_meta("spawn_key", "")) if is_instance_valid(pickup) else ""
 	if not skip_map and spawn_key != "" and _map.is_resource_spawn_collected(district_index, spawn_key):
 		return
+	if BlueprintCatalog.is_generic_pickup(loot_id):
+		_blueprint_roll_rng.randomize()
+		var pending := BlueprintCatalog.pending_unlock_towers(_backpack)
+		var rolled_id := BlueprintCatalog.roll_blueprint_id(_blueprint_roll_rng, _blueprint_state, pending)
+		if rolled_id == "":
+			return
+		loot_id = BlueprintCatalog.item_id_for(rolled_id)
 	var added := _backpack.add(loot_id, 1)
 	if added <= 0:
 		return
@@ -2225,6 +2236,14 @@ func _use_backpack_item(item_id: String) -> bool:
 			)
 			return true
 		return false
+	if BlueprintCatalog.is_resolved_blueprint(item_id):
+		var blueprint_id := BlueprintCatalog.blueprint_id_from_item(item_id)
+		_blueprint_state = BlueprintCatalog.apply_blueprint(_blueprint_state, blueprint_id)
+		_backpack.remove(item_id, 1)
+		_show_tower_upgrade_toast(
+			"军用防御蓝图已写入夜间防御系统：%s" % BlueprintCatalog.effect_summary(blueprint_id)
+		)
+		return true
 	match item_id:
 		"supplies":
 			_backpack.remove("supplies", 1)
@@ -2551,6 +2570,14 @@ func _request_terminal_access() -> void:
 	_pause_day_night_for_terminal_sequence()
 	_open_communication_terminal()
 
+func _night_session_options(extra: Dictionary = {}) -> Dictionary:
+	var options := {
+		"tower_upgrades": _tower_upgrades.duplicate(true),
+		"blueprint_state": _blueprint_state.duplicate(true),
+	}
+	options.merge(extra, true)
+	return options
+
 
 func _on_thunder_boss_requested(district_index: int) -> void:
 	_pending_thunder_district = district_index
@@ -2560,13 +2587,12 @@ func _on_thunder_boss_requested(district_index: int) -> void:
 
 
 func _thunder_leiting_session_options() -> Dictionary:
-	return {
+	return _night_session_options({
 		"kind": "thunder_leiting_boss",
 		"wave_plan_path": THUNDER_LEITING_WAVE_PATH,
 		"phase_title": "不败之盾-雷霆",
 		"no_day_advance": true,
-		"tower_upgrades": _tower_upgrades.duplicate(true),
-	}
+	})
 
 
 func _start_thunder_leiting_boss() -> void:
@@ -2996,6 +3022,7 @@ func capture_save_data() -> Dictionary:
 			"run_end_reason": _run_end_reason,
 			"final_choice_id": _final_choice_id,
 			"tower_upgrades": _tower_upgrades.duplicate(true),
+			"blueprint_state": _blueprint_state.duplicate(true),
 		},
 		"time": time_system.to_dictionary() if is_instance_valid(time_system) else {},
 		"foot": {
@@ -3055,6 +3082,7 @@ func _apply_save_data(data: Dictionary) -> void:
 	_run_end_reason = str(layer.get("run_end_reason", ""))
 	_final_choice_id = str(layer.get("final_choice_id", ""))
 	_tower_upgrades = NightTdUpgrades.sanitize(layer.get("tower_upgrades", {}))
+	_blueprint_state = BlueprintCatalog.sanitize_run_state(layer.get("blueprint_state", {}))
 	if _run_ended and _run_end_reason in ["vehicle_destroyed", "player_collapsed", "out_of_fuel", "strike"]:
 		_show_run_summary()
 	elif _run_ended and _run_end_reason == "reached_top":
@@ -3155,7 +3183,7 @@ func _restore_time_phase_after_load(keep_terminal_music: bool = false) -> void:
 				night_defense.start_td_session(
 					_backpack.total_count(), GameManager.difficulty, time_system.day_index, true,
 					_vehicle_hp, _vehicle_hp_max, snapshot,
-					{"tower_upgrades": _tower_upgrades.duplicate(true)}, _fuel, fuel_max
+					_night_session_options(), _fuel, fuel_max
 				)
 			_play_music_cue("night_setup", 0.9)
 			time_system.pause()
@@ -3320,7 +3348,7 @@ func _on_night_setup_started(day_index: int, manual_setup: bool) -> void:
 		night_defense.start_td_session(
 			_backpack.total_count(), GameManager.difficulty, day_index, manual_setup,
 			_vehicle_hp, _vehicle_hp_max, snapshot,
-			{"tower_upgrades": _tower_upgrades.duplicate(true)}, _fuel, fuel_max
+			_night_session_options(), _fuel, fuel_max
 		)
 	_play_music_cue("night_setup", 1.0)
 	_refresh_ui()
@@ -3793,14 +3821,14 @@ func _show_story_e_action_overlay(body: String, action_label: String, mode: Stri
 	if not is_instance_valid(_story_dialogue_ui):
 		return false
 	var clean_action := _clean_action_button_label(action_label)
-	var f_hint := "按 F %s" % clean_action
+	var e_hint := "按 E %s" % clean_action
 	var text := body.strip_edges()
 	var overlay_key := "%s|%s|%s" % [mode, text, clean_action]
 	if overlay_key == _story_choice_overlay_key and _story_dialogue_ui.visible:
 		return true
 	_story_choice_overlay_key = overlay_key
-	if text != "" and not text.contains(f_hint):
-		text = "%s\n%s" % [text, f_hint]
+	if text != "" and not text.contains(e_hint):
+		text = "%s\n%s" % [text, e_hint]
 	_story_dialogue_ui.show_narrative(text, _current_dialogue_speaker(), false)
 	if has_node("HUD/ActionPanel"):
 		$HUD/ActionPanel.visible = false
@@ -3920,6 +3948,8 @@ func _clean_action_button_label(text: String) -> String:
 	if label.begins_with("F "):
 		label = label.substr(2).strip_edges()
 	if label.begins_with("按 F "):
+		label = label.substr(4).strip_edges()
+	if label.begins_with("按 E "):
 		label = label.substr(4).strip_edges()
 	return label if label != "" else "确认"
 
@@ -4685,6 +4715,11 @@ func _handle_foot_interact() -> void:
 	if _try_advance_story_dialogue():
 		return
 	if is_instance_valid(_story_controller):
+		var npc := _story_controller.npc_dialogue
+		if npc != null and npc.is_active() and npc.phase == NpcDialogueRunnerScript.Phase.OPTIONS:
+			_schedule_refresh_ui()
+			return
+	if is_instance_valid(_story_controller):
 		if _story_controller.try_interact_foot_loot(_current_district_index, _foot_local_pos):
 			queue_redraw()
 			return
@@ -4697,6 +4732,9 @@ func _handle_foot_interact() -> void:
 		if npc_retry == null or not npc_retry.is_active():
 			_story_controller.ensure_interior_encounter_at(_current_district_index)
 			_refresh_ui()
+			return
+		if npc_retry.phase == NpcDialogueRunnerScript.Phase.OPTIONS:
+			_schedule_refresh_ui()
 			return
 		if is_instance_valid(evening_notice) and evening_notice.has_method("show_message"):
 			evening_notice.show_message("先完成抉择，才能离开。", "")
@@ -4723,6 +4761,9 @@ func _try_foot_return_to_vehicle() -> bool:
 		if npc_retry == null or not npc_retry.is_active():
 			_story_controller.ensure_interior_encounter_at(_current_district_index)
 			_refresh_ui()
+			return true
+		if npc_retry.phase == NpcDialogueRunnerScript.Phase.OPTIONS:
+			_schedule_refresh_ui()
 			return true
 		if is_instance_valid(evening_notice) and evening_notice.has_method("show_message"):
 			evening_notice.show_message("先完成抉择，才能离开。", "")
@@ -4956,6 +4997,26 @@ func _draw_foot_interior_static_layer(canvas: CanvasItem, district_index: int, p
 				)
 	elif story_id == "marian_k142":
 		DayTopdownRender.draw_marian_room(canvas, panel, true)
+		if is_instance_valid(_story_controller):
+			var marian_npc := _story_controller.npc_dialogue
+			var show_marian_hint := false
+			var marian_hint := "E 交谈"
+			if marian_npc != null and marian_npc.is_active() and marian_npc.story_id == story_id:
+				if marian_npc.phase == NpcDialogueRunnerScript.Phase.OPTIONS:
+					show_marian_hint = true
+					marian_hint = "E 做出抉择"
+				elif marian_npc.phase == NpcDialogueRunnerScript.Phase.LINE:
+					show_marian_hint = _story_controller.is_near_interior_npc(
+						story_id, district_index, _foot_local_pos
+					)
+			if show_marian_hint:
+				var marian_center := panel.position + panel.size * Vector2(0.52, 0.36)
+				_draw_interior_consolf_hint_on_canvas(
+					canvas,
+					Rect2(marian_center - Vector2(52.0, 28.0), Vector2(104.0, 56.0)),
+					marian_hint,
+					Color("#f0d8c0"),
+				)
 
 
 func _draw_interior_story_quest_prop(
@@ -5259,6 +5320,7 @@ func _generate_layer_map() -> void:
 	)
 	StoryData.ensure_story_districts(_map, _current_layer)
 	StoryData.setup_tactical_hidden_sites(_map, _current_layer)
+	ArmorySiteData.place_on_map(_map, _current_layer)
 	if debug_start_near_special:
 		_map.set_start_near_special_building(_current_layer >= total_layers)
 	elif StoryData.any_story_spawns_near_start():

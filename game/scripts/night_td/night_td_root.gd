@@ -16,6 +16,7 @@ func _ready() -> void:
 
 
 func _boot_night_td_scene(should_dismiss_overlay: bool) -> void:
+	GameManager.report_overlay_boot_progress(0.985, "加载塔防模块…")
 	# 从 GameManager 获取 RunState
 	_run_state = GameManager.consume_run_state()
 	if _run_state == null:
@@ -27,6 +28,7 @@ func _boot_night_td_scene(should_dismiss_overlay: bool) -> void:
 
 	# 加载 NightTd 子场景
 	_instantiate_td()
+	GameManager.report_overlay_boot_progress(0.992, "初始化夜战会话…")
 
 	# 启动塔防会话：使用背包快照（非 live 引用）
 	var backpack_total := 0
@@ -52,6 +54,7 @@ func _boot_night_td_scene(should_dismiss_overlay: bool) -> void:
 		if _td.has_method("set_session_paused"):
 			_td.set_session_paused(true)
 
+	GameManager.report_overlay_boot_progress(0.998, "准备就绪")
 	if should_dismiss_overlay or GameManager.should_dismiss_transition_overlay():
 		await GameManager.dismiss_transition_overlay()
 

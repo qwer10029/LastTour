@@ -31,6 +31,9 @@
       "speaker": "玛丽安",
       "bubble": "……",
       "text": "暖黄灯光把金属半边脸照出细密的划痕。摇篮吱呀作响。我必须回应她。",
+      "actions": {
+        "set_variable": { "marian_choice_pending": true }
+      },
       "options": [
         {
           "text": "顺从——放下枪，走进房间。",
@@ -146,7 +149,8 @@
       "actions": {
         "end_dialogue": true,
         "close_dialogue": true,
-        "clear_checkpoint": true
+        "clear_checkpoint": true,
+        "set_variable": { "marian_choice_pending": false }
       }
     }
   }

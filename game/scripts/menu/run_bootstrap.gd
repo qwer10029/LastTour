@@ -3,6 +3,7 @@ extends RefCounted
 ## 新局启动前预加载渲染资源并生成世界地图，供加载场景汇报进度。
 
 const DayTopdownRenderScript := preload("res://scripts/day_topdown_render.gd")
+const ArmorySiteData := preload("res://scripts/armory_site_data.gd")
 
 const MAP_COLUMNS := 24
 const MAP_ROWS := 18
@@ -38,6 +39,7 @@ static func build_new_run_map(on_progress: Callable = Callable()) -> WorldMapDat
 	_report(on_progress, TEXTURE_STEP_WEIGHT + MAP_STEP_WEIGHT, "布置剧情据点…")
 	StoryData.ensure_story_districts(map, current_layer)
 	StoryData.setup_tactical_hidden_sites(map, current_layer)
+	ArmorySiteData.place_on_map(map, current_layer)
 	if DEBUG_START_NEAR_SPECIAL:
 		map.set_start_near_special_building(is_final_layer)
 	elif StoryData.any_story_spawns_near_start():

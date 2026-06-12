@@ -1,6 +1,8 @@
 class_name ItemDefs
 extends RefCounted
 
+const BlueprintCatalog := preload("res://scripts/night_td/blueprint_catalog.gd")
+
 const DATA_PATH := "res://data/item_defs.json"
 const EVIDENCE_DATA_PATH := "res://data/evidence.json"
 
@@ -141,6 +143,8 @@ static func normalize_item_id(item_id: String) -> String:
 		if evidence_id != "" and _evidence_has_entry(evidence_id):
 			return "evidence:%s" % evidence_id
 		return ""
+	if item_id.begins_with("blueprint:"):
+		return item_id
 	match item_id:
 		"food", "water":
 			return "supplies"
@@ -152,6 +156,10 @@ static func normalize_item_id(item_id: String) -> String:
 
 static func get_def(item_id: String) -> Dictionary:
 	var normalized := normalize_item_id(item_id)
+	if normalized.begins_with("blueprint:"):
+		var blueprint_def := BlueprintCatalog.get_item_def(BlueprintCatalog.blueprint_id_from_item(normalized))
+		if not blueprint_def.is_empty():
+			return blueprint_def
 	if normalized.begins_with("evidence:"):
 		var evidence_id := normalized.substr("evidence:".length())
 		if not _evidence_has_entry(evidence_id):
@@ -207,6 +215,8 @@ static func get_detail_text(item_id: String, inventory: InventoryData = null) ->
 		"wood":
 			lines.append("【用途】与废料组合修电梯：木材×%d + 废料×%d = 1 次进度。" % [REPAIR_WOOD_EACH, REPAIR_SCRAP_ALT_EACH])
 			lines.append("有零件时请优先用零件，不必消耗木材。")
+	if normalized.begins_with("blueprint:") and bool(def.get("usable", false)):
+		lines.append("【使用效果】写入夜间防御系统，本局永久生效。")
 	if inventory != null:
 		var have := inventory.count(normalized)
 		lines.append("")
