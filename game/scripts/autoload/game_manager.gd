@@ -30,14 +30,15 @@ var _difficulty_names := {
 var _squad_defs := {
 	"scavenger": {
 		"name": "拾荒者",
-		"description": "开箱与拾取时更容易获得额外资源。",
+		"description": "建筑物室内可拾取资源数量为其他分队的 2 倍。",
 		"repair_discount": 0,
 		"fuel_multiplier": 1.0,
+		"building_resource_multiplier": 2.0,
 	},
 	"logistics": {
 		"name": "后勤型",
-		"description": "修复电梯时消耗的资源更少。",
-		"repair_discount": 1,
+		"description": "修复电梯时材料消耗 ×0.75（向下取整）。",
+		"repair_discount": 0,
 		"fuel_multiplier": 1.0,
 	},
 }
@@ -261,7 +262,7 @@ func begin_tutorial_flow() -> void:
 	is_tutorial_run = true
 	_pending_new_game = false
 	_pending_load_save = false
-	difficulty = Difficulty.NORMAL
+	difficulty = Difficulty.EASY
 	squad_id = "scavenger"
 	_run_bootstrap = {}
 	run_state = null
@@ -507,6 +508,11 @@ func get_squad_description(id: String = "") -> String:
 	return str(def.get("description", ""))
 
 
+func get_building_resource_multiplier() -> float:
+	var def: Dictionary = _squad_defs.get(squad_id, {})
+	return maxf(float(def.get("building_resource_multiplier", 1.0)), 1.0)
+
+
 func apply_run_config_to_game(game: Node) -> void:
 	if not game.has_method("apply_run_config"):
 		return
@@ -534,16 +540,44 @@ func get_elevator_repair_cost(base: int) -> int:
 			cost = maxi(cost - 1, 1)
 		Difficulty.HARD:
 			cost += 1
-	var squad_def: Dictionary = _squad_defs.get(squad_id, {})
-	cost = maxi(cost - int(squad_def.get("repair_discount", 0)), 1)
 	return cost
+
+
+func scale_elevator_repair_material_cost(base: int) -> int:
+	var amount := float(base)
+	match difficulty:
+		Difficulty.NORMAL:
+			amount = float(ceili(base * 1.5))
+		Difficulty.HARD:
+			amount = float(ceili(base * 2.0))
+		_:
+			pass
+	if squad_id == "logistics":
+		amount = float(floori(amount * 0.75))
+	return maxi(int(amount), 1)
+
+
+func get_repair_parts_cost() -> int:
+	return scale_elevator_repair_material_cost(ItemDefs.REPAIR_PARTS_EACH)
+
+
+func get_repair_scrap_cost() -> int:
+	return scale_elevator_repair_material_cost(ItemDefs.REPAIR_SCRAP_EACH)
+
+
+func get_repair_wood_cost() -> int:
+	return scale_elevator_repair_material_cost(ItemDefs.REPAIR_WOOD_EACH)
+
+
+func get_repair_scrap_alt_cost() -> int:
+	return scale_elevator_repair_material_cost(ItemDefs.REPAIR_SCRAP_ALT_EACH)
 
 
 func get_tutorial_starting_items() -> Dictionary:
 	return {
 		"supplies": 2,
-		"parts": 5,
-		"scrap": 20,
+		"parts": get_repair_parts_cost(),
+		"scrap": get_repair_scrap_cost(),
 	}
 
 

@@ -40,6 +40,7 @@ var cells: Array[Dictionary] = []
 var district_indices: Array[int] = []
 var hub_indices: Array[int] = []
 var start_node_index: int = -1
+var building_resource_multiplier: float = 1.0
 
 func generate(
 	new_columns: int,
@@ -47,9 +48,11 @@ func generate(
 	new_cell_size: Vector2i,
 	rng_seed: int = 0,
 	is_final_layer: bool = false,
-	debug_near_spawn: bool = false,
+	_debug_near_spawn: bool = false,
 	on_progress: Callable = Callable(),
+	resource_multiplier: float = 1.0,
 ) -> void:
+	building_resource_multiplier = maxf(resource_multiplier, 1.0)
 	columns = new_columns
 	rows = new_rows
 	cell_size = new_cell_size
@@ -106,7 +109,7 @@ func generate(
 			float(int(foot_layout["rows"]) * FOOT_TILE_SIZE),
 		)
 		var foot_origin_offset := (Vector2(cell_size) - foot_area) * 0.5
-		cells[index]["resource_total"] = rng.randi_range(2, 6)
+		cells[index]["resource_total"] = _scaled_building_resource_count(rng.randi_range(2, 6))
 		cells[index]["resource_remaining"] = cells[index]["resource_total"]
 		cells[index]["resource_spawns"] = _generate_resource_spawns_on_walkable(
 			rng, int(cells[index]["resource_total"]), building_type, foot_layout, foot_origin_offset
@@ -118,9 +121,9 @@ func generate(
 			report.call(local, "建设资源区 %d/%d…" % [district_step, district_total])
 
 	if is_final_layer:
-		_ensure_kunlun_control_district()
+		_ensure_kunlun_control_district(rng)
 	else:
-		_ensure_elevator_district()
+		_ensure_elevator_district(rng)
 
 	if district_indices.is_empty():
 		return
@@ -132,8 +135,6 @@ func generate(
 	_finalize_cell_kinds()
 	report.call(0.86, "标记出发节点…")
 	_mark_start_node()
-	if debug_near_spawn:
-		_place_special_building_near_start(is_final_layer)
 	report.call(0.92, "散布地表细节…")
 	_place_terrain_scatter(rng)
 	_place_road_blockages(rng)
@@ -861,7 +862,7 @@ func _pick_building_type(rng: RandomNumberGenerator, is_final_layer: bool = fals
 	if is_final_layer:
 		options = ["warehouse", "garage", "archive", "warehouse", "market"]
 	else:
-		options = ["warehouse", "elevator", "garage", "archive", "warehouse", "market"]
+		options = ["warehouse", "garage", "archive", "warehouse", "market"]
 	return options[rng.randi_range(0, options.size() - 1)]
 
 func _build_foot_layout(rng: RandomNumberGenerator, _district_size: Vector2i) -> Dictionary:
@@ -1004,6 +1005,12 @@ func _generate_resource_spawns_on_walkable(
 			"item_id": ItemDefs.pick_loot_for_building(building_type, rng),
 		})
 	return result
+
+
+func _scaled_building_resource_count(base: int) -> int:
+	if base <= 0 or building_resource_multiplier <= 1.0001:
+		return base
+	return maxi(ceili(float(base) * building_resource_multiplier), 1)
 
 
 func get_foot_origin(index: int) -> Vector2:
@@ -1527,28 +1534,40 @@ func _passable_graph_fully_connected() -> bool:
 	return seen >= total
 
 
-func _ensure_elevator_district() -> void:
-	_ensure_special_building_district(false)
+func _ensure_elevator_district(rng: RandomNumberGenerator) -> void:
+	_ensure_special_building_district(false, rng)
 
 
-func _ensure_kunlun_control_district() -> void:
-	_ensure_special_building_district(true)
+func _ensure_kunlun_control_district(rng: RandomNumberGenerator) -> void:
+	_ensure_special_building_district(true, rng)
 
 
-func _ensure_special_building_district(is_final_layer: bool) -> void:
+func _ensure_special_building_district(is_final_layer: bool, rng: RandomNumberGenerator) -> void:
 	if district_indices.is_empty():
 		return
-	var target_index := -1
-	for district_index in district_indices:
-		if is_final_layer and bool(cells[district_index].get("has_kunlun_control", false)):
-			target_index = district_index
-			break
-		if not is_final_layer and bool(cells[district_index]["has_elevator"]):
-			target_index = district_index
-			break
+	var target_index := _pick_random_special_district(rng)
 	if target_index < 0:
 		target_index = district_indices[0]
 	_assign_special_building(target_index, is_final_layer)
+
+
+func _pick_random_special_district(rng: RandomNumberGenerator, exclude_index: int = -1) -> int:
+	var candidates: Array[int] = []
+	for district_index in district_indices:
+		if district_index == exclude_index:
+			continue
+		if str(cells[district_index].get("story_id", "")) != "":
+			continue
+		if str(cells[district_index].get("special_encounter", "")) != "":
+			continue
+		candidates.append(district_index)
+	if candidates.is_empty():
+		for district_index in district_indices:
+			if district_index != exclude_index:
+				candidates.append(district_index)
+	if candidates.is_empty():
+		return -1
+	return candidates[rng.randi_range(0, candidates.size() - 1)]
 
 
 func _assign_special_building(district_index: int, is_final_layer: bool) -> void:
@@ -1591,15 +1610,12 @@ func relocate_special_building_from(district_index: int) -> void:
 	if not had_special:
 		return
 	_clear_special_building_from(district_index)
-	for index in district_indices:
-		if index == district_index:
-			continue
-		if str(cells[index].get("story_id", "")) != "":
-			continue
-		if str(cells[index].get("special_encounter", "")) != "":
-			continue
-		_assign_special_building(index, is_final_layer)
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	var target_index := _pick_random_special_district(rng, district_index)
+	if target_index < 0:
 		return
+	_assign_special_building(target_index, is_final_layer)
 
 
 func _place_special_building_near_start(is_final_layer: bool) -> void:
@@ -1721,6 +1737,7 @@ func place_blueprint_armories(
 			if legacy_loot is Array:
 				blueprint_count = (legacy_loot as Array).size()
 		blueprint_count = clampi(blueprint_count, 0, 2)
+		blueprint_count = _scaled_building_resource_count(blueprint_count)
 		for _slot in range(blueprint_count):
 			if roll_pool.is_empty():
 				break
@@ -1729,11 +1746,11 @@ func place_blueprint_armories(
 		if extra_loot is Array:
 			for entry in extra_loot:
 				var extra_id := str(entry)
-				if extra_id != "" and loot_ids.size() < 2:
+				if extra_id != "" and loot_ids.size() < _scaled_building_resource_count(2):
 					loot_ids.append(extra_id)
 		if loot_ids.is_empty():
 			continue
-		loot_ids = loot_ids.slice(0, mini(loot_ids.size(), 2))
+		loot_ids = loot_ids.slice(0, mini(loot_ids.size(), _scaled_building_resource_count(2)))
 		cells[index]["building_type"] = "armory"
 		cells[index]["building_label_override"] = label
 		cells[index]["armory_site_id"] = site_id
@@ -1850,7 +1867,7 @@ func reveal_tactical_hidden_sites(source_id: String = "") -> bool:
 			building_type = "warehouse"
 		cells[index]["tactical_revealed"] = true
 		cells[index]["building_type"] = building_type
-		var resource_total := rng.randi_range(3, 5)
+		var resource_total := _scaled_building_resource_count(rng.randi_range(3, 5))
 		cells[index]["resource_total"] = resource_total
 		cells[index]["resource_remaining"] = resource_total
 		var foot_layout := {

@@ -208,12 +208,15 @@ static func get_detail_text(item_id: String, inventory: InventoryData = null) ->
 			var fuel_amt := float(def.get("restore_fuel", 140.0))
 			lines.append("【使用效果】车辆燃料 +%.0f" % fuel_amt)
 		"parts":
-			lines.append("【用途】修复电梯：每次进度消耗 零件×%d（优先）。" % REPAIR_PARTS_EACH)
+			var repair_costs := _elevator_repair_costs()
+			lines.append("【用途】修复电梯：每次进度消耗 零件×%d（优先）。" % repair_costs["parts"])
 		"scrap":
-			lines.append("【用途】应急修电梯：没有零件时，每次进度消耗 废料×%d。" % REPAIR_SCRAP_EACH)
-			lines.append("（或 木材×%d + 废料×%d 的组合修补）" % [REPAIR_WOOD_EACH, REPAIR_SCRAP_ALT_EACH])
+			var scrap_costs := _elevator_repair_costs()
+			lines.append("【用途】应急修电梯：没有零件时，每次进度消耗 废料×%d。" % scrap_costs["scrap"])
+			lines.append("（或 木材×%d + 废料×%d 的组合修补）" % [scrap_costs["wood"], scrap_costs["scrap_alt"]])
 		"wood":
-			lines.append("【用途】与废料组合修电梯：木材×%d + 废料×%d = 1 次进度。" % [REPAIR_WOOD_EACH, REPAIR_SCRAP_ALT_EACH])
+			var wood_costs := _elevator_repair_costs()
+			lines.append("【用途】与废料组合修电梯：木材×%d + 废料×%d = 1 次进度。" % [wood_costs["wood"], wood_costs["scrap_alt"]])
 			lines.append("有零件时请优先用零件，不必消耗木材。")
 	if normalized.begins_with("blueprint:") and bool(def.get("usable", false)):
 		lines.append("【使用效果】写入夜间防御系统，本局永久生效。")
@@ -225,11 +228,12 @@ static func get_detail_text(item_id: String, inventory: InventoryData = null) ->
 
 
 static func get_repair_requirement_text(inventory: InventoryData) -> String:
+	var costs := _elevator_repair_costs()
 	var lines: PackedStringArray = []
 	lines.append("修电梯 · 每推进 1 步进度需要：")
-	lines.append("  ① 零件 ×%d（优先）" % REPAIR_PARTS_EACH)
-	lines.append("  ② 或 废料 ×%d（应急）" % REPAIR_SCRAP_EACH)
-	lines.append("  ③ 或 木材×%d + 废料×%d" % [REPAIR_WOOD_EACH, REPAIR_SCRAP_ALT_EACH])
+	lines.append("  ① 零件 ×%d（优先）" % costs["parts"])
+	lines.append("  ② 或 废料 ×%d（应急）" % costs["scrap"])
+	lines.append("  ③ 或 木材×%d + 废料×%d" % [costs["wood"], costs["scrap_alt"]])
 	if inventory != null:
 		lines.append("当前持有：零件 %d | 废料 %d | 木材 %d" % [
 			inventory.count("parts"),
@@ -301,11 +305,34 @@ static func _ensure_evidence_loaded() -> void:
 static func can_repair_with_inventory(inventory: InventoryData) -> bool:
 	if inventory == null:
 		return false
-	if inventory.has("parts", REPAIR_PARTS_EACH):
+	var costs := _elevator_repair_costs()
+	if inventory.has("parts", costs["parts"]):
 		return true
-	if inventory.has("scrap", REPAIR_SCRAP_EACH):
+	if inventory.has("scrap", costs["scrap"]):
 		return true
-	return inventory.has("wood", REPAIR_WOOD_EACH) and inventory.has("scrap", REPAIR_SCRAP_ALT_EACH)
+	return inventory.has("wood", costs["wood"]) and inventory.has("scrap", costs["scrap_alt"])
+
+
+static func _elevator_repair_costs() -> Dictionary:
+	var costs := {
+		"parts": REPAIR_PARTS_EACH,
+		"scrap": REPAIR_SCRAP_EACH,
+		"wood": REPAIR_WOOD_EACH,
+		"scrap_alt": REPAIR_SCRAP_ALT_EACH,
+	}
+	var main_loop := Engine.get_main_loop()
+	if main_loop is SceneTree:
+		var manager := (main_loop as SceneTree).root.get_node_or_null("GameManager")
+		if manager != null:
+			if manager.has_method("get_repair_parts_cost"):
+				costs["parts"] = int(manager.call("get_repair_parts_cost"))
+			if manager.has_method("get_repair_scrap_cost"):
+				costs["scrap"] = int(manager.call("get_repair_scrap_cost"))
+			if manager.has_method("get_repair_wood_cost"):
+				costs["wood"] = int(manager.call("get_repair_wood_cost"))
+			if manager.has_method("get_repair_scrap_alt_cost"):
+				costs["scrap_alt"] = int(manager.call("get_repair_scrap_alt_cost"))
+	return costs
 
 
 static func can_repair_vehicle_with_inventory(inventory: InventoryData) -> bool:

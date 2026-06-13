@@ -39,7 +39,7 @@ var _world_camera: Camera2D
 @export var base_elevator_repair_cost: int = 3
 @export var war_fog_enabled: bool = true
 @export var debug_start_at_story: bool = true
-@export var debug_start_near_special: bool = true
+@export var debug_start_near_special: bool = false
 
 var _map: WorldMapData = WorldMapData.new()
 var _mode: int = TravelMode.DRIVE
@@ -542,7 +542,7 @@ func _setup_repair_choice_popup() -> void:
 	vbox.add_child(sep)
 
 	_repair_parts_btn = Button.new()
-	_repair_parts_btn.text = "零件 ×%d" % ItemDefs.REPAIR_PARTS_EACH
+	_repair_parts_btn.text = "零件 ×%d" % _elevator_repair_parts_cost()
 	_repair_parts_btn.focus_mode = Control.FOCUS_NONE
 	_repair_parts_btn.pressed.connect(_on_repair_option_pressed.bind("parts"))
 	_repair_parts_btn.set_meta("repair_base_text", _repair_parts_btn.text)
@@ -550,7 +550,7 @@ func _setup_repair_choice_popup() -> void:
 	vbox.add_child(_repair_parts_btn)
 
 	_repair_scrap_btn = Button.new()
-	_repair_scrap_btn.text = "废料 ×%d" % ItemDefs.REPAIR_SCRAP_EACH
+	_repair_scrap_btn.text = "废料 ×%d" % _elevator_repair_scrap_cost()
 	_repair_scrap_btn.focus_mode = Control.FOCUS_NONE
 	_repair_scrap_btn.pressed.connect(_on_repair_option_pressed.bind("scrap"))
 	_repair_scrap_btn.set_meta("repair_base_text", _repair_scrap_btn.text)
@@ -558,7 +558,10 @@ func _setup_repair_choice_popup() -> void:
 	vbox.add_child(_repair_scrap_btn)
 
 	_repair_wood_scrap_btn = Button.new()
-	_repair_wood_scrap_btn.text = "木材 ×%d + 废料 ×%d" % [ItemDefs.REPAIR_WOOD_EACH, ItemDefs.REPAIR_SCRAP_ALT_EACH]
+	_repair_wood_scrap_btn.text = "木材 ×%d + 废料 ×%d" % [
+		_elevator_repair_wood_cost(),
+		_elevator_repair_scrap_alt_cost(),
+	]
 	_repair_wood_scrap_btn.focus_mode = Control.FOCUS_NONE
 	_repair_wood_scrap_btn.pressed.connect(_on_repair_option_pressed.bind("wood_scrap"))
 	_repair_wood_scrap_btn.set_meta("repair_base_text", _repair_wood_scrap_btn.text)
@@ -625,14 +628,47 @@ func _set_repair_option_enabled(button: Button, enabled: bool) -> void:
 		button.add_theme_color_override("font_color", Color(0.42, 0.46, 0.52, 0.78))
 
 
+func _elevator_repair_parts_cost() -> int:
+	return GameManager.get_repair_parts_cost()
+
+
+func _elevator_repair_scrap_cost() -> int:
+	return GameManager.get_repair_scrap_cost()
+
+
+func _elevator_repair_wood_cost() -> int:
+	return GameManager.get_repair_wood_cost()
+
+
+func _elevator_repair_scrap_alt_cost() -> int:
+	return GameManager.get_repair_scrap_alt_cost()
+
+
+func _update_repair_choice_button_labels() -> void:
+	if not is_instance_valid(_repair_parts_btn):
+		return
+	_repair_parts_btn.text = "零件 ×%d" % _elevator_repair_parts_cost()
+	_repair_parts_btn.set_meta("repair_base_text", _repair_parts_btn.text)
+	_repair_scrap_btn.text = "废料 ×%d" % _elevator_repair_scrap_cost()
+	_repair_scrap_btn.set_meta("repair_base_text", _repair_scrap_btn.text)
+	_repair_wood_scrap_btn.text = "木材 ×%d + 废料 ×%d" % [
+		_elevator_repair_wood_cost(),
+		_elevator_repair_scrap_alt_cost(),
+	]
+	_repair_wood_scrap_btn.set_meta("repair_base_text", _repair_wood_scrap_btn.text)
+
+
 func _has_repair_material(material: String) -> bool:
 	match material:
 		"parts":
-			return _backpack.has("parts", ItemDefs.REPAIR_PARTS_EACH)
+			return _backpack.has("parts", _elevator_repair_parts_cost())
 		"scrap":
-			return _backpack.has("scrap", ItemDefs.REPAIR_SCRAP_EACH)
+			return _backpack.has("scrap", _elevator_repair_scrap_cost())
 		"wood_scrap":
-			return _backpack.has("wood", ItemDefs.REPAIR_WOOD_EACH) and _backpack.has("scrap", ItemDefs.REPAIR_SCRAP_ALT_EACH)
+			return (
+				_backpack.has("wood", _elevator_repair_wood_cost())
+				and _backpack.has("scrap", _elevator_repair_scrap_alt_cost())
+			)
 	return false
 
 
@@ -662,11 +698,11 @@ func _refresh_repair_choice_popup(status_text: String = "", status_warning: bool
 	if is_instance_valid(_repair_progress_bar):
 		_repair_progress_bar.max_value = float(maxi(total, 1))
 		_repair_progress_bar.value = float(_elevator_repair_progress)
-	_set_repair_option_enabled(_repair_parts_btn, _backpack.has("parts", ItemDefs.REPAIR_PARTS_EACH))
-	_set_repair_option_enabled(_repair_scrap_btn, _backpack.has("scrap", ItemDefs.REPAIR_SCRAP_EACH))
+	_set_repair_option_enabled(_repair_parts_btn, _backpack.has("parts", _elevator_repair_parts_cost()))
+	_set_repair_option_enabled(_repair_scrap_btn, _backpack.has("scrap", _elevator_repair_scrap_cost()))
 	_set_repair_option_enabled(
 		_repair_wood_scrap_btn,
-		_backpack.has("wood", ItemDefs.REPAIR_WOOD_EACH) and _backpack.has("scrap", ItemDefs.REPAIR_SCRAP_ALT_EACH),
+		_backpack.has("wood", _elevator_repair_wood_cost()) and _backpack.has("scrap", _elevator_repair_scrap_alt_cost()),
 	)
 	if not status_text.is_empty():
 		_show_repair_choicf_hint(status_text, status_warning)
@@ -1822,6 +1858,7 @@ func apply_run_config(manager: Node) -> void:
 		_run_difficulty_name = manager.get_difficulty_name()
 	if manager.has_method("get_squad_name"):
 		_run_squad_name = manager.get_squad_name()
+	_update_repair_choice_button_labels()
 
 
 func _apply_run_config_from_manager() -> void:
@@ -1849,11 +1886,14 @@ func _repair_with_material(material: String) -> void:
 	var consumed := false
 	match material:
 		"parts":
-			consumed = _backpack.remove("parts", ItemDefs.REPAIR_PARTS_EACH)
+			consumed = _backpack.remove("parts", _elevator_repair_parts_cost())
 		"scrap":
-			consumed = _backpack.remove("scrap", ItemDefs.REPAIR_SCRAP_EACH)
+			consumed = _backpack.remove("scrap", _elevator_repair_scrap_cost())
 		"wood_scrap":
-			consumed = _backpack.remove("wood", ItemDefs.REPAIR_WOOD_EACH) and _backpack.remove("scrap", ItemDefs.REPAIR_SCRAP_ALT_EACH)
+			consumed = (
+				_backpack.remove("wood", _elevator_repair_wood_cost())
+				and _backpack.remove("scrap", _elevator_repair_scrap_alt_cost())
+			)
 
 	if not consumed:
 		_refresh_repair_choice_popup("资源不足", true)
@@ -2315,17 +2355,30 @@ func _on_fuel_empty_dialog_closed() -> void:
 
 
 func _consume_repair_material() -> bool:
-	if _backpack.has("parts", ItemDefs.REPAIR_PARTS_EACH):
-		return _backpack.remove("parts", ItemDefs.REPAIR_PARTS_EACH)
-	if _backpack.has("scrap", ItemDefs.REPAIR_SCRAP_EACH):
-		return _backpack.remove("scrap", ItemDefs.REPAIR_SCRAP_EACH)
-	if _backpack.has("wood", ItemDefs.REPAIR_WOOD_EACH) and _backpack.has("scrap", ItemDefs.REPAIR_SCRAP_ALT_EACH):
-		return _backpack.remove("wood", ItemDefs.REPAIR_WOOD_EACH) and _backpack.remove("scrap", ItemDefs.REPAIR_SCRAP_ALT_EACH)
+	if _backpack.has("parts", _elevator_repair_parts_cost()):
+		return _backpack.remove("parts", _elevator_repair_parts_cost())
+	if _backpack.has("scrap", _elevator_repair_scrap_cost()):
+		return _backpack.remove("scrap", _elevator_repair_scrap_cost())
+	if (
+		_backpack.has("wood", _elevator_repair_wood_cost())
+		and _backpack.has("scrap", _elevator_repair_scrap_alt_cost())
+	):
+		return (
+			_backpack.remove("wood", _elevator_repair_wood_cost())
+			and _backpack.remove("scrap", _elevator_repair_scrap_alt_cost())
+		)
 	return false
 
 
 func _repair_button_label() -> String:
-	if _backpack.has("parts", ItemDefs.REPAIR_PARTS_EACH) or _backpack.has("scrap", ItemDefs.REPAIR_SCRAP_EACH) or (_backpack.has("wood", ItemDefs.REPAIR_WOOD_EACH) and _backpack.has("scrap", ItemDefs.REPAIR_SCRAP_ALT_EACH)):
+	if (
+		_backpack.has("parts", _elevator_repair_parts_cost())
+		or _backpack.has("scrap", _elevator_repair_scrap_cost())
+		or (
+			_backpack.has("wood", _elevator_repair_wood_cost())
+			and _backpack.has("scrap", _elevator_repair_scrap_alt_cost())
+		)
+	):
 		return "修复电梯 (F · 自选材料)"
 	return "修复电梯 (材料不足)"
 
@@ -4057,7 +4110,7 @@ func _on_tactical_sites_revealed(source_id: String = "", auto_open_map: bool = f
 			body = "地图上出现 3 处雷达扫描到的隐藏建筑。"
 		elif source_id == "chronicler_04":
 			title = "物资登记坐标已更新"
-			body = "编史者提供的两处隐藏仓库坐标已叠加至导航。"
+			body = "编史者提供的 3 处隐藏物资点坐标已叠加至导航。"
 		evening_notice.show_message(title, body)
 	if auto_open_map:
 		call_deferred("_open_world_map")
@@ -5318,6 +5371,8 @@ func _generate_layer_map() -> void:
 		0,
 		_current_layer >= total_layers,
 		debug_start_near_special,
+		Callable(),
+		GameManager.get_building_resource_multiplier(),
 	)
 	if not _is_tutorial_run():
 		StoryData.ensure_story_districts(_map, _current_layer)

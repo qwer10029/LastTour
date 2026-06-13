@@ -1,10 +1,10 @@
 {
 	"loot_fallback_item": "scrap",
 	"repair_costs": {
-		"parts_each": 1,
-		"scrap_each": 2,
+		"parts_each": 5,
+		"scrap_each": 20,
 		"wood_each": 2,
-		"scrap_alt_each": 1
+		"scrap_alt_each": 10
 	},
 	"vehicle_repair": {
 		"parts_each": 1,
@@ -77,7 +77,7 @@
 		},
 		"data_chip_supply_registry": {
 			"name": "物资登记数据片",
-			"desc": "编史者储存的战后初期区域物资登记表，含两处隐藏仓库坐标。",
+			"desc": "（旧版存档物品）编史者坐标奖励已改为勘探导航直接更新，不再发放实物。",
 			"stack_max": 1,
 			"color": "#9ec8f0",
 			"usable": false

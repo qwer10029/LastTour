@@ -7,14 +7,15 @@
 	"squads": {
 		"scavenger": {
 			"name": "拾荒者",
-			"description": "开箱与拾取时更容易获得额外资源。",
+			"description": "建筑物室内可拾取资源数量为其他分队的 2 倍。",
 			"repair_discount": 0,
-			"fuel_multiplier": 1.0
+			"fuel_multiplier": 1.0,
+			"building_resource_multiplier": 2.0
 		},
 		"logistics": {
 			"name": "后勤型",
-			"description": "修复电梯时消耗的资源更少。",
-			"repair_discount": 1,
+			"description": "修复电梯时材料消耗 ×0.75（向下取整）。",
+			"repair_discount": 0,
 			"fuel_multiplier": 1.0
 		}
 	},

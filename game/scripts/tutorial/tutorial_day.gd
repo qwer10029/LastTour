@@ -543,13 +543,13 @@ func _repair_tutorial_elevator(material: String) -> void:
 	var consumed := false
 	match material:
 		"parts":
-			consumed = _backpack.remove("parts", ItemDefs.REPAIR_PARTS_EACH)
+			consumed = _backpack.remove("parts", _elevator_repair_parts_cost())
 		"scrap":
-			consumed = _backpack.remove("scrap", ItemDefs.REPAIR_SCRAP_EACH)
+			consumed = _backpack.remove("scrap", _elevator_repair_scrap_cost())
 		"wood_scrap":
 			consumed = (
-				_backpack.remove("wood", ItemDefs.REPAIR_WOOD_EACH)
-				and _backpack.remove("scrap", ItemDefs.REPAIR_SCRAP_ALT_EACH)
+				_backpack.remove("wood", _elevator_repair_wood_cost())
+				and _backpack.remove("scrap", _elevator_repair_scrap_alt_cost())
 			)
 	if not consumed:
 		_refresh_repair_choice_popup("资源不足", true)

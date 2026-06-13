@@ -27,10 +27,22 @@ static func _config() -> Dictionary:
 	return _cache
 
 
+static func all_tower_ids() -> Array[String]:
+	var ids: Array[String] = []
+	for entry_var in _config().get("tower_roster", []):
+		if typeof(entry_var) != TYPE_DICTIONARY:
+			continue
+		var tid := str((entry_var as Dictionary).get("id", ""))
+		if tid != "" and not ids.has(tid):
+			ids.append(tid)
+	if ids.is_empty():
+		return ["jammer", "barrier", "trap", "cryo_beacon", "hacker", "sniper", "splash"]
+	return ids
+
+
 static func default_run_state() -> Dictionary:
-	var starters: Array = _config().get("starter_unlocked_towers", ["jammer", "barrier", "cryo_beacon"])
 	return {
-		"unlocked_towers": (starters as Array).duplicate(),
+		"unlocked_towers": all_tower_ids().duplicate(),
 		"global": {},
 		"tower": {},
 		"reactor": {
@@ -56,10 +68,9 @@ static func sanitize_run_state(raw: Variant) -> Dictionary:
 			var tid := str(entry)
 			if tid != "" and not (state["unlocked_towers"] as Array).has(tid):
 				(state["unlocked_towers"] as Array).append(tid)
-	for starter in _config().get("starter_unlocked_towers", []):
-		var starter_id := str(starter)
-		if starter_id != "" and not (state["unlocked_towers"] as Array).has(starter_id):
-			(state["unlocked_towers"] as Array).append(starter_id)
+	for tower_id in all_tower_ids():
+		if tower_id != "" and not (state["unlocked_towers"] as Array).has(tower_id):
+			(state["unlocked_towers"] as Array).append(tower_id)
 	var global_src: Variant = src.get("global")
 	if global_src is Dictionary:
 		state["global"] = (global_src as Dictionary).duplicate(true)

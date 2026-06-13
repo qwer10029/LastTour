@@ -76,7 +76,8 @@
       },
       "tactical_hidden_sites": [
         { "building_type": "warehouse", "building_label": "隐藏仓库" },
-        { "building_type": "garage", "building_label": "备件藏匿点" }
+        { "building_type": "garage", "building_label": "备件藏匿点" },
+        { "building_type": "market", "building_label": "燃料储备点" }
       ]
     },
     {

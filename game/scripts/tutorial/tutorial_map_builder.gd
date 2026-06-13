@@ -27,6 +27,7 @@ const ELEVATOR_LOOT := [
 
 static func build_tutorial_map() -> WorldMapData:
 	var map := WorldMapData.new()
+	map.building_resource_multiplier = GameManager.get_building_resource_multiplier()
 	map.columns = MAP_COLUMNS
 	map.rows = MAP_ROWS
 	map.cell_size = CELL_SIZE
@@ -104,9 +105,10 @@ static func _setup_warehouse(map: WorldMapData, coord: Vector2i) -> void:
 		float(int(foot_layout["rows"]) * WorldMapData.FOOT_TILE_SIZE),
 	)
 	var foot_origin_offset := (Vector2(map.cell_size) - foot_area) * 0.5
-	cell["resource_total"] = WAREHOUSE_LOOT.size()
-	cell["resource_remaining"] = WAREHOUSE_LOOT.size()
-	cell["resource_spawns"] = _build_fixed_loot_spawns(WAREHOUSE_LOOT, foot_layout, foot_origin_offset)
+	var warehouse_loot := _expand_loot_table(WAREHOUSE_LOOT, map.building_resource_multiplier)
+	cell["resource_total"] = warehouse_loot.size()
+	cell["resource_remaining"] = warehouse_loot.size()
+	cell["resource_spawns"] = _build_fixed_loot_spawns(warehouse_loot, foot_layout, foot_origin_offset)
 	map.district_indices.append(index)
 
 
@@ -133,9 +135,10 @@ static func _setup_elevator_hub(map: WorldMapData, coord: Vector2i) -> void:
 		float(int(foot_layout["rows"]) * WorldMapData.FOOT_TILE_SIZE),
 	)
 	var foot_origin_offset := (Vector2(map.cell_size) - foot_area) * 0.5
-	cell["resource_total"] = ELEVATOR_LOOT.size()
-	cell["resource_remaining"] = ELEVATOR_LOOT.size()
-	cell["resource_spawns"] = _build_fixed_loot_spawns(ELEVATOR_LOOT, foot_layout, foot_origin_offset)
+	var elevator_loot := _expand_loot_table(ELEVATOR_LOOT, map.building_resource_multiplier)
+	cell["resource_total"] = elevator_loot.size()
+	cell["resource_remaining"] = elevator_loot.size()
+	cell["resource_spawns"] = _build_fixed_loot_spawns(elevator_loot, foot_layout, foot_origin_offset)
 	map.district_indices.append(index)
 
 
@@ -144,16 +147,32 @@ static func _build_fixed_loot_spawns(
 	foot_layout: Dictionary,
 	foot_origin_offset: Vector2,
 ) -> Array:
+	var tile_use_count: Dictionary = {}
 	var result: Array = []
 	for entry in loot_table:
 		var tile: Vector2i = entry["tile"]
+		var tile_key := "%d,%d" % [tile.x, tile.y]
+		var use_index := int(tile_use_count.get(tile_key, 0))
+		tile_use_count[tile_key] = use_index + 1
 		var center := Vector2(
 			float(tile.x) * WorldMapData.FOOT_TILE_SIZE + WorldMapData.FOOT_TILE_SIZE * 0.5,
 			float(tile.y) * WorldMapData.FOOT_TILE_SIZE + WorldMapData.FOOT_TILE_SIZE * 0.5,
 		)
+		var offset := Vector2(float(use_index) * 8.0 - 4.0, float(use_index) * 5.0 - 2.0)
 		result.append({
-			"x": foot_origin_offset.x + center.x,
-			"y": foot_origin_offset.y + center.y,
+			"x": foot_origin_offset.x + center.x + offset.x,
+			"y": foot_origin_offset.y + center.y + offset.y,
 			"item_id": str(entry["item_id"]),
 		})
 	return result
+
+
+static func _expand_loot_table(loot_table: Array, multiplier: float) -> Array:
+	if multiplier <= 1.0001:
+		return loot_table
+	var copies := maxi(int(round(multiplier)), 1)
+	var expanded: Array = []
+	for _copy in range(copies):
+		for entry in loot_table:
+			expanded.append(entry)
+	return expanded

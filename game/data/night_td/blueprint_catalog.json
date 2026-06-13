@@ -1,5 +1,5 @@
 {
-	"_readme": "兵工厂蓝图随机池。拾取 blueprint:armory 时按权重 roll；解锁类蓝图已拥有塔种则跳过。全局增益（all_towers 等）权重更高。",
+	"_readme": "兵工厂蓝图随机池。拾取 blueprint:armory 时按权重 roll 增益类蓝图。",
 	"_balance_notes": {
 		"全局倍率": "写成乘数，如 1.25 表示 ×1.25；与现有 tower_upgrades 累乘时可换算为 delta=0.25",
 		"单塔倍率": "可更激进，如路障耐久 ×2",
@@ -7,7 +7,7 @@
 		"叠加规则": "同类全局增益建议递减或设上限；单塔增益可叠 2～3 层",
 		"整数资源结算": "背包与夜末回收均为整数。带小数的 salvage_mult / build 类倍率不在单塔上逐件 floor（否则 1×1.25 永远=1），而是夜末按 item_id 汇总基础回收量后一次乘倍率，再 round 到整数；余量写入本局 salvage_fraction_bank，下次同资源结算时并入。示例：3 座被毁路障各掉 1 废料，×1.25 → 3.75 → 实得 4，bank 存 0.25。敌人掉落废料也纳入同 item_id 汇总后再乘全局 salvage_mult。"
 	},
-	"starter_unlocked_towers": ["jammer", "barrier", "cryo_beacon"],
+	"starter_unlocked_towers": ["jammer", "barrier", "trap", "cryo_beacon", "hacker", "sniper", "splash"],
 	"tower_roster": [
 		{
 			"id": "jammer",
@@ -29,7 +29,7 @@
 			"id": "trap",
 			"name": "电磁陷阱",
 			"role": "单次高额伤害，触发后消失",
-			"starter": false,
+			"starter": true,
 			"upkeep": 0.0,
 			"base": {"damage": 45, "hp": 1, "one_shot": true}
 		},
@@ -45,7 +45,7 @@
 			"id": "hacker",
 			"name": "入侵天线",
 			"role": "引导策反机械单位",
-			"starter": false,
+			"starter": true,
 			"upkeep": 1.5,
 			"base": {"hack_rate": 80, "range": 150, "hp": 35}
 		},
@@ -53,7 +53,7 @@
 			"id": "sniper",
 			"name": "炮塔",
 			"role": "超远射程高爆发单体",
-			"starter": false,
+			"starter": true,
 			"upkeep": 1.5,
 			"base": {"damage": 40, "range": 220, "hp": 30, "fire_interval": 2.2}
 		},
@@ -61,7 +61,7 @@
 			"id": "splash",
 			"name": "电弧塔",
 			"role": "中射程范围溅射",
-			"starter": false,
+			"starter": true,
 			"upkeep": 1.2,
 			"base": {"damage": 12, "range": 162, "splash_radius": 56, "hp": 45}
 		}
@@ -73,7 +73,6 @@
 		"single_tower": "仅列出的 tower id"
 	},
 	"blueprint_categories": {
-		"unlock": "解锁新塔种，不重复获得",
 		"global_buff": "对所有塔或战斗塔生效，数值偏弱",
 		"tower_buff": "仅对指定塔生效，数值偏强",
 		"power_capacity": "提升电力上限",
@@ -81,48 +80,6 @@
 		"power_bundle": "同时提升上限与发电"
 	},
 	"blueprints": [
-		{
-			"id": "bp_unlock_trap",
-			"category": "unlock",
-			"display_name": "军用防御蓝图",
-			"effect_summary": "解锁建造：电磁陷阱",
-			"unlocks_tower": "trap",
-			"rarity": "rare",
-			"notes": "一次性；已解锁则_roll 时跳过或转化为全局增益"
-		},
-		{
-			"id": "bp_unlock_cryo_beacon",
-			"category": "unlock",
-			"display_name": "军用防御蓝图",
-			"effect_summary": "解锁建造：噪声信标",
-			"unlocks_tower": "cryo_beacon",
-			"rarity": "rare"
-		},
-		{
-			"id": "bp_unlock_hacker",
-			"category": "unlock",
-			"display_name": "军用防御蓝图",
-			"effect_summary": "解锁建造：入侵天线",
-			"unlocks_tower": "hacker",
-			"rarity": "rare"
-		},
-		{
-			"id": "bp_unlock_sniper",
-			"category": "unlock",
-			"display_name": "军用防御蓝图",
-			"effect_summary": "解锁建造：炮塔",
-			"unlocks_tower": "sniper",
-			"rarity": "rare"
-		},
-		{
-			"id": "bp_unlock_splash",
-			"category": "unlock",
-			"display_name": "军用防御蓝图",
-			"effect_summary": "解锁建造：电弧塔",
-			"unlocks_tower": "splash",
-			"rarity": "rare"
-		},
-
 		{
 			"id": "bp_global_damage_125",
 			"category": "global_buff",
@@ -434,14 +391,12 @@
 	"roll_pool_suggestion": {
 		"_comment": "兵工厂随机池权重示例，实现时可拆成独立表",
 		"weights": {
-			"unlock": 8,
 			"global_buff": 48,
 			"tower_buff": 28,
 			"power_capacity": 8,
 			"power_generation": 8,
 			"power_bundle": 4
-		},
-		"unlock_fallback": "已拥有全部塔种时，unlock 条目重_roll 为 global_buff 或 power 类"
+		}
 	},
 	"implementation_checklist": [
 		"扩展 tower_upgrades / run_state：unlocked_towers、per_tower_buffs、reactor_mods",

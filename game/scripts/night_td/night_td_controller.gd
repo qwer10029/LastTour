@@ -327,8 +327,7 @@ func start_session(
 			_setup_tutorial_director()
 			if is_instance_valid(hud):
 				var tutorial_flags: Dictionary = _session_options.get("tutorial_flags", {})
-				# 教学首塔只开放炮塔，避免误选路障/信标
-				var tutorial_towers: Array = ["sniper"]
+				var tutorial_towers: Array = BlueprintCatalog.all_tower_ids()
 				_blueprint_state["unlocked_towers"] = tutorial_towers.duplicate()
 				_selected_tower = "sniper"
 				if bool(tutorial_flags.get("hide_power_panel", true)):
@@ -439,11 +438,6 @@ func _reveal_tutorial_night_features() -> void:
 		hud.show_power_panel(true)
 	if bool(flags.get("hide_emergency_fuel", true)) and is_instance_valid(hud._fuel_boost_btn):
 		hud._fuel_boost_btn.hide()
-	if hud.has_method("set_unlocked_towers"):
-		hud.set_unlocked_towers(["sniper", "barrier", "trap", "jammer"])
-		_blueprint_state["unlocked_towers"] = ["sniper", "barrier", "trap", "jammer"]
-		if hud.has_method("get_selected_tower"):
-			_selected_tower = hud.get_selected_tower()
 	if is_instance_valid(_tutorial_director):
 		_tutorial_director.set_objective_override("")
 	hud.append_log("已开放：热力图、电力调度与其他防御设施", Color("#8ec8e8"))
