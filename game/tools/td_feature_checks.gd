@@ -113,6 +113,13 @@ func _check_td_mechanics() -> void:
 	if scene == null:
 		return
 	_expect(float(NightTdDefs.get_tower_def("splash").get("range", 0.0)) >= 160.0, "splash tower should have wider range")
+	var hacker_def := NightTdDefs.get_tower_def("hacker")
+	_expect(int(NightTdDefs.get_tower_def("trap").get("cost", 0)) == 2, "trap deploy cost should stay unchanged")
+	_expect(int(hacker_def.get("cost", 0)) == 13, "hacker deploy cost should match 10 parts plus 3 wood")
+	_expect(int(hacker_def.get("build_cost", {}).get("parts", 0)) == 10, "hacker tower should cost 10 parts")
+	_expect(int(hacker_def.get("build_cost", {}).get("wood", 0)) == 3, "hacker tower should cost a few wood")
+	_expect(int(hacker_def.get("salvage", {}).get("scrap", 0)) == 1, "destroyed hacker tower should return scrap")
+	_expect(absf(float(NightTdDefs.get_enemy_def("drone").get("hack_resist", 0.0)) - 2.0) < 0.01, "basic enemies should resist hacking twice as long")
 	var repair_inv := InventoryData.new()
 	repair_inv.add("parts", ItemDefs.VEHICLE_REPAIR_PARTS_EACH)
 	repair_inv.add("wood", ItemDefs.VEHICLE_REPAIR_WOOD_EACH)
@@ -162,6 +169,16 @@ func _check_td_mechanics() -> void:
 			await create_timer(0.5).timeout
 			_expect(not bool(hud.get_node_or_null("Shell/EnemyGalleryOverlay").visible), "enemy gallery should auto-hide after timeout")
 		hud.hide_enemy_gallery()
+		hud.show_enemy_first_seen("thunder_leiting")
+		var thunder_portrait := hud.get("_gallery_portrait") as TextureRect
+		var thunder_detail := hud.get("_gallery_detail") as Label
+		_expect(thunder_portrait != null and thunder_portrait.texture != null, "thunder first-seen popup should show an image")
+		_expect(thunder_detail != null and thunder_detail.text.find("突破特性") >= 0, "thunder first-seen popup should show description text")
+		hud.hide_enemy_gallery()
+		var power_scroll := hud.get("_power_scroll") as ScrollContainer
+		_expect(power_scroll != null, "power panel should use a scroll window")
+		if power_scroll != null:
+			_expect(power_scroll.vertical_scroll_mode == ScrollContainer.SCROLL_MODE_AUTO, "power panel scroll should be vertical auto")
 
 	var core := td.get_node_or_null("Field/DefenceCoreVisual")
 	_expect(core != null, "night TD defence core visual should exist")
@@ -180,6 +197,33 @@ func _check_td_mechanics() -> void:
 	var result: Dictionary = td._build_result()
 	_expect(absf(float(result.get("fuel_boost_loss", 0.0)) - 1.2) < 0.02, "result should record boost fuel loss")
 	_expect(float(result.get("fuel_loss", 0.0)) >= 1.2, "result fuel_loss should include boost fuel spent")
+
+	td._session_kind = "normal"
+	td._session_options = {
+		"previous_night_result": {
+			"outcome": "success",
+			"base_hp": 100.0,
+			"base_hp_max": 100.0,
+			"enemies_killed": 12,
+			"threat_power": 10,
+			"enemies_reached": 0,
+		},
+		"resource_counts": {"parts": 30, "scrap": 40, "wood": 8, "fuel": 8, "supplies": 5},
+	}
+	var high_pressure: float = td._compute_adaptive_enemy_pressure()
+	td._session_options = {
+		"previous_night_result": {
+			"outcome": "partial",
+			"base_hp": 40.0,
+			"base_hp_max": 100.0,
+			"enemies_killed": 2,
+			"threat_power": 10,
+			"enemies_reached": 4,
+		},
+		"resource_counts": {"parts": 1, "scrap": 2, "wood": 0, "fuel": 1, "supplies": 0},
+	}
+	var low_pressure: float = td._compute_adaptive_enemy_pressure()
+	_expect(high_pressure > low_pressure, "adaptive enemy pressure should rise after strong defense and rich resources")
 
 	td._session_kind = "tutorial"
 	td.phase = td.Phase.COMBAT

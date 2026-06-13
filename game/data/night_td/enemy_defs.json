@@ -8,7 +8,7 @@
 			"color": "#9ec9ff",
 			"radius": 14.0,
 			"armor": 0.0,
-			"hack_resist": 1.0,
+			"hack_resist": 2.0,
 			"is_shepherd": false
 		},
 		"scout": {
@@ -19,7 +19,7 @@
 			"color": "#ff7b6b",
 			"radius": 16.0,
 			"armor": 0.0,
-			"hack_resist": 1.0,
+			"hack_resist": 2.0,
 			"is_shepherd": false
 		},
 		"swarm": {
@@ -30,7 +30,7 @@
 			"color": "#b8e86a",
 			"radius": 10.0,
 			"armor": 0.0,
-			"hack_resist": 1.0,
+			"hack_resist": 2.0,
 			"is_shepherd": false
 		},
 		"heavy": {
@@ -41,7 +41,7 @@
 			"color": "#c97bff",
 			"radius": 20.0,
 			"armor": 0.0,
-			"hack_resist": 1.0,
+			"hack_resist": 2.0,
 			"is_shepherd": false
 		},
 		"shepherd": {
@@ -52,7 +52,7 @@
 			"color": "#ffd24a",
 			"radius": 18.0,
 			"armor": 0.0,
-			"hack_resist": 2.2,
+			"hack_resist": 4.4,
 			"is_shepherd": true
 		},
 		"armored": {
@@ -63,7 +63,7 @@
 			"color": "#b0b0c0",
 			"radius": 18.0,
 			"armor": 0.4,
-			"hack_resist": 1.4,
+			"hack_resist": 2.8,
 			"is_shepherd": false
 		},
 		"saboteur": {
@@ -74,7 +74,7 @@
 			"color": "#ff9a3c",
 			"radius": 14.0,
 			"armor": 0.0,
-			"hack_resist": 1.0,
+			"hack_resist": 2.0,
 			"is_shepherd": false
 		},
 		"sprinter": {
@@ -85,7 +85,7 @@
 			"color": "#7df9ff",
 			"radius": 8.0,
 			"armor": 0.0,
-			"hack_resist": 1.0,
+			"hack_resist": 2.0,
 			"is_shepherd": false
 		},
 		"tank": {
@@ -96,7 +96,7 @@
 			"color": "#ff4444",
 			"radius": 22.0,
 			"armor": 0.5,
-			"hack_resist": 1.8,
+			"hack_resist": 3.6,
 			"is_shepherd": false
 		},
 		"repair_mender": {
@@ -107,7 +107,7 @@
 			"color": "#64dca0",
 			"radius": 15.0,
 			"armor": 0.0,
-			"hack_resist": 1.2,
+			"hack_resist": 2.4,
 			"is_shepherd": false,
 			"heal_radius": 82.0,
 			"heal_per_sec": 8.0

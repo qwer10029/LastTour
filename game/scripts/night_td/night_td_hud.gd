@@ -72,6 +72,7 @@ var _energy_draw_bar: ProgressBar = null
 var _fuel_boost_btn: Button = null
 var _fuel_boost_label: Label = null
 var _power_list: VBoxContainer = null
+var _power_scroll: ScrollContainer = null
 var _power_empty_label: Label = null
 var _power_rows: Dictionary = {}
 var _selected_power_tower_ids: Array[int] = []   # 多选支持：框选多塔时同时高亮多行
@@ -1041,6 +1042,8 @@ func set_seen_enemy_types(types: Array) -> void:
 
 
 func show_enemy_first_seen(type_id: String) -> void:
+	if type_id != "" and not _seen_enemy_types.has(type_id):
+		_seen_enemy_types.append(type_id)
 	set_seen_enemy_types(_seen_enemy_types)
 	if is_instance_valid(_gallery_overlay) and _gallery_overlay.visible:
 		_select_gallery_type(type_id)
@@ -1555,9 +1558,19 @@ func _build_power_panel() -> void:
 	_fuel_boost_label.add_theme_color_override("font_color", Color(COLORS["subtitle"]))
 	_power_panel.add_child(_fuel_boost_label)
 
+	_power_scroll = ScrollContainer.new()
+	_power_scroll.name = "PowerListScroll"
+	_power_scroll.custom_minimum_size = Vector2(0, 170)
+	_power_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_power_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_power_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_power_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	_power_panel.add_child(_power_scroll)
+
 	_power_list = VBoxContainer.new()
 	_power_list.add_theme_constant_override("separation", 2)
-	_power_panel.add_child(_power_list)
+	_power_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_power_scroll.add_child(_power_list)
 
 	_power_empty_label = Label.new()
 	_power_empty_label.text = "（暂无耗电设施）"

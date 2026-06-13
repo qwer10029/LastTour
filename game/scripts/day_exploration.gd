@@ -116,6 +116,7 @@ func _on_night_setup_scene_switch(day_index: int, _manual_setup: bool) -> void:
 	# 确保 RunState 中包含了夜间 TD 需要的额外数据
 	if is_instance_valid(_backpack) and _backpack.has_method("to_dictionary"):
 		rs.backpack_dict = _backpack.to_dictionary().duplicate()
+	rs.night_session_options = _night_session_options()
 
 	GameManager.go_to_night_with_loading(rs)
 	# GameManager.change_scene_to_file() 会销毁当前场景，无需额外清理

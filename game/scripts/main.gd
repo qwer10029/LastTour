@@ -106,6 +106,7 @@ var _saved_travel_mode: int = TravelMode.DRIVE
 var _evening_tint: float = 0.0
 var _last_night_losses: Array[String] = []
 var _last_night_salvage: String = ""
+var _last_night_result: Dictionary = {}
 var _game_paused := false
 var _pause_layer: CanvasLayer
 var _pause_panel: PanelContainer
@@ -2624,6 +2625,8 @@ func _night_session_options(extra: Dictionary = {}) -> Dictionary:
 	var options := {
 		"tower_upgrades": _tower_upgrades.duplicate(true),
 		"blueprint_state": _blueprint_state.duplicate(true),
+		"previous_night_result": _last_night_result.duplicate(true),
+		"resource_counts": _backpack.to_dictionary() if is_instance_valid(_backpack) and _backpack.has_method("to_dictionary") else {},
 	}
 	options.merge(extra, true)
 	return options
@@ -3027,6 +3030,7 @@ func export_run_state():
 	for s in _last_night_losses:
 		rs.last_night_losses.append(s)
 	rs.last_night_salvage = _last_night_salvage
+	rs.last_night_result = _last_night_result.duplicate(true)
 	return rs
 
 
@@ -3076,6 +3080,7 @@ func capture_save_data() -> Dictionary:
 		},
 		"journal": _run_journal.to_array(),
 		"stories": _story_controller.to_save_dict(),
+		"last_night_result": _last_night_result.duplicate(true),
 	}
 
 
@@ -3097,6 +3102,7 @@ func _apply_save_data(data: Dictionary) -> void:
 	if stories_save.is_empty() and data.has("sentinel"):
 		stories_save = _migrate_sentinel_save_to_stories(data.get("sentinel", {}))
 	_story_controller.load_save_dict(stories_save)
+	_last_night_result = data.get("last_night_result", {}).duplicate(true)
 	var travel: Dictionary = data.get("travel", {})
 	_mode = int(travel.get("mode", TravelMode.DRIVE))
 	_fuel = float(travel.get("fuel", fuel_max))
@@ -3487,6 +3493,16 @@ func _apply_night_result(result: Dictionary) -> void:
 		_vehicle_hp_max = float(result.get("base_hp_max", _vehicle_hp_max))
 		_vehicle_hp = clampf(_vehicle_hp, 0.0, _vehicle_hp_max)
 	# 记录损失明细（用于结算 UI）
+	_last_night_result = {
+		"outcome": str(result.get("outcome", "success")),
+		"loss_severity": str(result.get("loss_severity", "none")),
+		"base_hp": float(result.get("base_hp", _vehicle_hp)),
+		"base_hp_max": float(result.get("base_hp_max", _vehicle_hp_max)),
+		"enemies_killed": int(result.get("enemies_killed", 0)),
+		"enemies_reached": int(result.get("enemies_reached", 0)),
+		"threat_power": int(result.get("threat_power", 0)),
+		"breach_total": int(result.get("breach_total", 0)),
+	}
 	_last_night_losses.clear()
 	_last_night_salvage = ""
 	var breach_losses: Variant = result.get("breach_losses", {})

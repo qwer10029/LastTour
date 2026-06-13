@@ -63,6 +63,7 @@ var stories_dict: Dictionary = {}
 # -- 夜间结算缓存（用于 UI 展示）--
 var last_night_losses: Array[String] = []
 var last_night_salvage: String = ""
+var last_night_result: Dictionary = {}
 
 
 ## 从 DayExploration（或兼容的 main）节点捕获全部状态。
@@ -290,6 +291,7 @@ func restore_to(node: Node) -> void:
 		for s in last_night_losses:
 			losses.append(s)
 	node.set("_last_night_salvage", last_night_salvage)
+	node.set("_last_night_result", last_night_result.duplicate(true))
 
 
 ## 将夜晚塔防结算结果应用到 RunState（在切回白天场景之前调用）。
@@ -322,6 +324,16 @@ func apply_night_result(result: Dictionary) -> void:
 	# 夜末回收已包含在 final_backpack_dict 中，无需额外处理
 
 	# 记录损失明细（用于 UI）
+	last_night_result = {
+		"outcome": str(result.get("outcome", "success")),
+		"loss_severity": str(result.get("loss_severity", "none")),
+		"base_hp": float(result.get("base_hp", vehicle_hp)),
+		"base_hp_max": float(result.get("base_hp_max", vehicle_hp_max)),
+		"enemies_killed": int(result.get("enemies_killed", 0)),
+		"enemies_reached": int(result.get("enemies_reached", 0)),
+		"threat_power": int(result.get("threat_power", 0)),
+		"breach_total": int(result.get("breach_total", 0)),
+	}
 	last_night_losses.clear()
 	if result.has("breach_losses"):
 		var bl = result["breach_losses"]
@@ -405,6 +417,7 @@ func to_full_dict() -> Dictionary:
 		"run_context": run_context,
 		"tutorial_phase": tutorial_phase,
 		"tutorial_step": tutorial_step,
+		"last_night_result": last_night_result.duplicate(true),
 	}
 
 
@@ -417,6 +430,7 @@ func from_full_dict(data: Dictionary) -> void:
 	run_context = str(data.get("run_context", run_context))
 	tutorial_phase = str(data.get("tutorial_phase", tutorial_phase))
 	tutorial_step = str(data.get("tutorial_step", tutorial_step))
+	last_night_result = data.get("last_night_result", {}).duplicate(true)
 
 
 ## 创建一份独立副本。
@@ -454,4 +468,5 @@ func duplicate_state():  # -> RunState
 	rs.stories_dict = stories_dict.duplicate(true)
 	rs.last_night_losses = last_night_losses.duplicate()
 	rs.last_night_salvage = last_night_salvage
+	rs.last_night_result = last_night_result.duplicate(true)
 	return rs

@@ -3,6 +3,7 @@ extends RefCounted
 
 const TOWER_DIR := "res://assets/sprites/night_td/towers/"
 const ENEMY_DIR := "res://assets/sprites/night_td/enemies/"
+const THUNDER_LEITING_ENEMY_PATH := "res://assets/sprites/npc/npc_thunder_leiting.png"
 
 const DEFAULT_ENEMY_ART_FACE := Vector2.RIGHT
 const DEFAULT_TOWER_ART_FACE := Vector2.UP
@@ -86,6 +87,8 @@ static func enemy_texture(type_id: String) -> Texture2D:
 	if _cache.has(cache_key):
 		return _cache[cache_key]
 	var path := ENEMY_DIR + "enemy_%s.png" % type_id
+	if type_id == "thunder_leiting":
+		path = THUNDER_LEITING_ENEMY_PATH
 	var tex := ArtAssetLoader.load_texture_loot_alpha_key(path)
 	_cache[cache_key] = tex
 	return tex

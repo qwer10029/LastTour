@@ -70,7 +70,7 @@
 		},
 		"hacker": {
 			"name": "入侵天线",
-			"cost": 2,
+			"cost": 13,
 			"range": 150.0,
 			"damage": 0.0,
 			"fire_interval": 0.0,
@@ -78,7 +78,7 @@
 			"color": "#5ac8e0",
 			"radius": 14.0,
 			"desc": "战斗中点选它再点敌人，持续引导即可策反该机器为我方。耗电，可随时改派目标。",
-			"build_cost": {"parts": 2},
+			"build_cost": {"parts": 10, "wood": 3},
 			"salvage": {"parts": 1, "scrap": 1},
 			"is_hack_tower": true,
 			"upkeep": 1.5,

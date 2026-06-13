@@ -64,7 +64,7 @@ static func _load_data() -> void:
 		},
 		"hacker": {
 			"name": "入侵天线",
-			"cost": 2,
+			"cost": 13,
 			"range": 150.0,
 			"damage": 0.0,
 			"fire_interval": 0.0,
@@ -72,6 +72,11 @@ static func _load_data() -> void:
 			"color": Color("#5ac8e0"),
 			"radius": 14.0,
 			"desc": "战斗中点选它再点敌人，持续引导即可策反该机器为我方。耗电，可随时改派目标。",
+			"build_cost": {"parts": 10, "wood": 3},
+			"salvage": {"parts": 1, "scrap": 1},
+			"is_hack_tower": true,
+			"upkeep": 1.5,
+			"hack_rate": 80.0,
 		},
 		"sniper": {
 			"name": "炮塔",
@@ -105,6 +110,7 @@ static func _load_data() -> void:
 			"base_damage": 4.0,
 			"color": Color("#9ec9ff"),
 			"radius": 14.0,
+			"hack_resist": 2.0,
 		},
 		"scout": {
 			"name": "回收侦察机",
@@ -113,6 +119,7 @@ static func _load_data() -> void:
 			"base_damage": 7.0,
 			"color": Color("#ff7b6b"),
 			"radius": 16.0,
+			"hack_resist": 2.0,
 		},
 		"swarm": {
 			"name": "集群微型机",
@@ -121,6 +128,7 @@ static func _load_data() -> void:
 			"base_damage": 3.0,
 			"color": Color("#b8e86a"),
 			"radius": 10.0,
+			"hack_resist": 2.0,
 		},
 		"heavy": {
 			"name": "重装破障机",
@@ -129,6 +137,7 @@ static func _load_data() -> void:
 			"base_damage": 12.0,
 			"color": Color("#c97bff"),
 			"radius": 20.0,
+			"hack_resist": 2.0,
 		},
 		"shepherd": {
 			"name": "牧羊者指挥机",
@@ -137,7 +146,7 @@ static func _load_data() -> void:
 			"base_damage": 5.0,
 			"color": Color("#ffd24a"),
 			"radius": 18.0,
-			"hack_resist": 2.2,
+			"hack_resist": 4.4,
 			"is_shepherd": true,
 		},
 		"armored": {
@@ -147,7 +156,7 @@ static func _load_data() -> void:
 			"base_damage": 10.0,
 			"color": Color("#b0b0c0"),
 			"radius": 18.0,
-			"hack_resist": 1.4,
+			"hack_resist": 2.8,
 		},
 		"saboteur": {
 			"name": "破障突击机",
@@ -156,6 +165,7 @@ static func _load_data() -> void:
 			"base_damage": 12.0,
 			"color": Color("#ff9a3c"),
 			"radius": 14.0,
+			"hack_resist": 2.0,
 		},
 		"sprinter": {
 			"name": "高速突破机",
@@ -164,6 +174,7 @@ static func _load_data() -> void:
 			"base_damage": 2.0,
 			"color": Color("#7df9ff"),
 			"radius": 8.0,
+			"hack_resist": 2.0,
 		},
 		"tank": {
 			"name": "重型攻坚机",
@@ -172,7 +183,7 @@ static func _load_data() -> void:
 			"base_damage": 20.0,
 			"color": Color("#ff4444"),
 			"radius": 22.0,
-			"hack_resist": 1.8,
+			"hack_resist": 3.6,
 		},
 		"repair_mender": {
 			"name": "修复中继机",
@@ -181,7 +192,7 @@ static func _load_data() -> void:
 			"base_damage": 4.0,
 			"color": Color("#64dca0"),
 			"radius": 15.0,
-			"hack_resist": 1.2,
+			"hack_resist": 2.4,
 			"heal_radius": 82.0,
 			"heal_per_sec": 8.0,
 		},
