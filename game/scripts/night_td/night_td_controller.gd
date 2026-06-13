@@ -1724,6 +1724,7 @@ func _on_cell_combat_clicked(cell: Vector2i) -> void:
 			var tdef: Dictionary = NightTdDefs.get_tower_def(str(tw["type"]))
 			if bool(tdef.get("is_hack_tower", false)):
 				_selected_hacker_id = int(tw["id"])
+				_select_power_tower(int(tw["id"]))
 				if is_instance_valid(hud):
 					hud.append_log("已切换入侵天线：继续指派目标")
 				return
@@ -1733,18 +1734,25 @@ func _on_cell_combat_clicked(cell: Vector2i) -> void:
 		var tdef: Dictionary = NightTdDefs.get_tower_def(str(tw["type"]))
 		if bool(tdef.get("is_hack_tower", false)):
 			_selected_hacker_id = int(tw["id"])
+			_select_power_tower(int(tw["id"]))
 			if is_instance_valid(hud):
 				hud.append_log("已选入侵天线：再点击一个敌人指派黑入目标")
 			return
 	# 2.5) 点到有功耗的塔 → 高亮右侧电力面板对应行
 	if not tw.is_empty() and tw.has("id") and _energy != null:
-		if is_instance_valid(hud) and hud.has_method("highlight_power_row"):
-			hud.highlight_power_row(int(tw["id"]))
-			if is_instance_valid(field) and field.has_method("set_highlighted_tower"):
-				field.set_highlighted_tower(int(tw["id"]))
-			_complete_tutorial_combat_step("click_select")
+		_select_power_tower(int(tw["id"]))
 	# 3) 其它 → 取消天线选择
 	_selected_hacker_id = -1
+
+
+func _select_power_tower(tower_id: int) -> void:
+	if _energy == null or _tower_by_id(tower_id).is_empty():
+		return
+	if is_instance_valid(hud) and hud.has_method("highlight_power_row"):
+		hud.highlight_power_row(tower_id)
+	if is_instance_valid(field) and field.has_method("set_highlighted_tower"):
+		field.set_highlighted_tower(tower_id)
+	_complete_tutorial_combat_step("click_select")
 
 
 func _on_power_tower_selected(tower_id: int) -> void:

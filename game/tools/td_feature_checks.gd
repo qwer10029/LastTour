@@ -11,6 +11,7 @@ func _run() -> void:
 	await process_frame
 	_check_evidence_items()
 	await _check_terminal_audit()
+	await _check_tutorial_craft_button()
 	await _check_td_mechanics()
 	if _failures.is_empty():
 		print("TD_FEATURE_CHECKS_OK")
@@ -50,6 +51,60 @@ func _check_terminal_audit() -> void:
 	_expect(bool(pass_report.get("passed", false)), "terminal audit should pass with all required evidence")
 	terminal.queue_free()
 	await process_frame
+
+
+func _check_tutorial_craft_button() -> void:
+	var root_control := Control.new()
+	root_control.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root_control.size = Vector2(1280, 720)
+	root_control.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(root_control)
+
+	var backpack := BackpackUI.new()
+	root_control.add_child(backpack)
+	await process_frame
+
+	var director := TutorialDirector.new()
+	root_control.add_child(director)
+	await process_frame
+	director.set_phase("day", "craft")
+
+	var craft_signal_count := [0]
+	var inv := InventoryData.new()
+	inv.add("scrap", ItemDefs.CRAFT_PARTS_SCRAP_COST)
+	inv.add("fuel", ItemDefs.CRAFT_PARTS_FUEL_COST)
+	backpack.craft_parts_requested.connect(func(): craft_signal_count[0] += 1)
+	backpack.show_backpack(inv)
+	backpack.set_craft_highlight(true)
+	for _i in range(5):
+		backpack.set_craft_highlight(true)
+		await process_frame
+
+	var craft_btn := _find_button_by_text(backpack, "合成零件")
+	_expect(craft_btn != null, "tutorial craft button should exist")
+	if craft_btn != null:
+		_expect(not craft_btn.disabled, "tutorial craft button should be enabled with recipe resources")
+		_expect(craft_btn.mouse_filter != Control.MOUSE_FILTER_IGNORE, "tutorial craft button should accept mouse input")
+		var objective_panel := director.get("_dialog_panel") as Control
+		_expect(objective_panel != null, "tutorial objective panel should exist")
+		if objective_panel != null:
+			_expect(objective_panel.mouse_filter == Control.MOUSE_FILTER_IGNORE, "tutorial objective panel should not intercept backpack clicks")
+
+		backpack.craft_parts_requested.emit()
+		_expect(int(craft_signal_count[0]) == 1, "tutorial craft button signal should be wired")
+
+	root_control.queue_free()
+	await process_frame
+
+
+func _find_button_by_text(node: Node, text: String) -> Button:
+	if node is Button and node.text == text:
+		return node
+	for child in node.get_children():
+		var found := _find_button_by_text(child, text)
+		if found != null:
+			return found
+	return null
 
 
 func _check_td_mechanics() -> void:
@@ -104,8 +159,7 @@ func _check_td_mechanics() -> void:
 			_expect(gallery_panel.custom_minimum_size.x <= 540.0 and gallery_panel.custom_minimum_size.y <= 340.0, "enemy gallery should be smaller than the old centered popup")
 		if hud.has_method("_on_gallery_auto_hide_timeout"):
 			hud.call("_on_gallery_auto_hide_timeout")
-			for i in range(24):
-				await process_frame
+			await create_timer(0.5).timeout
 			_expect(not bool(hud.get_node_or_null("Shell/EnemyGalleryOverlay").visible), "enemy gallery should auto-hide after timeout")
 		hud.hide_enemy_gallery()
 
@@ -126,6 +180,26 @@ func _check_td_mechanics() -> void:
 	var result: Dictionary = td._build_result()
 	_expect(absf(float(result.get("fuel_boost_loss", 0.0)) - 1.2) < 0.02, "result should record boost fuel loss")
 	_expect(float(result.get("fuel_loss", 0.0)) >= 1.2, "result fuel_loss should include boost fuel spent")
+
+	td._session_kind = "tutorial"
+	td.phase = td.Phase.COMBAT
+	td._tutorial_combat_lesson_done = false
+	td._tutorial_combat_step = "click_select"
+	td._towers.clear()
+	td._towers.append({
+		"id": 909,
+		"type": "hacker",
+		"cell": Vector2i(2, 2),
+		"world_pos": Vector2.ZERO,
+		"removed": false,
+		"power_scale": 1.0,
+	})
+	if td._energy == null:
+		td._energy = NightTdEnergy.load_config("res://data/night_td/energy.json")
+	td._energy.register_tower(909, 1.0)
+	td.hud.update_power_list(td._powered_tower_rows())
+	td._select_power_tower(909)
+	_expect(str(td._tutorial_combat_step) == "box_select", "clicking hacker tower should complete tutorial tower selection step")
 
 	td._towers.clear()
 	td._towers.append({

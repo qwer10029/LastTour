@@ -324,10 +324,12 @@ func _on_backpack_closed() -> void:
 func _sync_tutorial_objective_override() -> void:
 	if not is_instance_valid(_tutorial_director):
 		return
+	_tutorial_director.visible = true
 	if _backpack_open and _tutorial_director.current_step in ["return", "evening"]:
 		_tutorial_director.set_objective_override(_tutorial_director.override_hint("close_backpack"))
 		return
 	if _backpack_open and _tutorial_director.current_step == "craft":
+		_tutorial_director.visible = false
 		_tutorial_director.set_objective_override("")
 		return
 	if _tutorial_director.current_step == "craft" and not _backpack_open:

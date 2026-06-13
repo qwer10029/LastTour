@@ -33,6 +33,7 @@ var _journal_detail: Label
 var _vehicle_repair_allowed := false
 var _vehicle_hp: float = -1.0
 var _vehicle_hp_max: float = -1.0
+var _craft_button_visual_highlighted := false
 
 
 func _ready() -> void:
@@ -336,16 +337,19 @@ func _update_craft_button() -> void:
 				ItemDefs.CRAFT_PARTS_FUEL_COST <= 0
 				or _inventory.has("fuel", ItemDefs.CRAFT_PARTS_FUEL_COST)
 			)
-		)
+	)
 	_craft_btn.disabled = not can_craft
 	if _craft_highlight and can_craft:
-		HudTheme.apply_sci_fi_terminal_button(_craft_btn, Color("#ff9058"))
-		if _craft_pulse_tween != null and _craft_pulse_tween.is_valid():
-			_craft_pulse_tween.kill()
-		_craft_pulse_tween = _craft_btn.create_tween().set_loops()
-		_craft_pulse_tween.tween_property(_craft_btn, "modulate", Color(1.25, 1.12, 1.0, 1.0), 0.55)
-		_craft_pulse_tween.tween_property(_craft_btn, "modulate", Color.WHITE, 0.55)
+		if not _craft_button_visual_highlighted:
+			_craft_button_visual_highlighted = true
+			HudTheme.apply_sci_fi_terminal_button(_craft_btn, Color("#ff9058"))
+			if _craft_pulse_tween != null and _craft_pulse_tween.is_valid():
+				_craft_pulse_tween.kill()
+			_craft_pulse_tween = _craft_btn.create_tween().set_loops()
+			_craft_pulse_tween.tween_property(_craft_btn, "modulate", Color(1.25, 1.12, 1.0, 1.0), 0.55)
+			_craft_pulse_tween.tween_property(_craft_btn, "modulate", Color.WHITE, 0.55)
 	elif is_instance_valid(_craft_btn):
+		_craft_button_visual_highlighted = false
 		if _craft_pulse_tween != null and _craft_pulse_tween.is_valid():
 			_craft_pulse_tween.kill()
 			_craft_pulse_tween = null

@@ -171,14 +171,17 @@ func _build_objective_ui() -> void:
 	center.add_child(column)
 
 	var name_row := HBoxContainer.new()
+	name_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	name_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	column.add_child(name_row)
 
 	var name_panel := PanelContainer.new()
+	name_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	name_panel.add_theme_stylebox_override("panel", DialogueUiTheme.name_tag_style())
 	name_row.add_child(name_panel)
 
 	_phase_label = Label.new()
+	_phase_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_phase_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_phase_label.add_theme_font_size_override("font_size", 13)
 	_phase_label.add_theme_color_override("font_color", Color("#8ec8e8"))
@@ -186,11 +189,13 @@ func _build_objective_ui() -> void:
 	name_panel.add_child(_phase_label)
 
 	_dialog_panel = PanelContainer.new()
+	_dialog_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_dialog_panel.custom_minimum_size = Vector2(520, 72)
 	_dialog_panel.add_theme_stylebox_override("panel", DialogueUiTheme.dialog_panel_style())
 	column.add_child(_dialog_panel)
 
 	var margin := MarginContainer.new()
+	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	margin.add_theme_constant_override("margin_left", 18)
 	margin.add_theme_constant_override("margin_right", 18)
 	margin.add_theme_constant_override("margin_top", 12)
@@ -198,6 +203,7 @@ func _build_objective_ui() -> void:
 	_dialog_panel.add_child(margin)
 
 	_objective_label = Label.new()
+	_objective_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_objective_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_objective_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_objective_label.add_theme_font_size_override("font_size", 16)
