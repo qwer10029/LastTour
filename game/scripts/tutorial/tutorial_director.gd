@@ -34,10 +34,10 @@ const OBJECTIVES := {
 	"evening": "在车上按 F 进入布防",
 	"place_tower": "左键地图格子放置一座炮塔",
 	"withdraw_tower": "右键炮塔所在格子撤销（资源全额退还）",
-	"build_more": "试试左侧其他防御设施；准备好后点击「开始接敌」或等倒计时结束",
+	"build_more": "至少放置两座炮塔；准备好后点「开始接敌」，接敌后按提示逐步实操",
 	"survive": "守住车辆直到波次清空",
 	"go_elevator": "WASD驾驶车辆，前往东侧电梯枢纽，按 E 进入电梯房",
-	"repair_elevator": "在电梯控制台按  F 修复电梯",
+	"repair_elevator": "在电梯控制台按 F；零件、废料、木材+废料三选一，均可推进修复",
 }
 
 const PHASE_TITLES := {

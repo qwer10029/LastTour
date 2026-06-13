@@ -1434,6 +1434,16 @@ func append_log(line: String, text_color: Color = Color(COLORS["subtitle"])) -> 
 
 # -- Mode Switching ------------------------------------------------
 
+func set_start_wave_button_visible(visible_now: bool) -> void:
+	if not is_instance_valid(start_btn):
+		return
+	if visible_now:
+		start_btn.show()
+	else:
+		start_btn.hide()
+	_set_start_btn_pulse(visible_now)
+
+
 func set_place_mode(active: bool) -> void:
 	if is_instance_valid(start_btn):
 		if active:

@@ -124,6 +124,8 @@ var _sim_speed := SIM_SPEED_NORMAL
 var _tutorial_director: TutorialDirector = null
 var _tutorial_place_done := false
 var _tutorial_features_revealed := false
+var _tutorial_combat_step: String = ""
+var _tutorial_combat_lesson_done := false
 
 
 func _ready() -> void:
@@ -339,6 +341,7 @@ func start_session(
 				_selected_tower = hud.get_selected_tower() if hud.has_method("get_selected_tower") else "sniper"
 				hud.set_hint("")
 				_restore_tutorial_night_progress()
+				_sync_tutorial_start_wave_btn()
 		if hud.has_method("set_unlocked_towers") and _session_kind != "tutorial":
 			hud.set_unlocked_towers(_blueprint_state.get("unlocked_towers", []))
 		_notify_debug_skip_available()
@@ -361,6 +364,8 @@ func _apply_tutorial_session_flags() -> void:
 func _reset_tutorial_night_state() -> void:
 	_tutorial_place_done = false
 	_tutorial_features_revealed = false
+	_tutorial_combat_step = ""
+	_tutorial_combat_lesson_done = false
 	if is_instance_valid(_tutorial_director):
 		_tutorial_director.queue_free()
 		_tutorial_director = null
@@ -390,6 +395,15 @@ func _restore_tutorial_night_progress() -> void:
 			_reveal_tutorial_night_features()
 			if is_instance_valid(_tutorial_director):
 				_tutorial_director.advance_to("build_more" if step != "survive" else "survive")
+	_sync_tutorial_start_wave_btn()
+
+
+func _sync_tutorial_start_wave_btn() -> void:
+	if _session_kind != "tutorial" or phase != Phase.PLACE or not is_instance_valid(hud):
+		return
+	var ready := _tutorial_features_revealed and _count_active_towers() >= 2
+	if hud.has_method("set_start_wave_button_visible"):
+		hud.set_start_wave_button_visible(ready)
 
 
 func _on_tutorial_tower_placed() -> void:
@@ -423,11 +437,86 @@ func _reveal_tutorial_night_features() -> void:
 		hud.heatmap_switch.show()
 	if bool(flags.get("hide_power_panel", true)):
 		hud.show_power_panel(true)
+	if bool(flags.get("hide_emergency_fuel", true)) and is_instance_valid(hud._fuel_boost_btn):
+		hud._fuel_boost_btn.hide()
 	if hud.has_method("set_unlocked_towers"):
 		hud.set_unlocked_towers(["sniper", "barrier", "trap", "jammer"])
 		_blueprint_state["unlocked_towers"] = ["sniper", "barrier", "trap", "jammer"]
 		if hud.has_method("get_selected_tower"):
 			_selected_tower = hud.get_selected_tower()
+	if is_instance_valid(_tutorial_director):
+		_tutorial_director.set_objective_override("")
+	hud.append_log("已开放：热力图、电力调度与其他防御设施", Color("#8ec8e8"))
+	_sync_tutorial_start_wave_btn()
+
+
+func _tutorial_combat_lesson_active() -> bool:
+	return _session_kind == "tutorial" and phase == Phase.COMBAT and not _tutorial_combat_lesson_done
+
+
+func _sync_tutorial_combat_step_ui() -> void:
+	if not is_instance_valid(hud):
+		return
+	var show_fuel := (
+		_tutorial_combat_lesson_done
+		or _tutorial_combat_step in ["emergency_fuel", "survive"]
+	)
+	if is_instance_valid(hud._fuel_boost_btn):
+		hud._fuel_boost_btn.visible = show_fuel
+
+
+func _start_tutorial_combat_lesson() -> void:
+	_tutorial_combat_lesson_done = false
+	var order: Array = NightTdHintText.TUTORIAL_COMBAT_STEP_ORDER
+	if order.is_empty():
+		_finish_tutorial_combat_lesson()
+		return
+	show_overlay = false
+	if is_instance_valid(hud) and hud.has_method("set_overlay_active"):
+		hud.set_overlay_active(false)
+	_apply_tutorial_combat_step(str(order[0]))
+	if is_instance_valid(hud):
+		hud.append_log("接敌教学：请按底部提示逐步操作，全部完成后再迎敌", Color("#8ec8e8"))
+
+
+func _apply_tutorial_combat_step(step_id: String) -> void:
+	_tutorial_combat_step = step_id
+	if is_instance_valid(_tutorial_director):
+		var text := str(NightTdHintText.TUTORIAL_COMBAT_OBJECTIVES.get(step_id, ""))
+		_tutorial_director.set_objective_override(text)
+	_sync_tutorial_combat_step_ui()
+
+
+func _complete_tutorial_combat_step(step_id: String) -> void:
+	if not _tutorial_combat_lesson_active() or _tutorial_combat_step != step_id:
+		return
+	if is_instance_valid(hud):
+		var done_text := str(NightTdHintText.TUTORIAL_COMBAT_STEP_DONE.get(step_id, "步骤完成"))
+		hud.append_log("✓ %s" % done_text, Color("#6ed08b"))
+	var order: Array = NightTdHintText.TUTORIAL_COMBAT_STEP_ORDER
+	var idx := order.find(step_id)
+	if idx < 0 or idx >= order.size() - 1:
+		_finish_tutorial_combat_lesson()
+		return
+	_apply_tutorial_combat_step(str(order[idx + 1]))
+
+
+func _finish_tutorial_combat_lesson() -> void:
+	_tutorial_combat_lesson_done = true
+	_tutorial_combat_step = "survive"
+	if is_instance_valid(_tutorial_director):
+		_tutorial_director.advance_to("survive")
+		_tutorial_director.set_objective_override("")
+	_sync_tutorial_combat_step_ui()
+	_spawn_timer = 0.0
+	if is_instance_valid(hud):
+		hud.append_log("—— 教学完成，夜间威胁来袭 ——", Color("#f0a040"))
+
+
+func notify_tutorial_tower_box_selected(selected_count: int) -> void:
+	if selected_count <= 0:
+		return
+	_complete_tutorial_combat_step("box_select")
 
 
 func _debug_skip_available() -> bool:
@@ -599,6 +688,8 @@ func _process_place(delta: float) -> void:
 	if _display_influence_dirty and show_overlay:
 		_ensure_display_influence_fresh()
 	if placement_remaining <= 0.0:
+		if _session_kind == "tutorial" and _count_active_towers() < 2:
+			return
 		_begin_combat()
 
 
@@ -657,7 +748,7 @@ func _on_fuel_boost_pressed() -> void:
 	_refresh_fuel_boost_hud()
 	if is_instance_valid(hud):
 		hud.append_log("应急供能启动：反应堆临时 +%.1f/s。" % FUEL_BOOST_PRODUCTION_BONUS, Color("#f0a040"))
-
+	_complete_tutorial_combat_step("emergency_fuel")
 
 
 func _count_hostiles() -> int:
@@ -673,6 +764,13 @@ func _process_combat(delta: float) -> void:
 	if _display_influence_dirty and show_overlay:
 		_ensure_display_influence_fresh()
 	_flow_rebuild_cooldown = maxf(_flow_rebuild_cooldown - delta, 0.0)
+	if _tutorial_combat_lesson_active():
+		_update_fuel_boost(delta)
+		_update_energy(delta)
+		_update_towers(delta)
+		if is_instance_valid(hud) and int(Engine.get_frames_drawn()) % 15 == 0:
+			hud.set_combat_status("接敌教学 · 请完成底部操作提示")
+		return
 	if _wave_scheduler != null:
 		for spec in _wave_scheduler.tick(delta):
 			_spawn_from_spec(spec)
@@ -1650,6 +1748,7 @@ func _on_cell_combat_clicked(cell: Vector2i) -> void:
 			hud.highlight_power_row(int(tw["id"]))
 			if is_instance_valid(field) and field.has_method("set_highlighted_tower"):
 				field.set_highlighted_tower(int(tw["id"]))
+			_complete_tutorial_combat_step("click_select")
 	# 3) 其它 → 取消天线选择
 	_selected_hacker_id = -1
 
@@ -1658,6 +1757,7 @@ func _on_power_tower_selected(tower_id: int) -> void:
 	if is_instance_valid(field) and field.has_method("set_highlighted_tower"):
 		field.set_highlighted_tower(tower_id)
 	sync_selection_to_hud()
+	_complete_tutorial_combat_step("click_select")
 
 
 ## 框选多塔后同步 HUD 电力面板高亮（field 调用）
@@ -1678,6 +1778,8 @@ func _on_overlay_toggled(state: bool) -> void:
 	if is_instance_valid(field):
 		field.queue_redraw()
 	_sync_commander_brief_hud()
+	if state:
+		_complete_tutorial_combat_step("commander_overlay")
 
 
 func _on_sim_speed_toggled(fast: bool) -> void:
@@ -1791,8 +1893,10 @@ func _on_tower_power_step(tower_id: int, delta_step: float) -> void:
 			# Multi-select: apply to all selected towers
 			for tid in sel:
 				adjust_tower_power(tid, delta_step)
+			_complete_tutorial_combat_step("power_control")
 			return
 	adjust_tower_power(tower_id, delta_step)
+	_complete_tutorial_combat_step("power_control")
 
 
 func _tower_by_id(tower_id: int) -> Dictionary:
@@ -1998,6 +2102,7 @@ func _on_cell_clicked(cell: Vector2i) -> void:
 		_refresh_resource_hud()
 		hud.append_log("已部署 %s" % tdef.get("name", ""))
 	_on_tutorial_tower_placed()
+	_sync_tutorial_start_wave_btn()
 
 
 func _on_cell_right_clicked(cell: Vector2i) -> void:
@@ -2010,6 +2115,7 @@ func _on_cell_right_clicked(cell: Vector2i) -> void:
 		_on_tutorial_tower_withdrawn()
 	elif is_instance_valid(hud):
 		hud.append_log("该格没有可撤销的防御")
+	_sync_tutorial_start_wave_btn()
 
 
 func _remove_tower_at_cell(cell: Vector2i) -> String:
@@ -2114,6 +2220,10 @@ func _begin_combat() -> void:
 		if is_instance_valid(hud):
 			hud.append_log("先按底部教学提示放置并撤销炮塔", Color("#f0a040"))
 		return
+	if _session_kind == "tutorial" and _count_active_towers() < 2:
+		if is_instance_valid(hud):
+			hud.append_log("教学：请至少放置两座炮塔后再接敌", Color("#f0a040"))
+		return
 	# 快照：进入战斗时实际放置的塔（排除布防阶段已撤销的）
 	_combat_tower_ids.clear()
 	for tower in _towers:
@@ -2130,8 +2240,7 @@ func _begin_combat() -> void:
 		hud.set_phase_text(_session_phase_title("接敌中"))
 		if _session_kind == "tutorial":
 			hud.set_hint("")
-			if is_instance_valid(_tutorial_director):
-				_tutorial_director.advance_to("survive")
+			_start_tutorial_combat_lesson()
 		else:
 			hud.set_hint(NightTdHintText.COMBAT_ACTIVE_SHORT)
 		var total := _wave_scheduler.total_spawn_events if _wave_scheduler != null else _enemies_spawned + _wave_queue.size()

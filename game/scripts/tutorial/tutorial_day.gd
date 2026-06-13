@@ -521,12 +521,38 @@ func _repair_with_material(material: String) -> void:
 	super._repair_with_material(material)
 
 
+func _show_repair_choices() -> void:
+	super._show_repair_choices()
+	if is_instance_valid(_tutorial_director) and _tutorial_director.phase == "elevator":
+		_show_repair_choicf_hint("三种材料任选其一，均可推进 1 步修复进度", false)
+
+
+func _elevator_consolf_hint_text() -> String:
+	if is_instance_valid(_tutorial_director) and _tutorial_director.phase == "elevator":
+		return "F 修复电梯（零件/废料/木材+废料 三选一均可）· %d/%d" % [
+			_elevator_repair_progress,
+			_current_repair_cost(),
+		]
+	return super._elevator_consolf_hint_text()
+
+
 func _repair_tutorial_elevator(material: String) -> void:
-	if material != "parts":
-		_refresh_repair_choice_popup("教学：请使用零件修复", true)
+	if not _has_repair_material(material):
+		_refresh_repair_choice_popup("资源不足", true)
 		return
-	if not _backpack.remove("parts", ItemDefs.REPAIR_PARTS_EACH):
-		_refresh_repair_choice_popup("零件不足", true)
+	var consumed := false
+	match material:
+		"parts":
+			consumed = _backpack.remove("parts", ItemDefs.REPAIR_PARTS_EACH)
+		"scrap":
+			consumed = _backpack.remove("scrap", ItemDefs.REPAIR_SCRAP_EACH)
+		"wood_scrap":
+			consumed = (
+				_backpack.remove("wood", ItemDefs.REPAIR_WOOD_EACH)
+				and _backpack.remove("scrap", ItemDefs.REPAIR_SCRAP_ALT_EACH)
+			)
+	if not consumed:
+		_refresh_repair_choice_popup("资源不足", true)
 		return
 	_elevator_repair_progress += 1
 	_refresh_ui()

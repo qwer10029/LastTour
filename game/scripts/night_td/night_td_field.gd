@@ -188,6 +188,8 @@ func _unhandled_input(event: InputEvent) -> void:
 						_select_towers_in_rect(_drag_start_pos, _drag_end_pos)
 						get_viewport().set_input_as_handled()
 						_controller.sync_selection_to_hud()
+						if _controller.has_method("notify_tutorial_tower_box_selected"):
+							_controller.notify_tutorial_tower_box_selected(_selected_tower_ids.size())
 					_is_dragging = false
 					queue_redraw()
 			elif event.button_index == MOUSE_BUTTON_RIGHT:
