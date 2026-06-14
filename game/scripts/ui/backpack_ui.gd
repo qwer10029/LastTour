@@ -7,7 +7,7 @@ signal craft_parts_requested
 signal vehicle_repair_requested
 signal closed
 
-@export var panel_size: Vector2 = Vector2(540, 440)
+@export var panel_size: Vector2 = Vector2(560, 560)
 
 var _root: Control
 var _panel: PanelContainer
@@ -58,12 +58,18 @@ func _build_ui() -> void:
 	_root.add_child(dim)
 
 	_panel = PanelContainer.new()
-	_panel.custom_minimum_size = panel_size
+	# 面板高度按视口收紧，避免在小屏上底部按钮（修复车辆/关闭）被裁掉。
+	var view_size := get_viewport_rect().size if get_viewport() != null else Vector2(1280, 720)
+	var eff_size := Vector2(
+		minf(panel_size.x, maxf(view_size.x - 40.0, 360.0)),
+		minf(panel_size.y, maxf(view_size.y - 40.0, 360.0))
+	)
+	_panel.custom_minimum_size = eff_size
 	_panel.set_anchors_preset(Control.PRESET_CENTER)
-	_panel.offset_left = -panel_size.x * 0.5
-	_panel.offset_top = -panel_size.y * 0.5
-	_panel.offset_right = panel_size.x * 0.5
-	_panel.offset_bottom = panel_size.y * 0.5
+	_panel.offset_left = -eff_size.x * 0.5
+	_panel.offset_top = -eff_size.y * 0.5
+	_panel.offset_right = eff_size.x * 0.5
+	_panel.offset_bottom = eff_size.y * 0.5
 	var panel_style := StyleBoxFlat.new()
 	panel_style.bg_color = Color(0.12, 0.16, 0.22, 0.96)
 	panel_style.border_color = Color(0.55, 0.72, 0.88, 0.9)
@@ -115,7 +121,7 @@ func _build_ui() -> void:
 
 	_detail_label = Label.new()
 	_detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_detail_label.custom_minimum_size = Vector2(228, 180)
+	_detail_label.custom_minimum_size = Vector2(228, 120)
 	_detail_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_detail_label.text = "← 选择左侧物品"
 	_detail_label.add_theme_color_override("font_color", Color("#d8e4f0"))

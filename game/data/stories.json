@@ -22,7 +22,7 @@
       "spawn_layer": 1,
       "spawn_near_start": false,
       "prompt_disembark": "与哨兵交谈",
-      "prompt_return": "F 与哨兵交谈交还电池",
+      "prompt_return": "与哨兵交还电池",
       "prompt_reward": "F 与哨兵交谈领取报酬",
       "dialogue_path": "res://data/dialogues/sentinel_s09.json",
       "quest": {
@@ -62,7 +62,7 @@
       "spawn_near_start": false,
       "interior_encounter": true,
       "prompt_disembark": "进入档案室",
-      "prompt_return": "F 与编史者交还存储模块",
+      "prompt_return": "与编史者交还存储模块",
       "dialogue_path": "res://data/dialogues/chronicler_04.json",
       "quest": {
         "hint": "前往三楼通讯室拾取存储模块（2 块）。",
@@ -141,7 +141,7 @@
       "spawn_near_start": false,
       "interior_encounter": true,
       "prompt_disembark": "进入雷达站",
-      "prompt_return": "F 与 AD-1 交还电机组件",
+      "prompt_return": "与 AD-1 交还电机组件",
       "dialogue_path": "res://data/dialogues/ad_1_radar.json",
       "quest": {
         "hint": "绕到掩体后方塌方处，按 F 挖掘碎石。",
