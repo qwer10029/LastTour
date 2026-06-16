@@ -45,10 +45,12 @@ var _puzzle_piece_border: Panel
 var _puzzle_target_x: float = 0.0
 var _puzzle_solved: bool = false
 const PUZZLE_IMG := "res://assets/ui/tutorial/prepare_for_night.png"
-const PUZZLE_W := 432.0
-const PUZZLE_H := 216.0
-const PUZZLE_PIECE_W := 72.0
-const PUZZLE_TOL := 12.0   # 对齐容差（像素）
+# 保持原图 3:2 比例（1536x1024），尽量放大；拼块为小方块，只占一行高度。
+const PUZZLE_W := 504.0
+const PUZZLE_H := 336.0
+const PUZZLE_PIECE := 76.0          # 方形拼块边长
+const PUZZLE_PIECE_Y := 132.0       # 拼块/缺口所在行的 Y（固定，滑块只控制横向）
+const PUZZLE_TOL := 12.0            # 对齐容差（像素）
 var _primary_btn: Button
 var _option_buttons: Array[Button] = []
 
@@ -72,7 +74,7 @@ func _build_ui() -> void:
 	add_child(center)
 
 	_frame = SciFiFramePanelScript.new()
-	_frame.custom_minimum_size = Vector2(800, 560)
+	_frame.custom_minimum_size = Vector2(860, 740)
 	center.add_child(_frame)
 
 	_captcha_close_btn = Button.new()
@@ -171,16 +173,16 @@ func _build_ui() -> void:
 	_puzzle_full.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_puzzle_area.add_child(_puzzle_full)
 
-	# 缺口：目标位置的暗槽，带虚线般的亮边，提示"把图块拼到这里"
+	# 缺口：目标位置的方形暗槽，带亮边，提示"把图块拼到这里"
 	_puzzle_gap = ColorRect.new()
 	_puzzle_gap.color = Color(0.0, 0.0, 0.0, 0.74)
-	_puzzle_gap.size = Vector2(PUZZLE_PIECE_W, PUZZLE_H)
+	_puzzle_gap.size = Vector2(PUZZLE_PIECE, PUZZLE_PIECE)
 	_puzzle_gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_puzzle_area.add_child(_puzzle_gap)
 
 	var gap_border := Panel.new()
 	gap_border.name = "GapBorder"
-	gap_border.size = Vector2(PUZZLE_PIECE_W, PUZZLE_H)
+	gap_border.size = Vector2(PUZZLE_PIECE, PUZZLE_PIECE)
 	gap_border.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var gap_sb := StyleBoxFlat.new()
 	gap_sb.bg_color = Color(0, 0, 0, 0)
@@ -190,16 +192,16 @@ func _build_ui() -> void:
 	gap_border.add_theme_stylebox_override("panel", gap_sb)
 	_puzzle_gap.add_child(gap_border)
 
-	# 拼块：从完整图中切出目标竖条，带边框使其看起来像一块可移动的拼图
+	# 拼块：从完整图中切出目标方块，带边框使其看起来像一块可移动的拼图
 	_puzzle_piece = TextureRect.new()
 	_puzzle_piece.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_puzzle_piece.stretch_mode = TextureRect.STRETCH_SCALE
-	_puzzle_piece.size = Vector2(PUZZLE_PIECE_W, PUZZLE_H)
+	_puzzle_piece.size = Vector2(PUZZLE_PIECE, PUZZLE_PIECE)
 	_puzzle_piece.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_puzzle_area.add_child(_puzzle_piece)
 
 	_puzzle_piece_border = Panel.new()
-	_puzzle_piece_border.size = Vector2(PUZZLE_PIECE_W, PUZZLE_H)
+	_puzzle_piece_border.size = Vector2(PUZZLE_PIECE, PUZZLE_PIECE)
 	_puzzle_piece_border.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var piece_sb := StyleBoxFlat.new()
 	piece_sb.bg_color = Color(0, 0, 0, 0)
@@ -421,42 +423,45 @@ func _on_report_chosen(choice_id: String) -> void:
 
 
 func _on_captcha_value_changed(value: float) -> void:
-	# 滑块 0..100 → 拼块在 [0, PUZZLE_W - 片宽] 内左右移动
-	var travel := PUZZLE_W - PUZZLE_PIECE_W
+	# 滑块 0..100 → 方形拼块在 [0, PUZZLE_W - 边长] 内左右移动（Y 固定）
+	var travel := PUZZLE_W - PUZZLE_PIECE
 	var px := (value / 100.0) * travel
 	if is_instance_valid(_puzzle_piece):
-		_puzzle_piece.position.x = px
+		_puzzle_piece.position = Vector2(px, PUZZLE_PIECE_Y)
 	_puzzle_solved = absf(px - _puzzle_target_x) <= PUZZLE_TOL
 	if _puzzle_solved:
 		_captcha_hint.text = "✓ 图像已对齐，可提交验证"
 		_captcha_hint.add_theme_color_override("font_color", Color("#6ed08b"))
 		if is_instance_valid(_puzzle_piece):
-			_puzzle_piece.position.x = _puzzle_target_x   # 吸附到位
+			_puzzle_piece.position = Vector2(_puzzle_target_x, PUZZLE_PIECE_Y)   # 吸附到位
 	else:
 		_captcha_hint.text = "拖动滑块，将缺失的图块对齐到暗格，使夜景图完整"
 		_captcha_hint.remove_theme_color_override("font_color")
 	_primary_btn.disabled = not _puzzle_solved
 
 
-## 进入验证时随机一个缺口位置，并把拼块切成对应竖条。
+## 进入验证时随机一个缺口位置，并把拼块切成对应方块。
 func _setup_puzzle() -> void:
 	_puzzle_solved = false
-	var travel := PUZZLE_W - PUZZLE_PIECE_W
+	var travel := PUZZLE_W - PUZZLE_PIECE
 	# 目标落在中后段，避免一开始(0)就对齐
 	_puzzle_target_x = randf_range(travel * 0.45, travel * 0.92)
 	if is_instance_valid(_puzzle_gap):
-		_puzzle_gap.position = Vector2(_puzzle_target_x, 0.0)
+		_puzzle_gap.position = Vector2(_puzzle_target_x, PUZZLE_PIECE_Y)
 	var tex := load(PUZZLE_IMG) as Texture2D
 	if tex != null and is_instance_valid(_puzzle_piece):
-		# 拼块显示的内容 = 完整图中"缺口所在竖条"对应的源图区域
+		# 拼块显示的内容 = 完整图中"缺口所在方块"对应的源图区域
 		var src_size := tex.get_size()
+		var sx := src_size.x / PUZZLE_W
+		var sy := src_size.y / PUZZLE_H
 		var atlas := AtlasTexture.new()
 		atlas.atlas = tex
-		var rx := (_puzzle_target_x / PUZZLE_W) * src_size.x
-		var rw := (PUZZLE_PIECE_W / PUZZLE_W) * src_size.x
-		atlas.region = Rect2(rx, 0.0, rw, src_size.y)
+		atlas.region = Rect2(
+			_puzzle_target_x * sx, PUZZLE_PIECE_Y * sy,
+			PUZZLE_PIECE * sx, PUZZLE_PIECE * sy
+		)
 		_puzzle_piece.texture = atlas
-		_puzzle_piece.position.x = 0.0
+		_puzzle_piece.position = Vector2(0.0, PUZZLE_PIECE_Y)
 	if is_instance_valid(_captcha_slider):
 		_captcha_slider.value = 0.0
 	_captcha_hint.text = "拖动滑块，将缺失的图块对齐到暗格，使夜景图完整"
