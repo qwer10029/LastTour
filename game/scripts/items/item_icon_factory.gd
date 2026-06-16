@@ -84,8 +84,6 @@ static func _load_elevator_console_sprite() -> Texture2D:
 static func get_texture(item_id: String, size: int = ICON_SIZE) -> Texture2D:
 	if item_id == "quest_battery" or item_id.begins_with("quest:sentinel_battery"):
 		return get_quest_battery_texture(size)
-	if item_id.begins_with("evidence:") or item_id == "evidence":
-		return _fallback_evidence_texture(size)
 	if item_id.begins_with("quest:"):
 		return get_quest_item_texture(item_id, size)
 	var key := "loot_v3_%s_%d" % [item_id, size]
@@ -180,31 +178,6 @@ static func _fallback_quest_battery_texture(size: int) -> Texture2D:
 	return ImageTexture.create_from_image(img)
 
 
-static func _fallback_evidence_texture(size: int) -> Texture2D:
-	var key := "evidence_%d" % size
-	if _cache.has(key):
-		return _cache[key]
-	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
-	img.fill(Color(0, 0, 0, 0))
-	var paper := Color("#ffd966")
-	var dark := Color("#6f5430")
-	var line := Color("#b68d3c")
-	var fold := Color("#fff0a8")
-	var rect := Rect2i(7, 4, size - 14, size - 8)
-	_fill_rect(img, rect, paper)
-	_fill_rect(img, Rect2i(rect.position.x, rect.position.y, rect.size.x, 2), dark)
-	_fill_rect(img, Rect2i(rect.position.x, rect.end.y - 2, rect.size.x, 2), dark)
-	_fill_rect(img, Rect2i(rect.position.x, rect.position.y, 2, rect.size.y), dark)
-	_fill_rect(img, Rect2i(rect.end.x - 2, rect.position.y, 2, rect.size.y), dark)
-	_fill_rect(img, Rect2i(rect.end.x - 8, rect.position.y + 2, 6, 6), fold)
-	_fill_rect(img, Rect2i(rect.position.x + 4, rect.position.y + 9, rect.size.x - 8, 2), line)
-	_fill_rect(img, Rect2i(rect.position.x + 4, rect.position.y + 14, rect.size.x - 10, 2), line)
-	_fill_rect(img, Rect2i(rect.position.x + 4, rect.position.y + 19, rect.size.x - 12, 2), line)
-	var tex := ImageTexture.create_from_image(img)
-	_cache[key] = tex
-	return tex
-
-
 static func quest_battery_draw_size(base_size: int) -> Vector2:
 	var tex := get_quest_battery_texture(base_size)
 	if tex == null:
@@ -233,8 +206,6 @@ static func _scale_texture_fit_max(tex: Texture2D, max_dim: int) -> Texture2D:
 static func loot_draw_id(item_id: String) -> String:
 	if item_id.begins_with("quest:sentinel_battery") or item_id == "sentinel_battery":
 		return "quest_battery"
-	if item_id.begins_with("evidence:"):
-		return "evidence"
 	if item_id.begins_with("quest:"):
 		return item_id
 	return item_id
@@ -243,9 +214,6 @@ static func loot_draw_id(item_id: String) -> String:
 static func loot_display_name(item_id: String, fallback: String = "") -> String:
 	if fallback != "":
 		return fallback
-	if item_id.begins_with("evidence:"):
-		var evidence_id := item_id.substr("evidence:".length())
-		return ItemDefs.evidence_title_of(evidence_id)
 	if item_id.begins_with("quest:sentinel_battery") or item_id == "sentinel_battery":
 		return "能量电池"
 	if item_id.begins_with("quest:chronicler_memory"):

@@ -120,7 +120,9 @@ func generate(
 			var local := 0.18 + 0.52 * float(district_step) / float(district_total)
 			report.call(local, "建设资源区 %d/%d…" % [district_step, district_total])
 
-	if is_final_layer:
+	if _debug_near_spawn:
+		_place_special_building_near_start(is_final_layer)
+	elif is_final_layer:
 		_ensure_kunlun_control_district(rng)
 	else:
 		_ensure_elevator_district(rng)

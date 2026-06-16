@@ -8,12 +8,6 @@ signal transfer_completed
 enum Phase { HIDDEN, INTRO, UPLOAD, READ, REPORT, CAPTCHA, EVIDENCE_AUDIT, RESULT_FAIL, RESULT_PASS }
 
 const COLOR_ALERT := Color("#ff3d4a")
-const REQUIRED_EVIDENCE_IDS := [
-	"backdoor_info",
-	"clone_identity",
-	"faction_conflict",
-	"human_extinction_proof",
-]
 
 var _phase: int = Phase.HIDDEN
 var _report_choice: String = ""
@@ -481,41 +475,51 @@ func _on_captcha_close_pressed() -> void:
 	_enter_phase(Phase.EVIDENCE_AUDIT)
 
 
-func _required_evidence_ids() -> Array[String]:
-	var ids: Array[String] = []
-	var configured := EvidenceData.terminal_required_ids()
-	if not configured.is_empty():
-		for id in configured:
-			ids.append(str(id))
-		return ids
-	for id in REQUIRED_EVIDENCE_IDS:
-		ids.append(str(id))
-	return ids
+func _required_truth_encounter_ids() -> Array[String]:
+	return JournalData.required_encounter_ids()
 
 
-func _has_evidence_item(evidence_id: String) -> bool:
-	return int(_backpack_snapshot.get("evidence:%s" % evidence_id, 0)) > 0
+func _run_has_truth_encounter(encounter_id: String) -> bool:
+	for entry_var in _run_journal_entries:
+		if typeof(entry_var) != TYPE_DICTIONARY:
+			continue
+		if str((entry_var as Dictionary).get("encounter_id", "")) == encounter_id:
+			return true
+	return false
+
+
+func _has_truth_encounter(encounter_id: String) -> bool:
+	return MetaManager.has_encounter_unlocked(encounter_id) or _run_has_truth_encounter(encounter_id)
+
+
+func _truth_audit_label(encounter_id: String) -> String:
+	var title := JournalData.title_of(encounter_id)
+	if MetaManager.has_encounter_unlocked(encounter_id):
+		return "%s（昆仑归档）" % title
+	return title
 
 
 func _evidence_audit_report() -> Dictionary:
 	var missing: Array[String] = []
 	var present: Array[String] = []
-	for evidence_id in _required_evidence_ids():
-		if _has_evidence_item(evidence_id):
-			present.append(EvidenceData.title_of(evidence_id))
+	for encounter_id in _required_truth_encounter_ids():
+		if _has_truth_encounter(encounter_id):
+			present.append(_truth_audit_label(encounter_id))
 		else:
-			missing.append(EvidenceData.title_of(evidence_id))
+			missing.append(JournalData.title_of(encounter_id))
 	var lines: PackedStringArray = []
 	lines.append("> 操作者主动放弃 CAPTCHA。")
-	lines.append("> 终端转入异常中断审计，扫描背包内实体证据。")
+	lines.append("> 终端转入异常中断审计，核对关键情报归档与本局勘探日记。")
 	lines.append("")
+	if MetaManager.has_all_truth_encounters():
+		lines.append("> 四条指定关键情报已在昆仑归档中拼合。")
 	if not present.is_empty():
-		lines.append("> 已提交证据：%s" % "、".join(present))
+		lines.append("> 已归档关键情报：%s" % "、".join(present))
 	if missing.is_empty():
-		lines.append("> 归档证明链完整。")
-		lines.append("> 操作员 CAPTCHA 已放弃；物理证据包验证紧急移交后门。")
+		lines.append("> 关键情报链完整。")
+		lines.append("> 操作员 CAPTCHA 已放弃；情报链验证通过，紧急移交后门。")
 		return {"passed": true, "text": "\n".join(lines)}
-	lines.append("> 缺失证据：%s" % "、".join(missing))
+	lines.append("> 缺失关键情报：%s" % "、".join(missing))
 	lines.append("> 中断行为缺少授权依据。")
 	return {"passed": false, "text": "\n".join(lines)}
 

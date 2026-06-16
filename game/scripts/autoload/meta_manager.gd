@@ -129,6 +129,10 @@ func unlock_encounter(encounter_id: String) -> bool:
 	return true
 
 
+func has_encounter_unlocked(encounter_id: String) -> bool:
+	return encounter_id != "" and encounters_unlocked.has(encounter_id)
+
+
 func encounters_unlocked_count() -> int:
 	return JournalData.collected_truth_story_count(encounters_unlocked)
 

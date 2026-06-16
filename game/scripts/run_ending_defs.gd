@@ -65,7 +65,7 @@ const TERMINAL_VERIFY_PASS_TEXT := """【验证结果】
 const TERMINAL_AUDIT_PASS_TEXT := """【验证结果】
 
 操作员 CAPTCHA 已放弃。
-归档证明链完整，工程师后门记录验证紧急移交条件。
+关键情报链完整，昆仑归档验证紧急移交条件。
 
 人类指挥部信号源已不存在，最高权限正在移交……"""
 

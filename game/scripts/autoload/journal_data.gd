@@ -175,6 +175,10 @@ func required_encounter_ids() -> Array[String]:
 	return _required_ids.duplicate()
 
 
+func is_required_truth_encounter(encounter_id: String) -> bool:
+	return _required_ids.has(str(encounter_id))
+
+
 func all_encounter_ids() -> Array[String]:
 	var out: Array[String] = []
 	for k in _entries.keys():
