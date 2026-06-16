@@ -75,7 +75,10 @@ func _build_ui() -> void:
 
 	_frame = SciFiFramePanelScript.new()
 	# 框体按视口收紧，避免在低分辨率(设计基准 1152x648)下超出窗口被裁切。
-	var vp := get_viewport_rect().size if get_viewport() != null else Vector2(1152, 648)
+	var vp := Vector2(1152, 648)
+	var view := get_viewport()
+	if view != null:
+		vp = view.get_visible_rect().size
 	var fw := minf(860.0, maxf(vp.x - 60.0, 640.0))
 	var fh := minf(632.0, maxf(vp.y - 24.0, 460.0))
 	_frame.custom_minimum_size = Vector2(fw, fh)
