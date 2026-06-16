@@ -45,11 +45,11 @@ var _puzzle_piece_border: Panel
 var _puzzle_target_x: float = 0.0
 var _puzzle_solved: bool = false
 const PUZZLE_IMG := "res://assets/ui/tutorial/prepare_for_night.png"
-# 保持原图 3:2 比例（1536x1024），尽量放大；拼块为小方块，只占一行高度。
-const PUZZLE_W := 504.0
-const PUZZLE_H := 336.0
-const PUZZLE_PIECE := 76.0          # 方形拼块边长
-const PUZZLE_PIECE_Y := 132.0       # 拼块/缺口所在行的 Y（固定，滑块只控制横向）
+# 保持原图 3:2 比例（1536x1024）；拼块为小方块，只占一行高度。
+const PUZZLE_W := 432.0
+const PUZZLE_H := 288.0
+const PUZZLE_PIECE := 72.0          # 方形拼块边长
+const PUZZLE_PIECE_Y := 118.0       # 拼块/缺口所在行的 Y（固定，滑块只控制横向）
 const PUZZLE_TOL := 12.0            # 对齐容差（像素）
 var _primary_btn: Button
 var _option_buttons: Array[Button] = []
@@ -74,7 +74,11 @@ func _build_ui() -> void:
 	add_child(center)
 
 	_frame = SciFiFramePanelScript.new()
-	_frame.custom_minimum_size = Vector2(860, 740)
+	# 框体按视口收紧，避免在低分辨率(设计基准 1152x648)下超出窗口被裁切。
+	var vp := get_viewport_rect().size if get_viewport() != null else Vector2(1152, 648)
+	var fw := minf(860.0, maxf(vp.x - 60.0, 640.0))
+	var fh := minf(632.0, maxf(vp.y - 24.0, 460.0))
+	_frame.custom_minimum_size = Vector2(fw, fh)
 	center.add_child(_frame)
 
 	_captcha_close_btn = Button.new()
