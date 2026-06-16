@@ -1258,6 +1258,13 @@ func _apply_foot_world_position() -> void:
 func _input(event: InputEvent) -> void:
 	if _run_ended:
 		return
+	# 调试快捷键（仅 debug 构建）：F10 直达通信终端，便于验证终端/CAPTCHA 拼图流程，
+	# 无需逐层爬升。会就地标记前置（已击败雷霆 + 已清终端防线）后直接进入终端。
+	if OS.is_debug_build() and event is InputEventKey and event.pressed and not event.is_echo() \
+			and (event.keycode == KEY_F10 or event.physical_keycode == KEY_F10):
+		_debug_jump_to_terminal()
+		get_viewport().set_input_as_handled()
+		return
 	if event.is_action_pressed("toggle_world_map"):
 		_toggle_world_map()
 		get_viewport().set_input_as_handled()
@@ -2729,6 +2736,20 @@ func _open_communication_terminal() -> void:
 	_play_music_cue("terminal", 0.9)
 	var snapshot := _backpack.to_dictionary() if is_instance_valid(_backpack) and _backpack.has_method("to_dictionary") else {}
 	_communication_terminal.start_flow(_run_journal.get_entries(), _current_layer, day_n, snapshot)
+
+
+## 调试：直达通信终端（F10，仅 debug 构建），跳过逐层爬升与终端防线战。
+func _debug_jump_to_terminal() -> void:
+	if _run_ended or not is_instance_valid(_communication_terminal):
+		return
+	_thunder_leiting_defeated = true
+	_final_defense_cleared = true
+	if _backpack_open:
+		_close_backpack()
+	if _game_paused:
+		_resume_from_pause()
+	print("[DEBUG] F10：直达通信终端")
+	_open_communication_terminal()
 
 
 func _should_pause_day_night_for_terminal_sequence() -> bool:
