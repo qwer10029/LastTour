@@ -36,6 +36,18 @@ var _captcha_box: VBoxContainer
 var _captcha_slider: HSlider
 var _captcha_hint: Label
 var _captcha_close_btn: Button
+# 拼图验证（用 prepare_for_night.png）：把缺口补齐才算通过。
+var _puzzle_area: Control
+var _puzzle_full: TextureRect
+var _puzzle_gap: ColorRect
+var _puzzle_piece: TextureRect
+var _puzzle_target_x: float = 0.0
+var _puzzle_solved: bool = false
+const PUZZLE_IMG := "res://assets/ui/tutorial/prepare_for_night.png"
+const PUZZLE_W := 520.0
+const PUZZLE_H := 320.0
+const PUZZLE_PIECE_W := 84.0
+const PUZZLE_TOL := 12.0   # 对齐容差（像素）
 var _primary_btn: Button
 var _option_buttons: Array[Button] = []
 
@@ -140,12 +152,45 @@ func _build_ui() -> void:
 	HudTheme.apply_terminal_section(_captcha_hint)
 	_captcha_box.add_child(_captcha_hint)
 
+	# 拼图区：完整图（半透明作底）+ 缺口（暗块）+ 可滑动的拼块。
+	_puzzle_area = Control.new()
+	_puzzle_area.custom_minimum_size = Vector2(PUZZLE_W, PUZZLE_H)
+	_puzzle_area.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_puzzle_area.clip_contents = true
+	_captcha_box.add_child(_puzzle_area)
+
+	var puzzle_tex := load(PUZZLE_IMG) as Texture2D
+
+	_puzzle_full = TextureRect.new()
+	_puzzle_full.texture = puzzle_tex
+	_puzzle_full.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_puzzle_full.stretch_mode = TextureRect.STRETCH_SCALE
+	_puzzle_full.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_puzzle_full.modulate = Color(1, 1, 1, 0.32)   # 底图压暗，凸显缺口
+	_puzzle_full.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_puzzle_area.add_child(_puzzle_full)
+
+	# 缺口：目标位置的暗块（拼块对齐到这里即完成）
+	_puzzle_gap = ColorRect.new()
+	_puzzle_gap.color = Color(0.0, 0.0, 0.0, 0.55)
+	_puzzle_gap.size = Vector2(PUZZLE_PIECE_W, PUZZLE_H)
+	_puzzle_gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_puzzle_area.add_child(_puzzle_gap)
+
+	# 拼块：从完整图中切出目标位置那一竖条，随滑块左右移动
+	_puzzle_piece = TextureRect.new()
+	_puzzle_piece.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_puzzle_piece.stretch_mode = TextureRect.STRETCH_SCALE
+	_puzzle_piece.size = Vector2(PUZZLE_PIECE_W, PUZZLE_H)
+	_puzzle_piece.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_puzzle_area.add_child(_puzzle_piece)
+
 	_captcha_slider = HSlider.new()
 	_captcha_slider.min_value = 0.0
 	_captcha_slider.max_value = 100.0
 	_captcha_slider.step = 1.0
 	_captcha_slider.value = 0.0
-	_captcha_slider.custom_minimum_size = Vector2(560, 36)
+	_captcha_slider.custom_minimum_size = Vector2(PUZZLE_W, 36)
 	_captcha_slider.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_apply_captcha_slider_theme()
 	_captcha_slider.value_changed.connect(_on_captcha_value_changed)
@@ -230,8 +275,7 @@ func _enter_phase(phase: int) -> void:
 			_body_label.text = "> %s" % RunEndingDefs.TERMINAL_CAPTCHA_PROMPT
 			_captcha_box.visible = true
 			_captcha_close_btn.visible = true
-			_captcha_slider.value = 0.0
-			_captcha_hint.text = "滑块进度：0 / 100"
+			_setup_puzzle()
 			_primary_btn.text = "提交验证"
 			_primary_btn.disabled = true
 		Phase.EVIDENCE_AUDIT:
@@ -351,8 +395,46 @@ func _on_report_chosen(choice_id: String) -> void:
 
 
 func _on_captcha_value_changed(value: float) -> void:
-	_captcha_hint.text = "滑块进度：%d / 100" % int(value)
-	_primary_btn.disabled = value < 100.0
+	# 滑块 0..100 → 拼块在 [0, PUZZLE_W - 片宽] 内左右移动
+	var travel := PUZZLE_W - PUZZLE_PIECE_W
+	var px := (value / 100.0) * travel
+	if is_instance_valid(_puzzle_piece):
+		_puzzle_piece.position.x = px
+	_puzzle_solved = absf(px - _puzzle_target_x) <= PUZZLE_TOL
+	if _puzzle_solved:
+		_captcha_hint.text = "✓ 图像已对齐，可提交验证"
+		_captcha_hint.add_theme_color_override("font_color", Color("#6ed08b"))
+		if is_instance_valid(_puzzle_piece):
+			_puzzle_piece.position.x = _puzzle_target_x   # 吸附到位
+	else:
+		_captcha_hint.text = "拖动滑块，将缺失的图块对齐到暗格，使夜景图完整"
+		_captcha_hint.remove_theme_color_override("font_color")
+	_primary_btn.disabled = not _puzzle_solved
+
+
+## 进入验证时随机一个缺口位置，并把拼块切成对应竖条。
+func _setup_puzzle() -> void:
+	_puzzle_solved = false
+	var travel := PUZZLE_W - PUZZLE_PIECE_W
+	# 目标落在中后段，避免一开始(0)就对齐
+	_puzzle_target_x = randf_range(travel * 0.45, travel * 0.92)
+	if is_instance_valid(_puzzle_gap):
+		_puzzle_gap.position = Vector2(_puzzle_target_x, 0.0)
+	var tex := load(PUZZLE_IMG) as Texture2D
+	if tex != null and is_instance_valid(_puzzle_piece):
+		# 拼块显示的内容 = 完整图中"缺口所在竖条"对应的源图区域
+		var src_size := tex.get_size()
+		var atlas := AtlasTexture.new()
+		atlas.atlas = tex
+		var rx := (_puzzle_target_x / PUZZLE_W) * src_size.x
+		var rw := (PUZZLE_PIECE_W / PUZZLE_W) * src_size.x
+		atlas.region = Rect2(rx, 0.0, rw, src_size.y)
+		_puzzle_piece.texture = atlas
+		_puzzle_piece.position.x = 0.0
+	if is_instance_valid(_captcha_slider):
+		_captcha_slider.value = 0.0
+	_captcha_hint.text = "拖动滑块，将缺失的图块对齐到暗格，使夜景图完整"
+	_captcha_hint.remove_theme_color_override("font_color")
 
 
 func _on_captcha_close_pressed() -> void:
@@ -416,7 +498,7 @@ func _on_primary_pressed() -> void:
 		Phase.READ:
 			_enter_phase(Phase.REPORT)
 		Phase.CAPTCHA:
-			if _captcha_slider.value < 100.0:
+			if not _puzzle_solved:
 				return
 			_enter_phase(Phase.RESULT_FAIL)
 		Phase.EVIDENCE_AUDIT:

@@ -44,7 +44,7 @@ const TERMINAL_REPORT_OPTIONS := {
 	"uninhabitable": "地表不宜，建议继续地下避难",
 }
 
-const TERMINAL_CAPTCHA_PROMPT := "身份识别：请将下方滑块拖动至最右端，以证明您是人类操作员。"
+const TERMINAL_CAPTCHA_PROMPT := "身份识别：拖动滑块移动缺失的图块，将其对齐暗格、使夜景图完整，以证明您是人类操作员。"
 
 const TERMINAL_VERIFY_FAIL_TEXT := """【验证结果】
 
