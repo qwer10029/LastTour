@@ -17,7 +17,7 @@ var _settings_overlay: SettingsOverlay
 
 
 func _ready() -> void:
-	_play_music_cue("menu_main", 1.0)
+	_play_music_cue("day_exploration", 1.0)
 	_ensure_background_texture()
 	if is_instance_valid(title_label):
 		title_label.visible = false
@@ -35,6 +35,7 @@ func _ready() -> void:
 	settings_button.disabled = false
 
 	_journal_overlay = JournalArchiveOverlayScript.new()
+	_journal_overlay.archive_cleared.connect(_refresh_continue_button)
 	add_child(_journal_overlay)
 
 	_settings_overlay = SettingsOverlay.new()

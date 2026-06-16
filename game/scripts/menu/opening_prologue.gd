@@ -18,7 +18,7 @@ var _slide_index := 0
 
 
 func _ready() -> void:
-	_play_music_cue("opening_prologue", 1.0)
+	_play_music_cue("day_exploration", 1.0)
 	_setup_bottom_fade_shader()
 	_apply_narration_style(_narration_label)
 	_apply_page_style(_page_label)

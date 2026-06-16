@@ -14,7 +14,10 @@ var _section_label: Label
 var _body: RichTextLabel
 var _credits_scroll: ScrollContainer
 var _primary_btn: Button
-var _credits_scroll_speed: float = 28.0
+var _credits_scroll_speed: float = 36.0
+
+const CREDITS_FONT_SIZE := 17
+const CREDITS_TITLE_FONT_SIZE := 20
 
 
 func _ready() -> void:
@@ -99,7 +102,9 @@ func _build_ui() -> void:
 	credits_body.custom_minimum_size = Vector2(660, 480)
 	credits_body.scroll_active = false
 	credits_body.fit_content = true
-	HudTheme.apply_terminal_log_rich(credits_body)
+	credits_body.add_theme_font_size_override("normal_font_size", CREDITS_FONT_SIZE)
+	credits_body.add_theme_color_override("default_color", Color("#c8dce8"))
+	credits_body.add_theme_constant_override("line_separation", 14)
 	_credits_scroll.add_child(credits_body)
 
 	_primary_btn = Button.new()
@@ -112,7 +117,10 @@ func _build_ui() -> void:
 
 func show_outcome(choice_id: String, _run_layer: int, _day_index: int = 1) -> void:
 	visible = true
-	_play_music_cue("final_choice", 0.9)
+	if choice_id == "stop_signal":
+		_play_music_cue("truth_reveal", 0.9)
+	else:
+		_play_music_cue("final_choice", 0.9)
 	match choice_id:
 		"stop_signal":
 			_enter_credits()
@@ -143,10 +151,29 @@ func _enter_credits() -> void:
 	_credits_scroll.visible = true
 	var credits_body := _credits_scroll.get_node_or_null("CreditsBody") as RichTextLabel
 	if credits_body != null:
-		var lines: PackedStringArray = []
+		credits_body.add_theme_font_size_override("normal_font_size", CREDITS_FONT_SIZE)
+		var blocks: PackedStringArray = []
 		for line in RunEndingDefs.CREDITS_LINES:
-			lines.append(line)
-		credits_body.text = "[center]%s[/center]" % "\n".join(lines)
+			var trimmed := str(line).strip_edges()
+			if trimmed.is_empty():
+				blocks.append("")
+				continue
+			if trimmed.begins_with("——") or trimmed.begins_with("【"):
+				blocks.append(
+					"[center][font_size=%d][color=#8ec8e8]%s[/color][/font_size][/center]"
+					% [CREDITS_TITLE_FONT_SIZE, trimmed]
+				)
+			elif trimmed.begins_with("感谢游玩"):
+				blocks.append(
+					"[center][font_size=%d][color=#6eb8ff]%s[/color][/font_size][/center]"
+					% [CREDITS_TITLE_FONT_SIZE + 2, trimmed]
+				)
+			elif trimmed.begins_with("克隆程序") or trimmed.begins_with("地表的风"):
+				blocks.append("[center][font_size=%d]%s[/font_size][/center]" % [CREDITS_FONT_SIZE, trimmed])
+			else:
+				blocks.append("[center]%s[/center]" % trimmed)
+		var gap := "\n".repeat(3)
+		credits_body.text = gap.join(blocks)
 	call_deferred("_reset_credits_scroll")
 	_primary_btn.text = "返回主菜单"
 

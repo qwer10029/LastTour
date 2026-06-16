@@ -45,6 +45,8 @@ func load_meta() -> void:
 	_prune_invalid_uploads()
 	if journal_uploads.size() != loaded_count:
 		call_deferred("save_meta")
+	for raw_id in data.get("encounters_unlocked", []):
+		unlock_encounter(str(raw_id))
 	_rebuild_encounters_from_uploads()
 	for legacy_id in data.get("evidence_collected", []):
 		var legacy := str(legacy_id)
@@ -266,6 +268,15 @@ func record_ending(choice_id: String) -> void:
 	endings_seen.append(choice_id)
 
 
+## 清空昆仑终端勘探日志档案及关联进度（关键情报、结局记录等），保留教程已读标记。
+func reset_journal_archive() -> void:
+	journal_uploads.clear()
+	encounters_unlocked.clear()
+	management_rights_transferred = false
+	endings_seen.clear()
+	save_meta()
+
+
 func _is_valid_archive_upload(upload: Dictionary) -> bool:
 	if upload.is_empty():
 		return false
@@ -286,7 +297,6 @@ func _prune_invalid_uploads() -> void:
 
 
 func _rebuild_encounters_from_uploads() -> void:
-	encounters_unlocked.clear()
 	for upload in get_archived_uploads():
 		for entry_var in upload.get("entries", []):
 			if typeof(entry_var) != TYPE_DICTIONARY:

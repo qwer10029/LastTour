@@ -5,20 +5,26 @@ class_name JournalArchiveOverlay
 const SciFiFramePanelScript = preload("res://scripts/ui/sci_fi_frame_panel.gd")
 
 signal closed
+signal archive_cleared
 
 const COLOR_STAT_LABEL := Color("#6a8498")
 const COLOR_STAT_VALUE := Color("#e4eef8")
+const COLOR_ALERT := Color("#ff6b6b")
 
 var _dim: ColorRect
 var _frame: SciFiFramePanel
-var _stats_grid: GridContainer
-var _list_root: VBoxContainer
+var _stats_box: VBoxContainer
+var _list_host: Control
 var _list_scroll: ScrollContainer
+var _list_root: VBoxContainer
 var _detail_root: VBoxContainer
 var _detail_title: Label
 var _detail_body: RichTextLabel
 var _close_btn: Button
+var _reset_btn: Button
 var _back_btn: Button
+var _confirm_layer: ColorRect
+var _confirm_panel: PanelContainer
 
 
 func _ready() -> void:
@@ -35,9 +41,104 @@ func show_archive() -> void:
 
 
 func hide_archive() -> void:
+	_hide_reset_confirm()
 	visible = false
 	_show_list_view()
 	closed.emit()
+
+
+func _build_reset_confirm_ui() -> void:
+	_confirm_layer = ColorRect.new()
+	_confirm_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_confirm_layer.color = Color(0.01, 0.02, 0.05, 0.72)
+	_confirm_layer.visible = false
+	_confirm_layer.mouse_filter = Control.MOUSE_FILTER_STOP
+	_frame.add_child(_confirm_layer)
+
+	var confirm_center := CenterContainer.new()
+	confirm_center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_confirm_layer.add_child(confirm_center)
+
+	var panel_style := StyleBoxFlat.new()
+	panel_style.bg_color = Color(0.04, 0.08, 0.12, 0.96)
+	panel_style.border_color = Color("#ff6b6b", 0.85)
+	panel_style.set_border_width_all(2)
+	panel_style.set_corner_radius_all(6)
+	panel_style.content_margin_left = 28
+	panel_style.content_margin_right = 28
+	panel_style.content_margin_top = 24
+	panel_style.content_margin_bottom = 24
+
+	_confirm_panel = PanelContainer.new()
+	_confirm_panel.custom_minimum_size = Vector2(520, 0)
+	_confirm_panel.add_theme_stylebox_override("panel", panel_style)
+	confirm_center.add_child(_confirm_panel)
+
+	var confirm_root := VBoxContainer.new()
+	confirm_root.add_theme_constant_override("separation", 14)
+	_confirm_panel.add_child(confirm_root)
+
+	var confirm_title := Label.new()
+	confirm_title.text = "清空勘探日志档案"
+	confirm_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	confirm_title.add_theme_font_size_override("font_size", 22)
+	confirm_title.add_theme_color_override("font_color", COLOR_ALERT)
+	HudTheme.apply_label(confirm_title)
+	confirm_root.add_child(confirm_title)
+
+	var confirm_body := Label.new()
+	confirm_body.text = (
+		"将永久删除昆仑终端内全部到顶上传记录，\n"
+		+ "并清空已解锁的关键情报与结局记录。\n\n"
+		+ "若存在进行中的单局存档，也会一并删除。\n"
+		+ "教程完成标记会保留。\n\n"
+		+ "此操作不可撤销。确定要重新开始吗？"
+	)
+	confirm_body.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	confirm_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	confirm_body.add_theme_font_size_override("font_size", 14)
+	confirm_body.add_theme_color_override("font_color", Color("#c8dce8"))
+	HudTheme.apply_label(confirm_body)
+	confirm_root.add_child(confirm_body)
+
+	var confirm_actions := HBoxContainer.new()
+	confirm_actions.add_theme_constant_override("separation", 16)
+	confirm_actions.alignment = BoxContainer.ALIGNMENT_CENTER
+	confirm_root.add_child(confirm_actions)
+
+	var cancel_btn := Button.new()
+	cancel_btn.text = "取消"
+	cancel_btn.custom_minimum_size = Vector2(180, 42)
+	HudTheme.apply_sci_fi_terminal_button(cancel_btn, Color("#8ec8e8"))
+	cancel_btn.pressed.connect(_hide_reset_confirm)
+	confirm_actions.add_child(cancel_btn)
+
+	var execute_btn := Button.new()
+	execute_btn.text = "确认清空并重开"
+	execute_btn.custom_minimum_size = Vector2(180, 42)
+	HudTheme.apply_sci_fi_terminal_button(execute_btn, COLOR_ALERT)
+	execute_btn.pressed.connect(_execute_reset_archive)
+	confirm_actions.add_child(execute_btn)
+
+
+func _show_reset_confirm() -> void:
+	if is_instance_valid(_confirm_layer):
+		_confirm_layer.visible = true
+
+
+func _hide_reset_confirm() -> void:
+	if is_instance_valid(_confirm_layer):
+		_confirm_layer.visible = false
+
+
+func _execute_reset_archive() -> void:
+	MetaManager.reset_journal_archive()
+	if SaveManager.has_save():
+		SaveManager.delete_save()
+	_hide_reset_confirm()
+	_show_list_view()
+	_refresh_content()
+	archive_cleared.emit()
 
 
 func _build_ui() -> void:
@@ -53,19 +154,21 @@ func _build_ui() -> void:
 	add_child(center)
 
 	_frame = SciFiFramePanelScript.new()
-	_frame.custom_minimum_size = Vector2(760, 560)
+	_frame.custom_minimum_size = Vector2(760, 620)
 	center.add_child(_frame)
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	margin.add_theme_constant_override("margin_left", 32)
-	margin.add_theme_constant_override("margin_top", 28)
+	margin.add_theme_constant_override("margin_top", 24)
 	margin.add_theme_constant_override("margin_right", 32)
-	margin.add_theme_constant_override("margin_bottom", 28)
+	margin.add_theme_constant_override("margin_bottom", 24)
+	margin.clip_contents = true
 	_frame.add_child(margin)
 
 	var shell := VBoxContainer.new()
-	shell.add_theme_constant_override("separation", 14)
+	shell.add_theme_constant_override("separation", 10)
+	shell.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	margin.add_child(shell)
 
 	var title := Label.new()
@@ -79,19 +182,22 @@ func _build_ui() -> void:
 
 	shell.add_child(_make_section_label("◈ 情报进度"))
 
-	_stats_grid = GridContainer.new()
-	_stats_grid.columns = 4
-	_stats_grid.add_theme_constant_override("h_separation", 18)
-	_stats_grid.add_theme_constant_override("v_separation", 8)
-	shell.add_child(_stats_grid)
+	_stats_box = VBoxContainer.new()
+	_stats_box.add_theme_constant_override("separation", 6)
+	shell.add_child(_stats_box)
 
 	shell.add_child(_make_section_label("◈ 系统日志"))
 
+	_list_host = Control.new()
+	_list_host.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_list_host.custom_minimum_size = Vector2(0, 220)
+	_list_host.clip_contents = true
+	shell.add_child(_list_host)
+
 	_list_scroll = ScrollContainer.new()
-	_list_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_list_scroll.custom_minimum_size = Vector2(0, 320)
+	_list_scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_list_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	shell.add_child(_list_scroll)
+	_list_host.add_child(_list_scroll)
 
 	_list_root = VBoxContainer.new()
 	_list_root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -100,9 +206,9 @@ func _build_ui() -> void:
 
 	_detail_root = VBoxContainer.new()
 	_detail_root.visible = false
-	_detail_root.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_detail_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_detail_root.add_theme_constant_override("separation", 10)
-	shell.add_child(_detail_root)
+	_list_host.add_child(_detail_root)
 
 	_detail_root.add_child(_make_section_label("◈ 日志详情"))
 
@@ -115,7 +221,7 @@ func _build_ui() -> void:
 
 	var detail_scroll := ScrollContainer.new()
 	detail_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	detail_scroll.custom_minimum_size = Vector2(0, 280)
+	detail_scroll.custom_minimum_size = Vector2(0, 160)
 	detail_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_detail_root.add_child(detail_scroll)
 
@@ -136,13 +242,26 @@ func _build_ui() -> void:
 	_back_btn.pressed.connect(_show_list_view)
 	_detail_root.add_child(_back_btn)
 
+	var footer := HBoxContainer.new()
+	footer.add_theme_constant_override("separation", 16)
+	footer.alignment = BoxContainer.ALIGNMENT_CENTER
+	shell.add_child(footer)
+
+	_reset_btn = Button.new()
+	_reset_btn.text = "清空档案并重开"
+	_reset_btn.custom_minimum_size = Vector2(240, 46)
+	HudTheme.apply_sci_fi_terminal_button(_reset_btn, COLOR_ALERT)
+	_reset_btn.pressed.connect(_show_reset_confirm)
+	footer.add_child(_reset_btn)
+
 	_close_btn = Button.new()
 	_close_btn.text = "关闭"
-	_close_btn.custom_minimum_size = Vector2(300, 46)
-	_close_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_close_btn.custom_minimum_size = Vector2(240, 46)
 	HudTheme.apply_sci_fi_terminal_button(_close_btn)
 	_close_btn.pressed.connect(hide_archive)
-	shell.add_child(_close_btn)
+	footer.add_child(_close_btn)
+
+	_build_reset_confirm_ui()
 
 
 func _make_section_label(text: String) -> Label:
@@ -174,14 +293,22 @@ func _show_detail_view(upload_index: int, entry_index: int) -> void:
 
 
 func _refresh_content() -> void:
-	_clear_children(_stats_grid)
+	_clear_children(_stats_box)
 	_clear_children(_list_root)
-	_add_stat("关键情报", "%d / %d" % [
-		MetaManager.encounters_unlocked_count(),
-		MetaManager.required_encounter_count(),
-	])
-	_add_stat("到顶上传", "%d" % MetaManager.journal_upload_count())
-	_add_stat("档案状态", MetaManager.archive_status_label())
+	var summary_row := HBoxContainer.new()
+	summary_row.add_theme_constant_override("separation", 24)
+	_stats_box.add_child(summary_row)
+	summary_row.add_child(_make_stat_pair(
+		"关键情报",
+		"%d / %d" % [MetaManager.encounters_unlocked_count(), MetaManager.required_encounter_count()],
+	))
+	summary_row.add_child(_make_stat_pair("到顶上传", "%d" % MetaManager.journal_upload_count()))
+	var status_label := Label.new()
+	status_label.text = "档案状态：%s" % MetaManager.archive_status_label()
+	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	status_label.add_theme_font_size_override("font_size", 13)
+	status_label.add_theme_color_override("font_color", COLOR_STAT_VALUE)
+	_stats_box.add_child(status_label)
 	var uploads: Array[Dictionary] = MetaManager.get_archived_uploads()
 	if uploads.is_empty():
 		var empty := Label.new()
@@ -190,6 +317,7 @@ func _refresh_content() -> void:
 		empty.add_theme_font_size_override("font_size", 12)
 		empty.add_theme_color_override("font_color", Color("#5a7080"))
 		_list_root.add_child(empty)
+		call_deferred("_reset_list_scroll")
 		return
 	for upload_index in range(uploads.size()):
 		var upload: Dictionary = uploads[upload_index]
@@ -219,24 +347,31 @@ func _refresh_content() -> void:
 			var captured_entry := entry_index
 			btn.pressed.connect(func() -> void: _show_detail_view(captured_upload, captured_entry))
 			_list_root.add_child(btn)
+	call_deferred("_reset_list_scroll")
 
 
-func _add_stat(label_text: String, value_text: String) -> void:
+func _reset_list_scroll() -> void:
+	if not is_instance_valid(_list_scroll):
+		return
+	var bar := _list_scroll.get_v_scroll_bar()
+	if bar != null:
+		bar.value = 0.0
+
+
+func _make_stat_pair(label_text: String, value_text: String) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
 	var label := Label.new()
 	label.text = label_text
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	label.custom_minimum_size = Vector2(88, 0)
 	label.add_theme_font_size_override("font_size", 11)
 	label.add_theme_color_override("font_color", COLOR_STAT_LABEL)
-	_stats_grid.add_child(label)
+	row.add_child(label)
 	var value := Label.new()
 	value.text = value_text
-	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	value.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	value.add_theme_font_size_override("font_size", 13)
 	value.add_theme_color_override("font_color", COLOR_STAT_VALUE)
-	_stats_grid.add_child(value)
+	row.add_child(value)
+	return row
 
 
 func _clear_children(node: Node) -> void:
@@ -248,6 +383,8 @@ func _clear_children(node: Node) -> void:
 
 func _on_dim_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		if is_instance_valid(_confirm_layer) and _confirm_layer.visible:
+			return
 		if is_instance_valid(_detail_root) and _detail_root.visible:
 			_show_list_view()
 		else:

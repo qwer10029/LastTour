@@ -22,6 +22,7 @@ var _dim: ColorRect
 var _frame: SciFiFramePanel
 var _title_label: Label
 var _header_label: Label
+var _prompt_header_label: Label
 var _body_label: Label
 var _log_section: Label
 var _log_history: RichTextLabel
@@ -120,6 +121,7 @@ func _build_ui() -> void:
 	root.add_child(_header_label)
 
 	var prompt_header := _make_section_label("◈ 终端提示")
+	_prompt_header_label = prompt_header
 	root.add_child(prompt_header)
 
 	_body_label = Label.new()
@@ -267,9 +269,12 @@ func _enter_phase(phase: int) -> void:
 	_log_history.visible = false
 	_body_label.visible = true
 	_primary_btn.visible = true
+	_reset_body_layout()
 	HudTheme.apply_terminal_title(_title_label)
 	HudTheme.apply_terminal_log_label(_body_label)
 	_body_label.custom_minimum_size = Vector2(720, 96)
+	if is_instance_valid(_prompt_header_label):
+		_prompt_header_label.visible = true
 	match phase:
 		Phase.INTRO:
 			_title_label.text = "通信终端 · 接入"
@@ -305,6 +310,7 @@ func _enter_phase(phase: int) -> void:
 			_captcha_box.visible = true
 			_captcha_close_btn.visible = true
 			_setup_puzzle()
+			_refresh_captcha_truth_hint()
 			_primary_btn.text = "提交验证"
 			_primary_btn.disabled = true
 		Phase.EVIDENCE_AUDIT:
@@ -317,25 +323,45 @@ func _enter_phase(phase: int) -> void:
 			_primary_btn.disabled = false
 		Phase.RESULT_FAIL:
 			_title_label.text = "通信终端 · 验证失败"
+			_title_label.add_theme_font_size_override("font_size", 30)
 			_title_label.add_theme_color_override("font_color", COLOR_ALERT)
-			_header_label.visible = false
+			if is_instance_valid(_prompt_header_label):
+				_prompt_header_label.visible = false
+			_apply_centered_body_layout(COLOR_ALERT, 18)
 			_body_label.text = "%s\n\n%s" % [
 				HudTheme.format_terminal_log(RunEndingDefs.TERMINAL_VERIFY_FAIL_TEXT, false),
 				RunEndingDefs.TERMINAL_STRIKE_TEXT,
 			]
-			_body_label.add_theme_color_override("font_color", COLOR_ALERT)
 			_primary_btn.text = "接受结算"
 			_primary_btn.disabled = false
 		Phase.RESULT_PASS:
 			_title_label.text = "通信终端 · 权限移交"
 			HudTheme.apply_terminal_title(_title_label)
-			_header_label.visible = false
+			_title_label.add_theme_font_size_override("font_size", 28)
+			if is_instance_valid(_prompt_header_label):
+				_prompt_header_label.visible = false
+			_apply_centered_body_layout(Color("#8ec8e8"), 17)
 			_body_label.text = "%s\n\n%s" % [
 				HudTheme.format_terminal_log(_pass_text(), false),
 				HudTheme.format_terminal_log(RunEndingDefs.TERMINAL_TRANSFER_TEXT, false),
 			]
 			_primary_btn.text = "接管控制台"
 			_primary_btn.disabled = false
+
+
+func _reset_body_layout() -> void:
+	_body_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_body_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	_body_label.remove_theme_font_size_override("font_size")
+	_body_label.remove_theme_color_override("font_color")
+
+
+func _apply_centered_body_layout(color: Color, font_size: int) -> void:
+	_body_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_body_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_body_label.add_theme_font_size_override("font_size", font_size)
+	_body_label.add_theme_color_override("font_color", color)
+	_body_label.custom_minimum_size = Vector2(720, 280)
 
 
 func _set_terminal_body(raw: String) -> void:
@@ -348,6 +374,7 @@ func _set_terminal_body(raw: String) -> void:
 func _refresh_log_history() -> void:
 	if not is_instance_valid(_log_history):
 		return
+	_sync_run_truth_to_meta()
 	var intel := "> 关键情报：%d / %d" % [
 		MetaManager.encounters_unlocked_count(),
 		MetaManager.required_encounter_count(),
@@ -371,6 +398,7 @@ func _perform_upload() -> void:
 	else:
 		MetaManager.save_meta()
 	_upload_done = true
+	_sync_run_truth_to_meta()
 
 
 func _build_report_options() -> void:
@@ -420,7 +448,12 @@ func _apply_captcha_slider_theme() -> void:
 
 func _on_report_chosen(choice_id: String) -> void:
 	_report_choice = choice_id
-	_enter_phase(Phase.CAPTCHA)
+	_sync_run_truth_to_meta()
+	if _terminal_truth_complete():
+		_audit_passed = true
+		_enter_phase(Phase.RESULT_PASS)
+	else:
+		_enter_phase(Phase.CAPTCHA)
 
 
 func _on_captcha_value_changed(value: float) -> void:
@@ -475,6 +508,20 @@ func _on_captcha_close_pressed() -> void:
 	_enter_phase(Phase.EVIDENCE_AUDIT)
 
 
+func _sync_run_truth_to_meta() -> void:
+	for entry_var in _run_journal_entries:
+		if typeof(entry_var) != TYPE_DICTIONARY:
+			continue
+		var encounter_id := str((entry_var as Dictionary).get("encounter_id", ""))
+		if encounter_id != "":
+			MetaManager.unlock_encounter(encounter_id)
+
+
+func _terminal_truth_complete() -> bool:
+	_sync_run_truth_to_meta()
+	return MetaManager.has_all_truth_encounters()
+
+
 func _required_truth_encounter_ids() -> Array[String]:
 	return JournalData.required_encounter_ids()
 
@@ -499,7 +546,19 @@ func _truth_audit_label(encounter_id: String) -> String:
 	return title
 
 
+func _truth_audit_passes() -> bool:
+	return _terminal_truth_complete()
+
+
+func _refresh_captcha_truth_hint() -> void:
+	if not _terminal_truth_complete():
+		return
+	_captcha_hint.text = "关键情报已集齐：提交拼图验证，或点右上角 × 转入证据审计，均可移交权限。"
+	_captcha_hint.add_theme_color_override("font_color", Color("#6ed08b"))
+
+
 func _evidence_audit_report() -> Dictionary:
+	_sync_run_truth_to_meta()
 	var missing: Array[String] = []
 	var present: Array[String] = []
 	for encounter_id in _required_truth_encounter_ids():
@@ -513,9 +572,8 @@ func _evidence_audit_report() -> Dictionary:
 	lines.append("")
 	if MetaManager.has_all_truth_encounters():
 		lines.append("> 四条指定关键情报已在昆仑归档中拼合。")
-	if not present.is_empty():
-		lines.append("> 已归档关键情报：%s" % "、".join(present))
-	if missing.is_empty():
+		if not present.is_empty():
+			lines.append("> 已归档关键情报：%s" % "、".join(present))
 		lines.append("> 关键情报链完整。")
 		lines.append("> 操作员 CAPTCHA 已放弃；情报链验证通过，紧急移交后门。")
 		return {"passed": true, "text": "\n".join(lines)}
@@ -542,7 +600,11 @@ func _on_primary_pressed() -> void:
 		Phase.CAPTCHA:
 			if not _puzzle_solved:
 				return
-			_enter_phase(Phase.RESULT_FAIL)
+			if _terminal_truth_complete():
+				_audit_passed = true
+				_enter_phase(Phase.RESULT_PASS)
+			else:
+				_enter_phase(Phase.RESULT_FAIL)
 		Phase.EVIDENCE_AUDIT:
 			if _audit_passed:
 				_enter_phase(Phase.RESULT_PASS)

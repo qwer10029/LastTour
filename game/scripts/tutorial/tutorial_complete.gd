@@ -4,7 +4,7 @@ const RunBootstrapScript := preload("res://scripts/menu/run_bootstrap.gd")
 
 
 func _ready() -> void:
-	_play_music_cue("menu_main", 1.0)
+	_play_music_cue("day_exploration", 1.0)
 	var meta := get_node_or_null("/root/MetaManager")
 	if meta != null and meta.has_method("mark_tutorial_completed"):
 		meta.mark_tutorial_completed()

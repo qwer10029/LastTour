@@ -63,6 +63,23 @@ func _check_terminal_audit() -> void:
 		bool(archive_report.get("passed", false)),
 		"terminal audit should pass when required truth encounters are archived in meta",
 	)
+
+	terminal.start_flow(journal_entries, 3, 1, {})
+	terminal._enter_phase(terminal.Phase.CAPTCHA)
+	terminal._puzzle_solved = true
+	terminal._on_primary_pressed()
+	await process_frame
+	_expect(terminal._phase == terminal.Phase.RESULT_PASS, "captcha submit should pass when truth audit passes")
+	_expect(terminal._audit_passed, "captcha submit should mark audit passed when truth complete")
+
+	terminal.start_flow(journal_entries, 3, 1, {})
+	terminal._on_report_chosen("habitable")
+	await process_frame
+	_expect(
+		terminal._phase == terminal.Phase.RESULT_PASS,
+		"report step should skip captcha when all truth encounters are available",
+	)
+
 	if meta != null:
 		meta.encounters_unlocked.clear()
 		for encounter_id in saved_unlocked:

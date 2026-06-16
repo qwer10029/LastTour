@@ -625,6 +625,13 @@ func building_label(index: int) -> String:
 				if market_label != "":
 					return market_label
 			return "集市"
+		"command":
+			var command_story := str(cells[index].get("story_id", ""))
+			if command_story != "" and StoryData.has_story(command_story):
+				var command_label := str(StoryData.get_story(command_story).get("building_label", ""))
+				if command_label != "":
+					return command_label
+			return "指挥部"
 		"armory":
 			return "兵工厂遗址"
 		_:

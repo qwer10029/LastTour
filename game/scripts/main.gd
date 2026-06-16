@@ -2808,7 +2808,10 @@ func _freeze_run_for_end() -> void:
 
 func _on_final_ceremony_choice(choice_id: String) -> void:
 	_final_choice_id = choice_id
-	_play_music_cue("final_choice", 0.9)
+	if choice_id == "stop_signal":
+		_play_music_cue("truth_reveal", 0.9)
+	else:
+		_play_music_cue("final_choice", 0.9)
 	MetaManager.record_ending(choice_id)
 	MetaManager.save_meta()
 	if is_instance_valid(_ending_outcome_overlay):

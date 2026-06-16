@@ -57,7 +57,7 @@ var _glow_tweens: Dictionary = {}
 
 func _ready() -> void:
 	preload_assets()
-	_play_music_cue("menu_select", 0.8)
+	_play_music_cue("day_exploration", 0.8)
 	_ensure_background_texture()
 	MenuStyles.style_title(title_label, 42)
 	_style_back_button()
