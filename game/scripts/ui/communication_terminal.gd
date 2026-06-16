@@ -41,12 +41,13 @@ var _puzzle_area: Control
 var _puzzle_full: TextureRect
 var _puzzle_gap: ColorRect
 var _puzzle_piece: TextureRect
+var _puzzle_piece_border: Panel
 var _puzzle_target_x: float = 0.0
 var _puzzle_solved: bool = false
 const PUZZLE_IMG := "res://assets/ui/tutorial/prepare_for_night.png"
-const PUZZLE_W := 520.0
-const PUZZLE_H := 320.0
-const PUZZLE_PIECE_W := 84.0
+const PUZZLE_W := 432.0
+const PUZZLE_H := 216.0
+const PUZZLE_PIECE_W := 72.0
 const PUZZLE_TOL := 12.0   # 对齐容差（像素）
 var _primary_btn: Button
 var _option_buttons: Array[Button] = []
@@ -152,7 +153,7 @@ func _build_ui() -> void:
 	HudTheme.apply_terminal_section(_captcha_hint)
 	_captcha_box.add_child(_captcha_hint)
 
-	# 拼图区：完整图（半透明作底）+ 缺口（暗块）+ 可滑动的拼块。
+	# 拼图区：完整图作底（半透明"残影"）+ 目标缺口（带亮边的暗槽）+ 可滑动的拼块。
 	_puzzle_area = Control.new()
 	_puzzle_area.custom_minimum_size = Vector2(PUZZLE_W, PUZZLE_H)
 	_puzzle_area.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
@@ -166,24 +167,47 @@ func _build_ui() -> void:
 	_puzzle_full.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_puzzle_full.stretch_mode = TextureRect.STRETCH_SCALE
 	_puzzle_full.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_puzzle_full.modulate = Color(1, 1, 1, 0.32)   # 底图压暗，凸显缺口
+	_puzzle_full.modulate = Color(1, 1, 1, 0.7)   # 底图清晰可辨，仅缺口处被挖空
 	_puzzle_full.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_puzzle_area.add_child(_puzzle_full)
 
-	# 缺口：目标位置的暗块（拼块对齐到这里即完成）
+	# 缺口：目标位置的暗槽，带虚线般的亮边，提示"把图块拼到这里"
 	_puzzle_gap = ColorRect.new()
-	_puzzle_gap.color = Color(0.0, 0.0, 0.0, 0.55)
+	_puzzle_gap.color = Color(0.0, 0.0, 0.0, 0.74)
 	_puzzle_gap.size = Vector2(PUZZLE_PIECE_W, PUZZLE_H)
 	_puzzle_gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_puzzle_area.add_child(_puzzle_gap)
 
-	# 拼块：从完整图中切出目标位置那一竖条，随滑块左右移动
+	var gap_border := Panel.new()
+	gap_border.name = "GapBorder"
+	gap_border.size = Vector2(PUZZLE_PIECE_W, PUZZLE_H)
+	gap_border.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var gap_sb := StyleBoxFlat.new()
+	gap_sb.bg_color = Color(0, 0, 0, 0)
+	gap_sb.border_color = Color("#6eb8ff")
+	gap_sb.set_border_width_all(2)
+	gap_sb.draw_center = false
+	gap_border.add_theme_stylebox_override("panel", gap_sb)
+	_puzzle_gap.add_child(gap_border)
+
+	# 拼块：从完整图中切出目标竖条，带边框使其看起来像一块可移动的拼图
 	_puzzle_piece = TextureRect.new()
 	_puzzle_piece.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_puzzle_piece.stretch_mode = TextureRect.STRETCH_SCALE
 	_puzzle_piece.size = Vector2(PUZZLE_PIECE_W, PUZZLE_H)
 	_puzzle_piece.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_puzzle_area.add_child(_puzzle_piece)
+
+	_puzzle_piece_border = Panel.new()
+	_puzzle_piece_border.size = Vector2(PUZZLE_PIECE_W, PUZZLE_H)
+	_puzzle_piece_border.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var piece_sb := StyleBoxFlat.new()
+	piece_sb.bg_color = Color(0, 0, 0, 0)
+	piece_sb.border_color = Color("#ffd27a")
+	piece_sb.set_border_width_all(3)
+	piece_sb.draw_center = false
+	_puzzle_piece_border.add_theme_stylebox_override("panel", piece_sb)
+	_puzzle_piece.add_child(_puzzle_piece_border)
 
 	_captcha_slider = HSlider.new()
 	_captcha_slider.min_value = 0.0
@@ -242,6 +266,7 @@ func _enter_phase(phase: int) -> void:
 	_primary_btn.visible = true
 	HudTheme.apply_terminal_title(_title_label)
 	HudTheme.apply_terminal_log_label(_body_label)
+	_body_label.custom_minimum_size = Vector2(720, 96)
 	match phase:
 		Phase.INTRO:
 			_title_label.text = "通信终端 · 接入"
@@ -273,6 +298,7 @@ func _enter_phase(phase: int) -> void:
 			_title_label.text = "通信终端 · 身份识别"
 			_header_label.visible = false
 			_body_label.text = "> %s" % RunEndingDefs.TERMINAL_CAPTCHA_PROMPT
+			_body_label.custom_minimum_size = Vector2(720, 0)   # 验证页正文压扁，给拼图/滑块/按钮让位
 			_captcha_box.visible = true
 			_captcha_close_btn.visible = true
 			_setup_puzzle()
