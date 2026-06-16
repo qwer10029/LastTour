@@ -84,3 +84,18 @@ func content_of(id: String) -> String:
 func layer_of(id: String) -> int:
 	_ensure_loaded()
 	return int(_entries.get(id, {}).get("unlock_layer", 0))
+
+
+## 某条遭遇日记(encounter_id)写入后应授予的证据 id；无映射返回 ""。
+## 用于把"完成 4 个真相故事"直接转化为夜末终端审计所需的证据道具。
+func evidence_for_encounter(encounter_id: String) -> String:
+	_ensure_loaded()
+	if encounter_id == "":
+		return ""
+	for k in _entries.keys():
+		var froms: Variant = _entries[k].get("from_encounters", [])
+		if froms is Array:
+			for e in froms:
+				if str(e) == encounter_id:
+					return str(k)
+	return ""

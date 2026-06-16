@@ -6,7 +6,8 @@
       "content": "克隆人是地下昆仑程序的产物，身份编号自动指派。本代勘探者不存在自然出生记录，所有'记忆'来自统一的初始化模板。",
       "category": "clone_identity",
       "unlock_layer": 1,
-      "unlock_flag": "layer_1_archive_found"
+      "unlock_flag": "layer_1_archive_found",
+      "from_encounters": ["furnace_truth"]
     },
     {
       "evidence_id": "faction_conflict",
@@ -14,7 +15,8 @@
       "content": "\"地表开发派\" 与 \"本代优先派\" 在高层会议中的对话片段。会议未达成结论，会后档案被加密封存。",
       "category": "faction_conflict",
       "unlock_layer": 2,
-      "unlock_flag": "layer_2_archive_found"
+      "unlock_flag": "layer_2_archive_found",
+      "from_encounters": ["chronicler_repair"]
     },
     {
       "evidence_id": "human_extinction_proof",
@@ -22,7 +24,8 @@
       "content": "依据广播记录与系统日志推断的人类集体行动失败过程。最后一次有效的人类指令早于克隆程序启动。",
       "category": "human_extinction_proof",
       "unlock_layer": 3,
-      "unlock_flag": "layer_3_archive_found"
+      "unlock_flag": "layer_3_archive_found",
+      "from_encounters": ["staff_officer_07_calibrate"]
     },
     {
       "evidence_id": "backdoor_info",
@@ -30,7 +33,8 @@
       "content": "通讯系统设计者刘工程师在系统部署前留下的权限转移指令。当人类指挥源缺席且持有该证据时，最高权限将移交给现场操作员。",
       "category": "backdoor_info",
       "unlock_layer": 3,
-      "unlock_flag": "layer_3_engineer_note_found"
+      "unlock_flag": "layer_3_engineer_note_found",
+      "from_encounters": ["marian_obey"]
     }
   ]
 }

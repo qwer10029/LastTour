@@ -901,35 +901,9 @@ func _spawn_resources() -> void:
 
 
 func _seed_final_layer_evidence_spawns() -> void:
-	if _current_layer < total_layers:
-		return
-	for district_index in _map.district_indices:
-		if not _map.district_has_kunlun_control(district_index):
-			continue
-		var cell := _map.get_cell(district_index)
-		var spawns: Array = cell.get("resource_spawns", [])
-		var existing: Dictionary = {}
-		for spawn_var in spawns:
-			if spawn_var is Dictionary:
-				existing[str(spawn_var.get("item_id", ""))] = true
-		var offsets := {
-			"clone_identity": Vector2(96.0, 80.0),
-			"faction_conflict": Vector2(160.0, 112.0),
-			"human_extinction_proof": Vector2(224.0, 144.0),
-			"backdoor_info": Vector2(288.0, 96.0),
-		}
-		for evidence_id in EvidenceData.terminal_required_ids():
-			var item_id := "evidence:%s" % evidence_id
-			if existing.has(item_id) or _backpack.has(item_id, 1):
-				continue
-			var offset: Vector2 = offsets.get(str(evidence_id), Vector2(120.0 + float(spawns.size()) * 28.0, 112.0))
-			spawns.append({
-				"x": offset.x,
-				"y": offset.y,
-				"item_id": item_id,
-			})
-		cell["resource_spawns"] = spawns
-		return
+	# 证据现在通过完成 4 个真相故事授予（见 _on_journal_entry_added），
+	# 不再在顶层地面散落拾取，避免与故事授予重复。保留此函数以兼容旧调用点。
+	return
 
 func _process(_delta: float) -> void:
 	if _run_ended or _game_paused or _backpack_open:
@@ -4123,6 +4097,20 @@ func _hide_story_choice_overlay() -> void:
 
 func _on_journal_entry_added(encounter_id: String) -> void:
 	_refresh_backpack_if_open()
+	# 完成 4 个真相故事之一 → 直接授予对应证据道具（夜末终端审计据此判定权限移交）。
+	var evidence_id := EvidenceData.evidence_for_encounter(encounter_id)
+	if evidence_id != "":
+		var item_id := "evidence:%s" % evidence_id
+		if not _backpack.has(item_id, 1):
+			_backpack.add(item_id, 1)
+			_refresh_backpack_if_open()
+			if is_instance_valid(evening_notice) and evening_notice.has_method("show_message"):
+				evening_notice.show_message(
+					"获得关键证据",
+					"「%s」已存入背包。\n集齐 4 份证据可在顶层终端解锁权限移交。" % EvidenceData.title_of(evidence_id),
+					6.0,
+				)
+			return
 	var title := JournalData.title_of(encounter_id)
 	if is_instance_valid(evening_notice) and evening_notice.has_method("show_message"):
 		evening_notice.show_message(
