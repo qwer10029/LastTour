@@ -164,12 +164,24 @@ func _style_skip_button(button: Button) -> void:
 	button.add_theme_color_override("font_pressed_color", Color("#5a6878"))
 
 
+func _load_slide_texture(image_path: String) -> Texture2D:
+	if image_path.is_empty() or not ResourceLoader.exists(image_path):
+		return null
+	var tex := load(image_path) as Texture2D
+	if tex != null:
+		return tex
+	var image := Image.new()
+	if image.load(image_path) != OK:
+		return null
+	return ImageTexture.create_from_image(image)
+
+
 func _show_slide(index: int) -> void:
 	_slide_index = clampi(index, 0, OpeningPrologueDefs.slide_count() - 1)
 	var data := OpeningPrologueDefs.slide(_slide_index)
 	var image_path := str(data.get("image", ""))
-	if image_path != "" and ResourceLoader.exists(image_path):
-		var tex := load(image_path) as Texture2D
+	var tex := _load_slide_texture(image_path)
+	if tex != null:
 		_texture_rect.texture = tex
 	# 直接显示当前页的全部文字
 	var all_text := ""
