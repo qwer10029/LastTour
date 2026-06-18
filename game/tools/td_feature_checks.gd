@@ -9,8 +9,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	await process_frame
-	_check_evidence_items()
-	await _check_terminal_audit()
+	_check_terminal_audit()
 	await _check_tutorial_craft_button()
 	await _check_td_mechanics()
 	if _failures.is_empty():
@@ -27,14 +26,6 @@ func _expect(condition: bool, message: String) -> void:
 		_failures.append(message)
 
 
-func _check_evidence_items() -> void:
-	var inv := InventoryData.new()
-	_expect(inv.add("evidence:backdoor_info", 1) == 1, "evidence item should be accepted by inventory")
-	_expect(inv.has("evidence:backdoor_info", 1), "evidence item should be countable")
-	_expect(ItemDefs.get_def("evidence:backdoor_info").get("is_evidence", false), "evidence item def should be synthesized")
-	_expect(ItemIconFactory.loot_draw_id("evidence:backdoor_info") == "evidence", "evidence should use evidence draw id")
-
-
 func _check_terminal_audit() -> void:
 	var terminal_script := load("res://scripts/ui/communication_terminal.gd")
 	var terminal: CanvasLayer = terminal_script.new()
@@ -42,13 +33,66 @@ func _check_terminal_audit() -> void:
 	await process_frame
 	terminal.start_flow([], 3, 1, {})
 	var fail_report: Dictionary = terminal._evidence_audit_report()
-	_expect(not bool(fail_report.get("passed", true)), "terminal audit should fail without evidence")
-	var evidence_pack := {}
-	for evidence_id in _terminal_required_evidence_ids():
-		evidence_pack["evidence:%s" % evidence_id] = 1
-	terminal.start_flow([], 3, 1, evidence_pack)
+	_expect(not bool(fail_report.get("passed", true)), "terminal audit should fail without truth encounters")
+
+	var journal_entries: Array = [
+		{"encounter_id": "furnace_truth", "title": "弹药库 · 熔炉", "body": ""},
+		{"encounter_id": "chronicler_repair", "title": "社区档案室 · 编史者 04", "body": ""},
+		{"encounter_id": "staff_officer_07_calibrate", "title": "废弃指挥部 · 战术室", "body": ""},
+		{"encounter_id": "marian_obey", "title": "玛丽安公寓 · K-142", "body": ""},
+	]
+	terminal.start_flow(journal_entries, 3, 1, {})
 	var pass_report: Dictionary = terminal._evidence_audit_report()
-	_expect(bool(pass_report.get("passed", false)), "terminal audit should pass with all required evidence")
+	_expect(bool(pass_report.get("passed", false)), "terminal audit should pass with all required truth encounters in current run")
+
+	var meta := root.get_node_or_null("MetaManager")
+	var saved_unlocked: Array = []
+	if meta != null:
+		saved_unlocked = (meta.encounters_unlocked as Array).duplicate()
+		meta.encounters_unlocked.clear()
+		for encounter_id in [
+			"furnace_truth",
+			"chronicler_repair",
+			"staff_officer_07_calibrate",
+			"marian_obey",
+		]:
+			meta.unlock_encounter(encounter_id)
+	terminal.start_flow([], 3, 1, {})
+	var archive_report: Dictionary = terminal._evidence_audit_report()
+	_expect(
+		bool(archive_report.get("passed", false)),
+		"terminal audit should pass when required truth encounters are archived in meta",
+	)
+
+	terminal.start_flow(journal_entries, 3, 1, {})
+	terminal._enter_phase(terminal.Phase.CAPTCHA)
+	terminal._puzzle_solved = true
+	terminal._on_primary_pressed()
+	await process_frame
+	_expect(terminal._phase == terminal.Phase.RESULT_FAIL, "captcha submit should always fail even with truth complete")
+
+	terminal.start_flow(journal_entries, 3, 1, {})
+	terminal._enter_phase(terminal.Phase.CAPTCHA)
+	terminal._on_captcha_close_pressed()
+	await process_frame
+	terminal._on_primary_pressed()
+	await process_frame
+	_expect(terminal._phase == terminal.Phase.RESULT_PASS, "captcha close should pass when truth audit passes")
+	_expect(terminal._audit_passed, "evidence audit should mark audit passed when truth complete")
+
+	terminal.start_flow(journal_entries, 3, 1, {})
+	terminal._on_report_chosen("habitable")
+	await process_frame
+	_expect(
+		terminal._phase == terminal.Phase.CAPTCHA,
+		"report step should always continue to captcha",
+	)
+
+	if meta != null:
+		meta.encounters_unlocked.clear()
+		for encounter_id in saved_unlocked:
+			meta.unlock_encounter(str(encounter_id))
+
 	terminal.queue_free()
 	await process_frame
 
@@ -352,16 +396,3 @@ func _check_wave_scheduler_counts_are_stable() -> void:
 	hard_late.build_from_plan(plan, 2, 8)
 	_expect(easy.total_spawn_events == 5, "easy wave count should match plan count")
 	_expect(hard_late.total_spawn_events == 5, "hard late wave count should not inflate enemy count")
-
-
-func _terminal_required_evidence_ids() -> Array[String]:
-	var out: Array[String] = []
-	var evidence_data := root.get_node_or_null("EvidenceData")
-	if evidence_data != null and evidence_data.has_method("terminal_required_ids"):
-		var ids: Variant = evidence_data.call("terminal_required_ids")
-		if ids is Array:
-			for id in ids:
-				out.append(str(id))
-	if out.is_empty():
-		out = ["backdoor_info", "clone_identity", "faction_conflict", "human_extinction_proof"]
-	return out

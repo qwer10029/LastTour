@@ -120,7 +120,9 @@ func generate(
 			var local := 0.18 + 0.52 * float(district_step) / float(district_total)
 			report.call(local, "建设资源区 %d/%d…" % [district_step, district_total])
 
-	if is_final_layer:
+	if _debug_near_spawn:
+		_place_special_building_near_start(is_final_layer)
+	elif is_final_layer:
 		_ensure_kunlun_control_district(rng)
 	else:
 		_ensure_elevator_district(rng)
@@ -623,6 +625,13 @@ func building_label(index: int) -> String:
 				if market_label != "":
 					return market_label
 			return "集市"
+		"command":
+			var command_story := str(cells[index].get("story_id", ""))
+			if command_story != "" and StoryData.has_story(command_story):
+				var command_label := str(StoryData.get_story(command_story).get("building_label", ""))
+				if command_label != "":
+					return command_label
+			return "指挥部"
 		"armory":
 			return "兵工厂遗址"
 		_:

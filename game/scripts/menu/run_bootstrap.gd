@@ -11,7 +11,7 @@ const MAP_COLUMNS := 24
 const MAP_ROWS := 18
 const CELL_SIZE := Vector2i(720, 720)
 const TOTAL_LAYERS := 3
-const DEBUG_START_NEAR_SPECIAL := false
+const DEBUG_START_NEAR_SPECIAL := true  # DEBUG: 电梯出生在出生点旁，稍后删除
 const DEBUG_START_AT_STORY := true
 
 const TEXTURE_STEP_WEIGHT := 0.40
@@ -56,7 +56,9 @@ static func build_new_run_map(on_progress: Callable = Callable()) -> WorldMapDat
 	StoryData.ensure_story_districts(map, current_layer)
 	StoryData.setup_tactical_hidden_sites(map, current_layer)
 	ArmorySiteData.place_on_map(map, current_layer)
-	if DEBUG_START_AT_STORY and StoryData.any_story_spawns_near_start():
+	if DEBUG_START_NEAR_SPECIAL:
+		map.set_start_near_special_building(is_final_layer)
+	elif DEBUG_START_AT_STORY and StoryData.any_story_spawns_near_start():
 		StoryData.set_debug_start_near_story(map)
 	elif DEBUG_START_AT_STORY:
 		StoryData.set_debug_start_near_story(map)

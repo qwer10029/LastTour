@@ -333,7 +333,7 @@ func go_to_main_menu() -> void:
 	if transition != null and transition.has_method("hide_cover"):
 		transition.hide_cover()
 	run_state = null
-	_play_music_cue("menu_main", 1.0)
+	_play_music_cue("day_exploration", 1.0)
 	get_tree().change_scene_to_file(SCENE_MAIN_MENU)
 
 
@@ -360,18 +360,18 @@ func begin_new_game_flow() -> void:
 	squad_id = "scavenger"
 	_run_bootstrap = {}
 	run_state = null
-	_play_music_cue("opening_prologue", 1.0)
+	_play_music_cue("day_exploration", 1.0)
 	get_tree().change_scene_to_file(SCENE_OPENING_PROLOGUE)
 
 
 func go_to_difficulty_select() -> void:
 	DifficultySelectScript.preload_assets()
-	_play_music_cue("menu_select", 0.8)
+	_play_music_cue("day_exploration", 0.8)
 	get_tree().change_scene_to_file(SCENE_DIFFICULTY)
 
 
 func go_to_squad_select() -> void:
-	_play_music_cue("menu_select", 0.8)
+	_play_music_cue("day_exploration", 0.8)
 	get_tree().change_scene_to_file(SCENE_SQUAD)
 
 

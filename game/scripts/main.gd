@@ -39,7 +39,7 @@ var _world_camera: Camera2D
 @export var base_elevator_repair_cost: int = 3
 @export var war_fog_enabled: bool = true
 @export var debug_start_at_story: bool = true
-@export var debug_start_near_special: bool = false
+@export var debug_start_near_special: bool = true  # DEBUG: 电梯/终端出生在出生点旁，稍后删除
 
 var _map: WorldMapData = WorldMapData.new()
 var _mode: int = TravelMode.DRIVE
@@ -901,8 +901,6 @@ func _spawn_resources() -> void:
 
 
 func _seed_final_layer_evidence_spawns() -> void:
-	# 证据现在通过完成 4 个真相故事授予（见 _on_journal_entry_added），
-	# 不再在顶层地面散落拾取，避免与故事授予重复。保留此函数以兼容旧调用点。
 	return
 
 func _process(_delta: float) -> void:
@@ -2784,7 +2782,10 @@ func _freeze_run_for_end() -> void:
 
 func _on_final_ceremony_choice(choice_id: String) -> void:
 	_final_choice_id = choice_id
-	_play_music_cue("final_choice", 0.9)
+	if choice_id == "stop_signal":
+		_play_music_cue("truth_reveal", 0.9)
+	else:
+		_play_music_cue("final_choice", 0.9)
 	MetaManager.record_ending(choice_id)
 	MetaManager.save_meta()
 	if is_instance_valid(_ending_outcome_overlay):
@@ -4097,22 +4098,15 @@ func _hide_story_choice_overlay() -> void:
 
 func _on_journal_entry_added(encounter_id: String) -> void:
 	_refresh_backpack_if_open()
-	# 完成 4 个真相故事之一 → 直接授予对应证据道具（夜末终端审计据此判定权限移交）。
-	var evidence_id := EvidenceData.evidence_for_encounter(encounter_id)
-	if evidence_id != "":
-		var item_id := "evidence:%s" % evidence_id
-		if not _backpack.has(item_id, 1):
-			_backpack.add(item_id, 1)
-			_refresh_backpack_if_open()
-			if is_instance_valid(evening_notice) and evening_notice.has_method("show_message"):
-				evening_notice.show_message(
-					"获得关键证据",
-					"「%s」已存入背包。\n集齐 4 份证据可在顶层终端解锁权限移交。" % EvidenceData.title_of(evidence_id),
-					6.0,
-				)
-			return
 	var title := JournalData.title_of(encounter_id)
 	if is_instance_valid(evening_notice) and evening_notice.has_method("show_message"):
+		if JournalData.is_required_truth_encounter(encounter_id):
+			evening_notice.show_message(
+				"关键情报已记录",
+				"「%s」已写入本局日记。\n集齐 4 条关键情报可在顶层终端解锁权限移交。" % title,
+				6.0,
+			)
+			return
 		evening_notice.show_message(
 			"勘探日记已更新",
 			"「%s」已写入本局日记。\n按 B 打开背包，切到「勘探日记」查看。" % title,

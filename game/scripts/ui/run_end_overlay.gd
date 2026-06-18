@@ -157,9 +157,15 @@ func show_ceremony() -> void:
 	_choices_box.visible = true
 	_apply_title("归档仪式 · 真相揭示", false)
 	_ceremony_header_label.text = HudTheme.extract_terminal_header(RunEndingDefs.TRUTH_REVEAL_TEXT)
-	_body_label.text = "%s\n\n> 通信终端将上传本局勘探日记，并展示前代已上传的记录。" % HudTheme.format_terminal_log(
-		RunEndingDefs.TRUTH_REVEAL_TEXT
-	)
+	var body_suffix := "> 通信终端将上传本局勘探日记，并展示前代已上传的记录。"
+	if MetaManager.has_all_truth_encounters():
+		body_suffix += "\n> 四条关键情报已拼合，「发送真实终止信号」现已可用。"
+	else:
+		body_suffix += "\n> 尚未集齐四条关键情报，无法发送真实终止信号。"
+	_body_label.text = "%s\n\n%s" % [
+		HudTheme.format_terminal_log(RunEndingDefs.TRUTH_REVEAL_TEXT),
+		body_suffix,
+	]
 	_rebuild_choice_buttons()
 
 
@@ -316,7 +322,10 @@ func _clear_children(node: Node) -> void:
 
 func _rebuild_choice_buttons() -> void:
 	_clear_choice_buttons()
+	var truth_unlocked := MetaManager.has_all_truth_encounters()
 	for choice_id in RunEndingDefs.FINAL_CHOICES.keys():
+		if choice_id == "stop_signal" and not truth_unlocked:
+			continue
 		var def: Dictionary = RunEndingDefs.FINAL_CHOICES[choice_id]
 		var btn := Button.new()
 		btn.custom_minimum_size = Vector2(0, 40)
