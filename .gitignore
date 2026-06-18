@@ -218,3 +218,8 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 /game/assets/music/source/
+
+
+# export
+*.exe
+*.pck
