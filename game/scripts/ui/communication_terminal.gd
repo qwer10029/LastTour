@@ -464,7 +464,7 @@ func _on_captcha_value_changed(value: float) -> void:
 		if _terminal_truth_complete():
 			_captcha_hint.text = "✓ 图像已对齐；常规提交将被击毙，请点右上角 × 转入证据审计"
 		else:
-			_captcha_hint.text = "✓ 图像已对齐，可提交验证"
+			_captcha_hint.text = "✓ 图像已对齐，可提交验证；或点 × 转入证据审计"
 		_captcha_hint.add_theme_color_override("font_color", Color("#6ed08b"))
 		if is_instance_valid(_puzzle_piece):
 			_puzzle_piece.position = Vector2(_puzzle_target_x, PUZZLE_PIECE_Y)   # 吸附到位
@@ -473,7 +473,7 @@ func _on_captcha_value_changed(value: float) -> void:
 			_captcha_hint.text = "关键情报已集齐：点右上角 × 转入证据审计，方可移交权限。"
 			_captcha_hint.add_theme_color_override("font_color", Color("#6ed08b"))
 		else:
-			_captcha_hint.text = "拖动滑块，将缺失的图块对齐到暗格，使夜景图完整"
+			_captcha_hint.text = "拖动滑块，将缺失的图块对齐到暗格；也可点右上角 × 转入证据审计"
 			_captcha_hint.remove_theme_color_override("font_color")
 	_primary_btn.disabled = not _puzzle_solved
 
@@ -502,14 +502,12 @@ func _setup_puzzle() -> void:
 		_puzzle_piece.position = Vector2(0.0, PUZZLE_PIECE_Y)
 	if is_instance_valid(_captcha_slider):
 		_captcha_slider.value = 0.0
-	_captcha_hint.text = "拖动滑块，将缺失的图块对齐到暗格，使夜景图完整"
+	_captcha_hint.text = "拖动滑块，将缺失的图块对齐到暗格；也可点右上角 × 转入证据审计"
 	_captcha_hint.remove_theme_color_override("font_color")
 
 
 func _on_captcha_close_pressed() -> void:
 	if _phase != Phase.CAPTCHA:
-		return
-	if not _terminal_truth_complete():
 		return
 	_enter_phase(Phase.EVIDENCE_AUDIT)
 
@@ -566,14 +564,9 @@ func _refresh_captcha_truth_hint() -> void:
 func _refresh_captcha_close_btn() -> void:
 	if not is_instance_valid(_captcha_close_btn):
 		return
-	var qualified := _terminal_truth_complete()
-	_captcha_close_btn.disabled = not qualified
-	_captcha_close_btn.modulate = Color.WHITE if qualified else Color(0.42, 0.42, 0.42, 0.55)
-	_captcha_close_btn.tooltip_text = (
-		"转入证据审计（需集齐四条关键情报）"
-		if not qualified
-		else "转入证据审计"
-	)
+	_captcha_close_btn.disabled = false
+	_captcha_close_btn.modulate = Color.WHITE
+	_captcha_close_btn.tooltip_text = "放弃 CAPTCHA，转入证据审计"
 
 
 func _evidence_audit_report() -> Dictionary:
