@@ -41,10 +41,6 @@ var _world_camera: Camera2D
 @export var debug_start_at_story: bool = true
 @export var debug_start_near_special: bool = true  # DEBUG: 电梯/终端出生在出生点旁，稍后删除
 
-## DEBUG: 电梯修复第四选项「废料×1」，稍后删除
-const DEBUG_ELEVATOR_ONE_SCRAP_REPAIR := true
-const DEBUG_ELEVATOR_ONE_SCRAP_COST := 1
-
 var _map: WorldMapData = WorldMapData.new()
 var _mode: int = TravelMode.DRIVE
 var _vehicle: VehicleUnit
@@ -127,7 +123,6 @@ var _repair_hint_label: Label
 var _repair_parts_btn: Button
 var _repair_scrap_btn: Button
 var _repair_wood_scrap_btn: Button
-var _repair_debug_scrap_btn: Button
 var _pda_panel: PdaHudPanel
 
 @onready var time_system: TimeSystem = $Systems/TimeSystem
@@ -574,15 +569,6 @@ func _setup_repair_choice_popup() -> void:
 	_style_repair_option_button(_repair_wood_scrap_btn)
 	vbox.add_child(_repair_wood_scrap_btn)
 
-	if DEBUG_ELEVATOR_ONE_SCRAP_REPAIR:
-		_repair_debug_scrap_btn = Button.new()
-		_repair_debug_scrap_btn.text = "[DEBUG] 废料 ×%d" % DEBUG_ELEVATOR_ONE_SCRAP_COST
-		_repair_debug_scrap_btn.focus_mode = Control.FOCUS_NONE
-		_repair_debug_scrap_btn.pressed.connect(_on_repair_option_pressed.bind("debug_scrap"))
-		_repair_debug_scrap_btn.set_meta("repair_base_text", _repair_debug_scrap_btn.text)
-		_style_repair_option_button(_repair_debug_scrap_btn)
-		vbox.add_child(_repair_debug_scrap_btn)
-
 	var cancel_btn := Button.new()
 	cancel_btn.text = "关闭"
 	cancel_btn.focus_mode = Control.FOCUS_NONE
@@ -684,8 +670,6 @@ func _has_repair_material(material: String) -> bool:
 				_backpack.has("wood", _elevator_repair_wood_cost())
 				and _backpack.has("scrap", _elevator_repair_scrap_alt_cost())
 			)
-		"debug_scrap":
-			return DEBUG_ELEVATOR_ONE_SCRAP_REPAIR and _backpack.has("scrap", DEBUG_ELEVATOR_ONE_SCRAP_COST)
 	return false
 
 
@@ -721,11 +705,6 @@ func _refresh_repair_choice_popup(status_text: String = "", status_warning: bool
 		_repair_wood_scrap_btn,
 		_backpack.has("wood", _elevator_repair_wood_cost()) and _backpack.has("scrap", _elevator_repair_scrap_alt_cost()),
 	)
-	if DEBUG_ELEVATOR_ONE_SCRAP_REPAIR and is_instance_valid(_repair_debug_scrap_btn):
-		_set_repair_option_enabled(
-			_repair_debug_scrap_btn,
-			_backpack.has("scrap", DEBUG_ELEVATOR_ONE_SCRAP_COST),
-		)
 	if not status_text.is_empty():
 		_show_repair_choicf_hint(status_text, status_warning)
 	elif _elevator_repair_progress >= total:
@@ -1895,8 +1874,6 @@ func _repair_with_material(material: String) -> void:
 				_backpack.remove("wood", _elevator_repair_wood_cost())
 				and _backpack.remove("scrap", _elevator_repair_scrap_alt_cost())
 			)
-		"debug_scrap":
-			consumed = _backpack.remove("scrap", DEBUG_ELEVATOR_ONE_SCRAP_COST)
 
 	if not consumed:
 		_refresh_repair_choice_popup("资源不足", true)
@@ -2360,8 +2337,6 @@ func _on_fuel_empty_dialog_closed() -> void:
 func _consume_repair_material() -> bool:
 	if _backpack.has("parts", _elevator_repair_parts_cost()):
 		return _backpack.remove("parts", _elevator_repair_parts_cost())
-	if DEBUG_ELEVATOR_ONE_SCRAP_REPAIR and _backpack.has("scrap", DEBUG_ELEVATOR_ONE_SCRAP_COST):
-		return _backpack.remove("scrap", DEBUG_ELEVATOR_ONE_SCRAP_COST)
 	if _backpack.has("scrap", _elevator_repair_scrap_cost()):
 		return _backpack.remove("scrap", _elevator_repair_scrap_cost())
 	if (
@@ -2378,7 +2353,6 @@ func _consume_repair_material() -> bool:
 func _repair_button_label() -> String:
 	if (
 		_backpack.has("parts", _elevator_repair_parts_cost())
-		or (DEBUG_ELEVATOR_ONE_SCRAP_REPAIR and _backpack.has("scrap", DEBUG_ELEVATOR_ONE_SCRAP_COST))
 		or _backpack.has("scrap", _elevator_repair_scrap_cost())
 		or (
 			_backpack.has("wood", _elevator_repair_wood_cost())

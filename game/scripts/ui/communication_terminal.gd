@@ -311,6 +311,7 @@ func _enter_phase(phase: int) -> void:
 			_captcha_close_btn.visible = true
 			_setup_puzzle()
 			_refresh_captcha_truth_hint()
+			_refresh_captcha_close_btn()
 			_primary_btn.text = "提交验证"
 			_primary_btn.disabled = true
 		Phase.EVIDENCE_AUDIT:
@@ -449,11 +450,7 @@ func _apply_captcha_slider_theme() -> void:
 func _on_report_chosen(choice_id: String) -> void:
 	_report_choice = choice_id
 	_sync_run_truth_to_meta()
-	if _terminal_truth_complete():
-		_audit_passed = true
-		_enter_phase(Phase.RESULT_PASS)
-	else:
-		_enter_phase(Phase.CAPTCHA)
+	_enter_phase(Phase.CAPTCHA)
 
 
 func _on_captcha_value_changed(value: float) -> void:
@@ -464,13 +461,20 @@ func _on_captcha_value_changed(value: float) -> void:
 		_puzzle_piece.position = Vector2(px, PUZZLE_PIECE_Y)
 	_puzzle_solved = absf(px - _puzzle_target_x) <= PUZZLE_TOL
 	if _puzzle_solved:
-		_captcha_hint.text = "✓ 图像已对齐，可提交验证"
+		if _terminal_truth_complete():
+			_captcha_hint.text = "✓ 图像已对齐；常规提交将被击毙，请点右上角 × 转入证据审计"
+		else:
+			_captcha_hint.text = "✓ 图像已对齐，可提交验证"
 		_captcha_hint.add_theme_color_override("font_color", Color("#6ed08b"))
 		if is_instance_valid(_puzzle_piece):
 			_puzzle_piece.position = Vector2(_puzzle_target_x, PUZZLE_PIECE_Y)   # 吸附到位
 	else:
-		_captcha_hint.text = "拖动滑块，将缺失的图块对齐到暗格，使夜景图完整"
-		_captcha_hint.remove_theme_color_override("font_color")
+		if _terminal_truth_complete():
+			_captcha_hint.text = "关键情报已集齐：点右上角 × 转入证据审计，方可移交权限。"
+			_captcha_hint.add_theme_color_override("font_color", Color("#6ed08b"))
+		else:
+			_captcha_hint.text = "拖动滑块，将缺失的图块对齐到暗格，使夜景图完整"
+			_captcha_hint.remove_theme_color_override("font_color")
 	_primary_btn.disabled = not _puzzle_solved
 
 
@@ -504,6 +508,8 @@ func _setup_puzzle() -> void:
 
 func _on_captcha_close_pressed() -> void:
 	if _phase != Phase.CAPTCHA:
+		return
+	if not _terminal_truth_complete():
 		return
 	_enter_phase(Phase.EVIDENCE_AUDIT)
 
@@ -553,8 +559,21 @@ func _truth_audit_passes() -> bool:
 func _refresh_captcha_truth_hint() -> void:
 	if not _terminal_truth_complete():
 		return
-	_captcha_hint.text = "关键情报已集齐：提交拼图验证，或点右上角 × 转入证据审计，均可移交权限。"
+	_captcha_hint.text = "关键情报已集齐：点右上角 × 转入证据审计，方可移交权限。"
 	_captcha_hint.add_theme_color_override("font_color", Color("#6ed08b"))
+
+
+func _refresh_captcha_close_btn() -> void:
+	if not is_instance_valid(_captcha_close_btn):
+		return
+	var qualified := _terminal_truth_complete()
+	_captcha_close_btn.disabled = not qualified
+	_captcha_close_btn.modulate = Color.WHITE if qualified else Color(0.42, 0.42, 0.42, 0.55)
+	_captcha_close_btn.tooltip_text = (
+		"转入证据审计（需集齐四条关键情报）"
+		if not qualified
+		else "转入证据审计"
+	)
 
 
 func _evidence_audit_report() -> Dictionary:
@@ -600,11 +619,7 @@ func _on_primary_pressed() -> void:
 		Phase.CAPTCHA:
 			if not _puzzle_solved:
 				return
-			if _terminal_truth_complete():
-				_audit_passed = true
-				_enter_phase(Phase.RESULT_PASS)
-			else:
-				_enter_phase(Phase.RESULT_FAIL)
+			_enter_phase(Phase.RESULT_FAIL)
 		Phase.EVIDENCE_AUDIT:
 			if _audit_passed:
 				_enter_phase(Phase.RESULT_PASS)

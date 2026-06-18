@@ -69,15 +69,23 @@ func _check_terminal_audit() -> void:
 	terminal._puzzle_solved = true
 	terminal._on_primary_pressed()
 	await process_frame
-	_expect(terminal._phase == terminal.Phase.RESULT_PASS, "captcha submit should pass when truth audit passes")
-	_expect(terminal._audit_passed, "captcha submit should mark audit passed when truth complete")
+	_expect(terminal._phase == terminal.Phase.RESULT_FAIL, "captcha submit should always fail even with truth complete")
+
+	terminal.start_flow(journal_entries, 3, 1, {})
+	terminal._enter_phase(terminal.Phase.CAPTCHA)
+	terminal._on_captcha_close_pressed()
+	await process_frame
+	terminal._on_primary_pressed()
+	await process_frame
+	_expect(terminal._phase == terminal.Phase.RESULT_PASS, "captcha close should pass when truth audit passes")
+	_expect(terminal._audit_passed, "evidence audit should mark audit passed when truth complete")
 
 	terminal.start_flow(journal_entries, 3, 1, {})
 	terminal._on_report_chosen("habitable")
 	await process_frame
 	_expect(
-		terminal._phase == terminal.Phase.RESULT_PASS,
-		"report step should skip captcha when all truth encounters are available",
+		terminal._phase == terminal.Phase.CAPTCHA,
+		"report step should always continue to captcha",
 	)
 
 	if meta != null:
