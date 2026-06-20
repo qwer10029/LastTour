@@ -797,6 +797,8 @@ func update_commander_brief(data: Dictionary) -> void:
 			lines.append("· %s → 目标格" % tag)
 		if bool(data.get("pressure_active", false)):
 			lines.append("· 佯攻压迫进行中")
+		if bool(data.get("only_non_attack_targets", false)):
+			lines.append("· 火力设施已清除，敌群将直取车辆")
 	if is_instance_valid(_commander_brief_label):
 		_commander_brief_label.text = "\n".join(lines)
 	_commander_brief_panel.show()

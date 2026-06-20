@@ -48,6 +48,9 @@ var _pending_logs: Array[String] = []
 var last_missions: Array = []       # [{target_cell, staging_cell, state, key}]
 var last_pressure_active := false
 var last_assault_keys: Array = []
+var last_only_non_attack_targets := false
+
+var _was_only_non_attack_targets := false
 
 
 func configure(diff: int, cols: int, rows: int, vehicle_cells: Array) -> void:
@@ -62,6 +65,8 @@ func configure(diff: int, cols: int, rows: int, vehicle_cells: Array) -> void:
 	last_missions.clear()
 	last_pressure_active = false
 	last_assault_keys.clear()
+	last_only_non_attack_targets = false
+	_was_only_non_attack_targets = false
 
 	# 难度派生参数
 	match difficulty:
@@ -119,10 +124,18 @@ func _replan(ctx: Dictionary) -> void:
 		last_missions.clear()
 		last_pressure_active = false
 		last_assault_keys.clear()
+		last_only_non_attack_targets = false
 		return
 
-	# 1) 选定攻坚目标塔。按"威胁高且耐久低"打分。
+	# 1) 选定攻坚目标塔。按"威胁高且耐久低"打分；路障、陷阱等无攻击能力的设施不成为目标。
 	var target_towers := _pick_target_towers(towers)
+
+	# 若场上已没有能攻击的塔，指挥官不再分配攻坚/佯攻任务，所有敌人回退为直冲车辆。
+	var has_attack_tower := _has_attack_tower(towers)
+	last_only_non_attack_targets = not has_attack_tower
+	if last_only_non_attack_targets and not _was_only_non_attack_targets:
+		_queue_log("指挥官：场上已无有效火力点，全体直冲车辆")
+	_was_only_non_attack_targets = last_only_non_attack_targets
 
 	# 2) 维护任务表：为每个目标塔建立/更新攻坚任务。
 	var active_keys := {}
@@ -154,7 +167,7 @@ func _replan(ctx: Dictionary) -> void:
 	_rebuild_fields(ctx, assault_keys)
 
 	# 6) 保存快照供可视化
-	last_pressure_active = _pressure_ratio > 0.0
+	last_pressure_active = _pressure_ratio > 0.0 and has_attack_tower
 	last_assault_keys = assault_keys.duplicate()
 	last_missions.clear()
 	for key: String in _missions.keys():
@@ -172,8 +185,7 @@ func _pick_target_towers(towers: Array) -> Array:
 	for tower: Dictionary in towers:
 		if tower.get("removed", false):
 			continue
-		var type_id := str(tower.get("type", ""))
-		if type_id == "trap":
+		if not _tower_can_attack(tower):
 			continue
 		var hp := float(tower.get("hp", 1.0))
 		var threat := _tower_threat_hint(tower)
@@ -186,13 +198,30 @@ func _pick_target_towers(towers: Array) -> Array:
 	return out
 
 
+func _tower_can_attack(tower: Dictionary) -> bool:
+	var tdef: Dictionary = NightTdDefs.get_tower_def(str(tower.get("type", "")))
+	var range_px := float(tdef.get("range", 0.0))
+	var fire_interval := float(tdef.get("fire_interval", 0.0))
+	var damage := float(tdef.get("damage", 0.0))
+	return range_px > 0.0 and fire_interval > 0.0 and damage > 0.0
+
+
+func _has_attack_tower(towers: Array) -> bool:
+	for tower: Dictionary in towers:
+		if tower.get("removed", false):
+			continue
+		if _tower_can_attack(tower):
+			return true
+	return false
+
+
 func _tower_threat_hint(tower: Dictionary) -> float:
 	var tdef: Dictionary = NightTdDefs.get_tower_def(str(tower.get("type", "")))
 	var dmg := float(tdef.get("damage", 0.0))
 	var fi := float(tdef.get("fire_interval", 1.0))
 	var rng := float(tdef.get("range", 0.0))
 	if rng <= 0.0 or fi <= 0.0:
-		return 0.5
+		return 0.0
 	return (dmg / fi) * float(tower.get("power_scale", 1.0))
 
 
@@ -233,8 +262,8 @@ func _rebuild_fields(ctx: Dictionary, assault_keys: Array) -> void:
 	var barrier_cost: PackedFloat32Array = ctx.get("barrier_cost", PackedFloat32Array())
 	var danger_cost: PackedFloat32Array = ctx.get("danger_cost", PackedFloat32Array())
 	var needed := {}
-	# 佯攻组：无视危险场直冲基地（有则建，无则跳）
-	if _pressure_ratio > 0.0:
+	# 佯攻组：无视危险场直冲基地。没有攻坚目标时佯攻无意义，不建场。
+	if _pressure_ratio > 0.0 and not assault_keys.is_empty():
 		needed[KEY_PRESSURE] = _combine_cost(barrier_cost, PackedFloat32Array(), _cols, _rows)
 	# 攻坚组：走完整流场（含危险），到集结/突击点
 	for key: String in assault_keys:

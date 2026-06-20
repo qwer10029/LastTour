@@ -1840,6 +1840,7 @@ func get_commander_display_data() -> Dictionary:
 		"pressure_active": _commander.last_pressure_active,
 		"assault_keys": _commander.last_assault_keys,
 		"suppressed": _commander.suppressed,
+		"only_non_attack_targets": _commander.last_only_non_attack_targets,
 	}
 
 
