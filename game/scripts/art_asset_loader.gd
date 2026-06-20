@@ -28,12 +28,7 @@ static func load_texture_from_disk(path: String) -> Texture2D:
 	return ImageTexture.create_from_image(img)
 
 
-## 按文件头读取 PNG/JPEG/WebP，不依赖扩展名（避免 .png 实为 JPG 导致加载失败）。
-static func load_image_from_disk(path: String) -> Image:
-	var global_path := ProjectSettings.globalize_path(path)
-	if global_path == "" or not FileAccess.file_exists(global_path):
-		return null
-	var bytes := FileAccess.get_file_as_bytes(global_path)
+static func _decode_image_bytes(bytes: PackedByteArray) -> Image:
 	if bytes.is_empty():
 		return null
 	var img := Image.new()
@@ -49,10 +44,54 @@ static func load_image_from_disk(path: String) -> Image:
 		if header_riff == "RIFF" and header_webp == "WEBP":
 			if img.load_webp_from_buffer(bytes) == OK and not img.is_empty():
 				return img
-	var fallback: Image = Image.load_from_file(global_path)
+	return null
+
+
+static func _load_image_from_resource(path: String) -> Image:
+	if not ResourceLoader.exists(path):
+		return null
+	var res: Resource = load(path)
+	if res is Texture2D:
+		var tex := res as Texture2D
+		var img := tex.get_image()
+		if img != null and not img.is_empty():
+			return img
+	if res is Image:
+		var img_res := res as Image
+		if not img_res.is_empty():
+			return img_res.duplicate()
+	return null
+
+
+static func _load_image_from_file_path(file_path: String) -> Image:
+	if file_path == "" or not FileAccess.file_exists(file_path):
+		return null
+	var bytes := FileAccess.get_file_as_bytes(file_path)
+	var img := _decode_image_bytes(bytes)
+	if img != null:
+		return img
+	var fallback: Image = Image.load_from_file(file_path)
 	if fallback != null and not fallback.is_empty():
 		return fallback
 	return null
+
+
+## 按文件头读取 PNG/JPEG/WebP，不依赖扩展名（避免 .png 实为 JPG 导致加载失败）。
+## 导出后资源在 PCK 内，须用 res:// + FileAccess 或 ResourceLoader，不能依赖 globalize_path。
+static func load_image_from_disk(path: String) -> Image:
+	if path == "":
+		return null
+	if path.begins_with("res://"):
+		var from_resource := _load_image_from_resource(path)
+		if from_resource != null:
+			return from_resource
+		var from_pck := _load_image_from_file_path(path)
+		if from_pck != null:
+			return from_pck
+	var global_path := ProjectSettings.globalize_path(path)
+	if global_path != "" and global_path != path:
+		return _load_image_from_file_path(global_path)
+	return _load_image_from_file_path(path)
 
 
 static func _image_has_visible_pixels(img: Image, min_alpha: float = 0.02) -> bool:
