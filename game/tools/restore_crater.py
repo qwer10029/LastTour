@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PIL import Image
 
-SRC = Path(__file__).resolve().parents[2] / "new pictures" / "弹坑.jpg"
+SRC = Path(__file__).resolve().parents[2] / "assets" / "reference" / "弹坑.jpg"
 DST = Path(__file__).resolve().parents[1] / "assets" / "tiles" / "road" / "road_crater.png"
 MAX_SIDE = 256
 HOLE_FILL = (24, 20, 18, 255)

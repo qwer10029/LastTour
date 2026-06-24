@@ -1,4 +1,4 @@
-"""Import assets from ../new pictures, optionally key background, crop and compress."""
+"""Import assets from assets/reference, optionally key background, crop and compress."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -9,7 +9,7 @@ from process_props import crop_to_content, process, remove_background, resize_to
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO = ROOT.parent
-SRC_DIR = REPO / "new pictures"
+SRC_DIR = REPO / "assets" / "reference"
 PROPS_DIR = ROOT / "assets" / "sprites" / "props"
 ROAD_DIR = ROOT / "assets" / "tiles" / "road"
 
