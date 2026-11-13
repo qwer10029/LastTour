@@ -66,7 +66,19 @@ func _run() -> void:
 	_expect(not minimap._cell_visible(site), "dormant cache should be hidden on the map with fog on")
 	minimap.war_fog_enabled = false
 	_expect(not minimap._cell_visible(site), "dormant cache should be hidden on the map with fog off")
-	# 旧存档可能已把它标成 explored：仍应视为空地
+	# 不应画出通往隐藏点的路段（开雾 / 关雾、门口路口已探索时都一样）
+	for neighbor in _neighbors(map, site):
+		map.get_cell(neighbor)["explored"] = true
+		for fog in [true, false]:
+			minimap.war_fog_enabled = fog
+			_expect(not minimap._road_link_drawn(neighbor, site) and not minimap._road_link_drawn(site, neighbor),
+				"no road stub should be drawn into the dormant cache from %s (fog %s)" % [str(map.coord_from_index(neighbor)), str(fog)])
+	# 普通的已探索路口之间仍要画路，不能误伤真实道路
+	minimap.war_fog_enabled = true
+	var road_pair := _explored_road_pair(map, site)
+	_expect(road_pair.size() == 2 and minimap._road_link_drawn(road_pair[0], road_pair[1]),
+		"roads between explored junctions should still be drawn")
+		# 旧存档可能已把它标成 explored：仍应视为空地
 	map.get_cell(site)["explored"] = true
 	minimap.war_fog_enabled = true
 	_expect(not minimap._cell_visible(site), "dormant cache marked explored by an old save should stay hidden")
@@ -82,6 +94,25 @@ func _run() -> void:
 		"halting at a revealed cache's door should mark it explored")
 	minimap.war_fog_enabled = fog_before
 	_finish()
+
+
+func _neighbors(map, index: int) -> Array[int]:
+	var out: Array[int] = []
+	for dir in map.get_available_directions(index):
+		var n: int = map.get_neighbor_index(index, dir)
+		if n >= 0:
+			out.append(n)
+	return out
+
+
+func _explored_road_pair(map, site: int) -> Array[int]:
+	var approach := int(map.get_cell(site).get("approach_road_index", -1))
+	for n in _neighbors(map, approach):
+		if n != site and map.is_drive_node(n):
+			map.get_cell(approach)["explored"] = true
+			map.get_cell(n)["explored"] = true
+			return [approach, n]
+	return []
 
 
 func _finish() -> void:

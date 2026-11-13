@@ -243,6 +243,13 @@ func _cell_visible(index: int) -> bool:
 	return bool(world_map.get_cell(index)["explored"])
 
 
+## 两格之间的路段是否绘制：两端都可见才画；未揭示的隐藏物资点按空地处理，不画通往它的路。
+func _road_link_drawn(index: int, other: int) -> bool:
+	if world_map == null or not world_map.is_valid_index(index) or not world_map.is_valid_index(other):
+		return false
+	return _cell_visible(index) and _cell_visible(other)
+
+
 func _draw_map_content(map_rect: Rect2, origin: Vector2, span: Vector2) -> void:
 	var cell_size_mm := _map_cell_size(map_rect, span)
 	var marker_radius := 5.0 if local_radar_mode else 7.0
@@ -296,7 +303,7 @@ func _draw_map_content(map_rect: Rect2, origin: Vector2, span: Vector2) -> void:
 			var other := world_map.get_neighbor_index(index, direction)
 			if other < 0 or other < index:
 				continue
-			if not _cell_visible(other):
+			if not _road_link_drawn(index, other):
 				continue
 			var other_coord := world_map.coord_from_index(other)
 			if not _coord_in_view(other_coord, origin, span):
