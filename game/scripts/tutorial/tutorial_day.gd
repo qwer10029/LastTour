@@ -321,16 +321,30 @@ func _on_backpack_closed() -> void:
 	_sync_tutorial_objective_override()
 
 
+func _set_backpack_tutorial_hint(text: String) -> void:
+	if is_instance_valid(_backpack_ui) and _backpack_ui.has_method("set_tutorial_hint"):
+		_backpack_ui.set_tutorial_hint(text)
+
+
 func _sync_tutorial_objective_override() -> void:
 	if not is_instance_valid(_tutorial_director):
 		return
 	_tutorial_director.visible = true
+	_set_backpack_tutorial_hint("")
+	# 背包打开时底部教学浮层会压住背包底栏，改为把提示写进背包内部。
 	if _backpack_open and _tutorial_director.current_step in ["return", "evening"]:
+		_tutorial_director.visible = false
 		_tutorial_director.set_objective_override(_tutorial_director.override_hint("close_backpack"))
+		_set_backpack_tutorial_hint(
+			_tutorial_director.override_hint("backpack_return")
+			if _tutorial_director.current_step == "return"
+			else _tutorial_director.override_hint("close_backpack")
+		)
 		return
 	if _backpack_open and _tutorial_director.current_step == "craft":
 		_tutorial_director.visible = false
 		_tutorial_director.set_objective_override("")
+		_set_backpack_tutorial_hint(_tutorial_director.get_objective_text())
 		return
 	if _tutorial_director.current_step == "craft" and not _backpack_open:
 		_tutorial_director.set_objective_override(_tutorial_director.override_hint("open_backpack"))

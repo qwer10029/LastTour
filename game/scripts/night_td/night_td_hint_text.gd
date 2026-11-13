@@ -31,7 +31,7 @@ const TUTORIAL_COMBAT_OBJECTIVES: Dictionary = {
 	"power_control": "【请操作】右侧「电力调度」点 +/-，调节一座塔的功率",
 	"click_select": "【请操作】单击地图上的防御塔，高亮电力面板对应行",
 	"box_select": "【请操作】按住左键拖拽，框选一座或多座防御塔",
-	"commander_overlay": "【请操作】点开右上「热力图」，查看敌人指挥官集结与突击",
+	"commander_overlay": "【请操作】点开顶栏左侧的「热力图: 关」按钮（不是右侧的敌情图鉴），查看敌人指挥官集结与突击",
 	"emergency_fuel": "【请操作】点击「应急供能」，临时提升反应堆产能",
 	"survive": "守住车辆直到波次清空",
 }

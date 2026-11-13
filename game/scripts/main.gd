@@ -83,6 +83,8 @@ var _ui_refresh_scheduled := false
 var _last_pda_entries_sig := ""
 var _foot_layout_cache: Dictionary = {}
 var _world_map_overlay: WorldMapOverlay
+## 打开地图时由地图暂停了白天计时（与背包一致），关闭时据此恢复。
+var _world_map_paused_time := false
 var _drive_exit_locked: bool = false  ## 到岔口后须先松开方向键，再按一次才选路
 var _current_layer: int = 1
 var _elevator_repair_progress: int = 0
@@ -428,6 +430,7 @@ func _setup_world_map_overlay() -> void:
 	_world_map_overlay.name = "WorldMapOverlay"
 	hud.add_child(_world_map_overlay)
 	_world_map_overlay.hide()
+	_world_map_overlay.closed.connect(_on_world_map_closed)
 
 
 func _toggle_world_map() -> void:
@@ -462,11 +465,31 @@ func _open_world_map() -> void:
 		hints,
 		segment_axis,
 	)
+	# 与背包一致：查看地图时白天计时暂停。
+	if is_instance_valid(time_system) and not _is_night_phase() and not time_system.is_paused():
+		time_system.pause()
+		_world_map_paused_time = true
 
 
 func _close_world_map() -> void:
 	if is_instance_valid(_world_map_overlay):
 		_world_map_overlay.close_overlay()
+
+
+## 地图仍开着时（M 在背包/暂停菜单上方也能打开），由地图接管暂停，关闭地图时再恢复。
+func _world_map_holds_time_pause() -> bool:
+	if is_instance_valid(_world_map_overlay) and _world_map_overlay.is_open():
+		_world_map_paused_time = true
+		return true
+	return false
+
+
+func _on_world_map_closed() -> void:
+	if not _world_map_paused_time:
+		return
+	_world_map_paused_time = false
+	if is_instance_valid(time_system) and not _game_paused and not _backpack_open and not _is_night_phase():
+		time_system.resume()
 
 
 func _mark_overworld_dirty() -> void:
@@ -907,6 +930,7 @@ func _seed_final_layer_evidence_spawns() -> void:
 	return
 
 func _process(_delta: float) -> void:
+	_sync_story_dialogue_menu_suppression()
 	if _run_ended or _game_paused or _backpack_open:
 		return
 	if Input.is_action_just_pressed("enter_defense_mode"):
@@ -914,6 +938,15 @@ func _process(_delta: float) -> void:
 			_try_foot_console_interact()
 		else:
 			_try_enter_defense_mode()
+
+
+func _sync_story_dialogue_menu_suppression() -> void:
+	if not is_instance_valid(_story_dialogue_ui):
+		return
+	var menu_open := _game_paused or _backpack_open or (
+		is_instance_valid(_world_map_overlay) and _world_map_overlay.is_open()
+	)
+	_story_dialogue_ui.set_menu_suppressed(menu_open)
 
 
 func _physics_process(delta: float) -> void:
@@ -2196,13 +2229,13 @@ func _close_backpack() -> void:
 	_backpack_open = false
 	if is_instance_valid(_backpack_ui):
 		_backpack_ui.hide_backpack()
-	if is_instance_valid(time_system) and not _game_paused and not _is_night_phase():
+	if is_instance_valid(time_system) and not _game_paused and not _is_night_phase() and not _world_map_holds_time_pause():
 		time_system.resume()
 
 
 func _on_backpack_closed() -> void:
 	_backpack_open = false
-	if is_instance_valid(time_system) and not _game_paused and not _is_night_phase():
+	if is_instance_valid(time_system) and not _game_paused and not _is_night_phase() and not _world_map_holds_time_pause():
 		time_system.resume()
 
 
@@ -2977,7 +3010,7 @@ func _resume_from_pause() -> void:
 			time_system.pause()
 		elif _should_pause_day_night_for_terminal_sequence():
 			time_system.pause()
-		else:
+		elif not _world_map_holds_time_pause():
 			time_system.resume()
 
 
@@ -3893,7 +3926,7 @@ func _update_foot_story_prompts() -> bool:
 				if _story_controller.is_near_interior_npc(
 					story_id, _current_district_index, _foot_local_pos
 				):
-					var return_text := StoryData.prompt_return(story_id)
+					var return_text := _story_controller.return_prompt_text(story_id)
 					return _show_story_e_action_overlay(
 						return_text,
 						_clean_action_button_label(return_text),

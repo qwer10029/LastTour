@@ -48,8 +48,9 @@ const PHASE_TITLES := {
 
 ## 动态覆盖提示（按 B 关闭、走到门口等），改文案主要改这里
 const OVERRIDE_HINTS := {
-	"open_backpack": "按 B 打开背包",
+	"open_backpack": "按 B 打开背包，点击高亮的「合成零件」",
 	"close_backpack": "按 B 关闭背包",
+	"backpack_return": "零件已合成。按 B 关闭背包，然后按 E 上车",
 	"foot_move": "用 WASD 在室内移动",
 	"foot_loot": "用 WASD 移动，收集地上的废料与燃料",
 	"foot_return_near_door": "按 E 上车返回车辆",

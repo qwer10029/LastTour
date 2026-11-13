@@ -349,6 +349,15 @@ func _draw_arrow_head(tip: Vector2, direction: Vector2, size: float, color: Colo
 
 
 ## 威胁热力图：用颜色覆盖层展示每格的威胁值（火力覆盖密度）。
+## 热力图标题右对齐到战场上沿：左上角固定显示「敌指态势」面板，
+## 原先左对齐的标题会被它压住，读不清。
+func _draw_heatmap_caption(text: String, color: Color) -> void:
+	var width := get_field_rect_local().size.x - 16.0
+	if width <= 0.0:
+		return
+	draw_string(_font, field_origin + Vector2(8, -28), text, HORIZONTAL_ALIGNMENT_RIGHT, width, 12, color)
+
+
 func _draw_influence_heatmap() -> void:
 	if _controller == null:
 		return
@@ -362,13 +371,9 @@ func _draw_influence_heatmap() -> void:
 	if threat.size() == 0 or cols == 0 or max_t <= 0.0:
 		var field_rect := get_field_rect_local()
 		draw_rect(field_rect, Color(0.1, 0.12, 0.2, 0.12), true)
-		draw_string(_font, field_origin + Vector2(8, -28),
-			"威胁热力图  (无火力覆盖)", HORIZONTAL_ALIGNMENT_LEFT, -1, 12,
-			Color(0.4, 0.5, 0.7, 0.8))
+		_draw_heatmap_caption("威胁热力图  (无火力覆盖)", Color(0.4, 0.5, 0.7, 0.8))
 		return
-	draw_string(_font, field_origin + Vector2(8, -28),
-		"威胁热力图  (%.0f DPS 峰值)" % max_t, HORIZONTAL_ALIGNMENT_LEFT, -1, 12,
-		Color(0.95, 0.4, 0.3, 0.85))
+	_draw_heatmap_caption("威胁热力图  (%.0f DPS 峰值)" % max_t, Color(0.95, 0.4, 0.3, 0.85))
 	var tile := _layout_tile_size
 	for y in range(rows):
 		for x in range(cols):

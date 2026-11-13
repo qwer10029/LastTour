@@ -684,6 +684,14 @@ func _on_fuel_boost_pressed() -> void:
 	_complete_tutorial_combat_step("emergency_fuel")
 
 
+## 波次计数只算波次表里的刷怪事件。_enemies_spawned 还包含首领/召唤者召出的增援，
+## 拿它当分子会出现「波次 20/16」这种超过总数的显示（雷霆首领战）。
+func _scheduled_spawned_count() -> int:
+	if _wave_scheduler != null:
+		return _wave_scheduler.spawned_count
+	return _enemies_spawned
+
+
 func _count_hostiles() -> int:
 	var n := 0
 	for e in _enemies:
@@ -727,7 +735,7 @@ func _process_combat(delta: float) -> void:
 		var total := _wave_scheduler.total_spawn_events if _wave_scheduler != null else _enemies_spawned + _wave_queue.size()
 		var remain := _wave_scheduler.remaining_count() if _wave_scheduler != null else _wave_queue.size()
 		hud.set_combat_status("波次 %d/%d · 待刷 %d · 场上 %d 敌" % [
-			_enemies_spawned, total, remain, _count_hostiles()
+			_scheduled_spawned_count(), total, remain, _count_hostiles()
 		])
 		if show_overlay:
 			_sync_commander_brief_hud()
@@ -2229,7 +2237,7 @@ func _begin_combat() -> void:
 		else:
 			hud.set_hint(NightTdHintText.COMBAT_ACTIVE_SHORT)
 		var total := _wave_scheduler.total_spawn_events if _wave_scheduler != null else _enemies_spawned + _wave_queue.size()
-		hud.set_combat_status("波次 %d/%d · 场上 %d 敌" % [_enemies_spawned, total, _count_hostiles()])
+		hud.set_combat_status("波次 %d/%d · 场上 %d 敌" % [_scheduled_spawned_count(), total, _count_hostiles()])
 		hud.append_log("—— 夜间威胁来袭 ——")
 		_refresh_fuel_boost_hud()
 
