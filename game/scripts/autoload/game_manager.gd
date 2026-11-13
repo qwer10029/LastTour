@@ -62,6 +62,9 @@ const BOOT_HANDOFF_RATIO := 0.98
 # -- 场景切换模式（方案四）：Day/Night 独立场景之间的状态传递 --
 var run_state = null   # RunState — 跨场景共享状态（类型在 preload 中解析）
 var _game_paused := false           # 暂停状态（NightTdRoot 需要查询）
+## 暂停菜单里的「战争黑雾」调试开关。每次黎明都会重新加载白天场景（新的 Main 实例），
+## 只存在 Main 上会在每个早晨被导出默认值 true 覆盖回去，所以在本次会话内记在这里。
+var war_fog_enabled := true
 
 ## 启动昼夜切换加载页，进入夜间塔防场景（有加载画面）。
 func go_to_night_with_loading(rs) -> void:

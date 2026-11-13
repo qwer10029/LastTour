@@ -178,6 +178,7 @@ func _ready() -> void:
 	_base_fuel_max = fuel_max
 	_base_elevator_repair_cost = base_elevator_repair_cost
 	_apply_run_config_from_manager()
+	war_fog_enabled = war_fog_enabled and bool(GameManager.war_fog_enabled)
 	if road_render_settings == null:
 		road_render_settings = RoadRenderSettings.new()
 	DayTopdownRender.apply_settings(road_render_settings)
@@ -2131,6 +2132,7 @@ func _map_cell_visible_for_player(index: int) -> bool:
 
 func _on_war_fog_toggled(enabled: bool) -> void:
 	war_fog_enabled = enabled
+	GameManager.war_fog_enabled = enabled
 	if is_instance_valid(minimap_view):
 		minimap_view.set_war_fog_enabled(enabled)
 	_mark_overworld_dirty()
