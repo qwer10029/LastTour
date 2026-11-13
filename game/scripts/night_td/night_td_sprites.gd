@@ -4,6 +4,9 @@ extends RefCounted
 const TOWER_DIR := "res://assets/sprites/night_td/towers/"
 const ENEMY_DIR := "res://assets/sprites/night_td/enemies/"
 const THUNDER_LEITING_ENEMY_PATH := "res://assets/sprites/npc/npc_thunder_leiting.png"
+## 预烘焙的抠图结果（tools/bake_night_td_sprites.gd 生成，与运行时抠图逐像素一致）。
+## 存在时直接加载，跳过运行时逐像素 GDScript 抠图（每张 1024² 图 1.5–3.5 秒）。
+const BAKED_DIR := "res://assets/sprites/night_td/baked/"
 
 const DEFAULT_ENEMY_ART_FACE := Vector2.RIGHT
 const DEFAULT_TOWER_ART_FACE := Vector2.UP
@@ -83,8 +86,10 @@ static func tower_texture(type_id: String) -> Texture2D:
 	var cache_key := "tower|%s" % type_id
 	if _cache.has(cache_key):
 		return _cache[cache_key]
-	var path := TOWER_DIR + "tower_%s.png" % _tower_file_id(type_id)
-	var tex := ArtAssetLoader.load_texture_loot_alpha_key(path)
+	var file_name := "tower_%s.png" % _tower_file_id(type_id)
+	var tex := _load_baked(file_name)
+	if tex == null:
+		tex = ArtAssetLoader.load_texture_loot_alpha_key(TOWER_DIR + file_name)
 	_cache[cache_key] = tex
 	return tex
 
@@ -94,11 +99,37 @@ static func enemy_texture(type_id: String) -> Texture2D:
 	if _cache.has(cache_key):
 		return _cache[cache_key]
 	var path := ENEMY_DIR + "enemy_%s.png" % type_id
+	var tex: Texture2D = null
 	if type_id == "thunder_leiting":
 		path = THUNDER_LEITING_ENEMY_PATH
-	var tex := ArtAssetLoader.load_texture_loot_alpha_key(path)
+	else:
+		tex = _load_baked("enemy_%s.png" % type_id)
+	if tex == null:
+		tex = ArtAssetLoader.load_texture_loot_alpha_key(path)
 	_cache[cache_key] = tex
 	return tex
+
+
+static func _load_baked(file_name: String) -> Texture2D:
+	var path := BAKED_DIR + file_name
+	if not ResourceLoader.exists(path):
+		return null
+	var res: Resource = load(path)
+	return res as Texture2D
+
+
+## 供烘焙工具使用：源图 → 烘焙图。thunder_leiting 源图自带透明，运行时本就不抠图，无需烘焙。
+static func bake_sources() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for dir_path in [TOWER_DIR, ENEMY_DIR]:
+		var dir := DirAccess.open(dir_path)
+		if dir == null:
+			continue
+		for file_name in dir.get_files():
+			if not file_name.ends_with(".png"):
+				continue
+			result.append({"source": dir_path + file_name, "baked": BAKED_DIR + file_name})
+	return result
 
 
 static func draw_entity_sprite(
