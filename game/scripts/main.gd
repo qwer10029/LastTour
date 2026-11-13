@@ -89,6 +89,8 @@ var _drive_exit_locked: bool = false  ## 到岔口后须先松开方向键，再
 var _current_layer: int = 1
 var _elevator_repair_progress: int = 0
 var _run_ended := false
+## 已离开的楼层累计探索格数（结算「地图探索」统计整局，而不只是当前楼层）。
+var _explored_prior_layers := 0
 var _run_end_reason := ""
 var _final_choice_id := ""
 var _final_defense_cleared := false
@@ -764,6 +766,7 @@ func _apply_pregenerated_map(bootstrap: Dictionary) -> void:
 
 func _start_new_run() -> void:
 	_run_ended = false
+	_explored_prior_layers = 0
 	_run_end_reason = ""
 	_final_choice_id = ""
 	_final_defense_cleared = false
@@ -2974,7 +2977,9 @@ func _build_run_summary_data(title: String) -> Dictionary:
 		{"label": "车辆耐久", "value": "%.0f / %.0f" % [_vehicle_hp, _vehicle_hp_max]},
 		{"label": "体力", "value": "%.0f" % _survival.stamina},
 		{"label": "燃料", "value": "%.1f" % _fuel},
-		{"label": "地图探索", "value": "%d / %d 格" % [_map.explored_count(), _map.cells.size()]},
+		{"label": "地图探索", "value": "共 %d 格（本层 %d / %d）" % [
+			_explored_prior_layers + _map.explored_count(), _map.explored_count(), _map.cells.size()
+		]},
 	]
 	if not _last_night_losses.is_empty():
 		stats.append({"label": "夜间损耗", "value": "、".join(_last_night_losses)})
@@ -3203,6 +3208,7 @@ func capture_save_data() -> Dictionary:
 			"run_ended": _run_ended,
 			"run_end_reason": _run_end_reason,
 			"final_choice_id": _final_choice_id,
+			"explored_prior_layers": _explored_prior_layers,
 			"tower_upgrades": _tower_upgrades.duplicate(true),
 			"blueprint_state": _blueprint_state.duplicate(true),
 		},
@@ -3268,6 +3274,13 @@ func _apply_save_data(data: Dictionary) -> void:
 	_final_choice_id = str(layer.get("final_choice_id", ""))
 	_tower_upgrades = NightTdUpgrades.sanitize(layer.get("tower_upgrades", {}))
 	_blueprint_state = BlueprintCatalog.sanitize_run_state(layer.get("blueprint_state", {}))
+	_explored_prior_layers = int(layer.get("explored_prior_layers", 0))
+
+	if is_instance_valid(time_system):
+		time_system.load_from_dictionary(data.get("time", {}))
+
+	# 结算面板要在时间恢复之后再弹：之前在这里之前调用，time_system 还是新场景的第 1 天，
+	# 死亡结算（夜战后切回白天场景时）就会显示「生存天数 1」。
 	if _run_ended and _run_end_reason in ["vehicle_destroyed", "player_collapsed", "out_of_fuel", "strike"]:
 		_show_run_summary()
 	elif _run_ended and _run_end_reason == "reached_top":
@@ -3275,9 +3288,6 @@ func _apply_save_data(data: Dictionary) -> void:
 			_show_run_summary()
 		else:
 			_begin_final_ceremony()
-
-	if is_instance_valid(time_system):
-		time_system.load_from_dictionary(data.get("time", {}))
 
 	_spawn_resources()
 	_story_controller.restore_after_load()
@@ -5573,6 +5583,7 @@ func _advance_layer() -> void:
 	if _current_layer >= total_layers:
 		_request_terminal_access()
 		return
+	_explored_prior_layers += _map.explored_count()
 	_current_layer += 1
 	_mode = TravelMode.DRIVE
 	_segment_target_index = -1
