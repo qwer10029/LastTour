@@ -70,7 +70,7 @@
 		},
 		"quest:chronicler_memory": {
 			"name": "存储模块",
-			"desc": "三楼通讯室备件箱取出的军用级记忆体，仍可读写。",
+			"desc": "档案室备件箱取出的军用级记忆体，仍可读写。",
 			"stack_max": 5,
 			"color": "#b8a0e8",
 			"usable": false

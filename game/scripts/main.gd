@@ -3903,7 +3903,7 @@ func _update_foot_story_prompts() -> bool:
 				if _story_controller.is_near_interior_npc(
 					story_id, _current_district_index, _foot_local_pos
 				):
-					var return_text := StoryData.prompt_return(story_id)
+					var return_text := _story_controller.return_prompt_text(story_id)
 					return _show_story_e_action_overlay(
 						return_text,
 						_clean_action_button_label(return_text),

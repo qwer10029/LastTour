@@ -65,7 +65,7 @@
       "prompt_return": "与编史者交还存储模块",
       "dialogue_path": "res://data/dialogues/chronicler_04.json",
       "quest": {
-        "hint": "前往三楼通讯室拾取存储模块（2 块）。",
+        "hint": "在档案室内拾取存储模块（2 块）。",
         "collect_item_id": "quest:chronicler_memory",
         "collect_count": 2,
         "pickup_label": "存储模块",

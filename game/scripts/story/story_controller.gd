@@ -170,7 +170,9 @@ func _handle_npc_dialogue_interact(story_id: String, node_index: int) -> bool:
 		var quest: Dictionary = StoryData.quest_def(story_id)
 		var need := int(quest.get("collect_count", 0))
 		if run_state.get_collect_count(story_id) >= need:
-			entry = "return_start"
+			entry = _post_handover_resume_node(story_id)
+			if entry == "":
+				entry = "return_start"
 		else:
 			entry = "quest_remind"
 	elif not run_state.is_completed(story_id):
@@ -320,6 +322,8 @@ func on_entered_district_foot(district_index: int) -> void:
 		if run_state.is_quest_active(story_id):
 			_sync_quest_pickups(story_id, district_index)
 			fix_foot_loot_positions(district_index)
+			if _post_handover_resume_node(story_id) != "":
+				call_deferred("_begin_interior_encounter", story_id)
 		elif run_state.is_completed(story_id):
 			_clear_unlocked_loot_for_district(district_index)
 		if not run_state.is_completed(story_id) and not run_state.is_quest_active(story_id):
@@ -338,10 +342,41 @@ func _interior_dialogue_entry(story_id: String) -> String:
 		if backpack != null and backpack.has("data_chip_echo_operation", 1):
 			return _normalize_dialogue_entry(story_id, "choice")
 	if run_state.is_quest_active(story_id):
-		return ""
+		return _post_handover_resume_node(story_id)
 	if run_state.is_completed(story_id):
 		return ""
 	return _normalize_dialogue_entry(story_id, "")
+
+
+## 交还物品后、写入完成前被打断（走出建筑、入夜等）时的续接节点。
+## 物品已被扣除，若再从 return_start 开始会因缺少物品而永远无法完成。
+const _POST_HANDOVER_RESUME := {
+	"chronicler_04": {
+		"repair_01": "repair_01",
+		"repair_02": "repair_02",
+		"repair_done": "repair_done",
+		# story_done 之前的 repair_done 负责登记日记条目，需重新经过一次。
+		"story_done": "repair_done",
+	},
+}
+
+
+func _post_handover_resume_node(story_id: String) -> String:
+	if not run_state.is_quest_active(story_id):
+		return ""
+	var table: Dictionary = _POST_HANDOVER_RESUME.get(story_id, {})
+	if table.is_empty():
+		return ""
+	var need := int(StoryData.quest_def(story_id).get("collect_count", 0))
+	if run_state.get_collect_count(story_id) < need:
+		return ""
+	return str(table.get(run_state.get_dialogue_node(story_id), ""))
+
+
+func return_prompt_text(story_id: String) -> String:
+	if _post_handover_resume_node(story_id) != "":
+		return "%s · E 继续对话" % StoryData.title_of(story_id)
+	return StoryData.prompt_return(story_id)
 
 
 func _begin_interior_encounter(story_id: String) -> void:
@@ -619,7 +654,7 @@ func interior_npc_interact_hint(story_id: String, district_index: int, player_lo
 		return {}
 	if not is_near_interior_npc(story_id, district_index, player_local):
 		return {}
-	var hint := StoryData.prompt_return(story_id)
+	var hint := return_prompt_text(story_id)
 	if hint.strip_edges() == "":
 		hint = "F 交谈"
 	return {"text": hint}
@@ -925,7 +960,7 @@ func build_prompt(story_id: String) -> Dictionary:
 			var quest_gate: Dictionary = StoryData.quest_def(story_id)
 			var need_gate := int(quest_gate.get("collect_count", 0))
 			if run_state.get_collect_count(story_id) >= need_gate:
-				out["text"] = StoryData.prompt_return(story_id)
+				out["text"] = return_prompt_text(story_id)
 				out["disembark"] = StoryData.prompt_disembark(story_id)
 				out["show_disembark"] = true
 				return out
@@ -954,7 +989,7 @@ func build_prompt(story_id: String) -> Dictionary:
 			var quest: Dictionary = StoryData.quest_def(story_id)
 			var need := int(quest.get("collect_count", 0))
 			if run_state.get_collect_count(story_id) >= need:
-				out["text"] = StoryData.prompt_return(story_id)
+				out["text"] = return_prompt_text(story_id)
 				out["disembark"] = StoryData.prompt_disembark(story_id)
 				out["show_disembark"] = true
 				return out
@@ -990,7 +1025,7 @@ func build_prompt(story_id: String) -> Dictionary:
 		var quest: Dictionary = StoryData.quest_def(story_id)
 		var need := int(quest.get("collect_count", 0))
 		if run_state.get_collect_count(story_id) >= need:
-			out["text"] = StoryData.prompt_return(story_id)
+			out["text"] = return_prompt_text(story_id)
 			return out
 		out["text"] = str(quest.get("hint", "进入建筑完成委托"))
 		out["disembark"] = "进入"
@@ -1021,7 +1056,7 @@ func foot_door_hint(district_index: int) -> String:
 		var quest: Dictionary = StoryData.quest_def(story_id)
 		var need := int(quest.get("collect_count", 0))
 		if run_state.is_quest_active(story_id) and run_state.get_collect_count(story_id) >= need:
-			return StoryData.prompt_return(story_id)
+			return return_prompt_text(story_id)
 	if story_id != "" and run_state.is_reward_pending(story_id):
 		return StoryData.prompt_reward(story_id)
 	return "E 返回车辆"
