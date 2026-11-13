@@ -5436,6 +5436,9 @@ func _on_story_ui_refresh() -> void:
 	if _story_refresh_guard:
 		return
 	_story_refresh_guard = true
+	# 室内 NPC 头顶提示（如「与 AD-1 交还电机组件」）画在主画布上，步行时只有移动才重绘；
+	# 剧情状态变化（交付/完成）后标脏，否则站着不动时旧提示一直残留。
+	_mark_overworld_dirty()
 	_schedule_refresh_ui()
 	_refresh_backpack_if_open()
 	_story_refresh_guard = false
