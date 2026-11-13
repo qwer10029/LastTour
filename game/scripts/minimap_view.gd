@@ -243,6 +243,35 @@ func _cell_visible(index: int) -> bool:
 	return bool(world_map.get_cell(index)["explored"])
 
 
+## 未探索的剧情据点在雾中显示一个淡淡的「?」：只提示「这里有东西」，
+## 不透露剧情名称和入口方向。探索后恢复正常的带名称外观；隐藏物资点、普通建筑不显示。
+func story_site_hint_visible(index: int) -> bool:
+	if not war_fog_enabled or world_map == null or not world_map.is_valid_index(index):
+		return false
+	if not world_map.is_district(index) or world_map.is_tactical_dormant(index):
+		return false
+	var cell := world_map.get_cell(index)
+	if str(cell.get("story_id", "")) == "":
+		return false
+	return not _cell_visible(index)
+
+
+func _draw_story_site_hint(cell_rect: Rect2) -> void:
+	var font_size := int(clampf(cell_rect.size.y * 0.62, 8.0, 18.0))
+	if cell_rect.size.x < 7.0:
+		draw_circle(cell_rect.get_center(), 1.5, Color("#9fb2c8", 0.32))
+		return
+	HudTheme.draw_string(
+		self,
+		Vector2(cell_rect.position.x - 1.0, cell_rect.get_center().y + float(font_size) * 0.32),
+		"?",
+		font_size,
+		Color("#9fb2c8", 0.34 if local_radar_mode else 0.4),
+		HORIZONTAL_ALIGNMENT_CENTER,
+		int(cell_rect.size.x),
+	)
+
+
 ## 两格之间的路段是否绘制：两端都可见才画；未揭示的隐藏物资点按空地处理，不画通往它的路。
 func _road_link_drawn(index: int, other: int) -> bool:
 	if world_map == null or not world_map.is_valid_index(index) or not world_map.is_valid_index(other):
@@ -279,6 +308,8 @@ func _draw_map_content(map_rect: Rect2, origin: Vector2, span: Vector2) -> void:
 			continue
 		if not _cell_visible(index):
 			draw_rect(cell_rect, Color(0.02, 0.03, 0.05, 0.35), true)
+			if story_site_hint_visible(index):
+				_draw_story_site_hint(cell_rect)
 			continue
 		var explored := bool(cell["explored"])
 		var kind := str(cell["kind"])
