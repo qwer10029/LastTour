@@ -22,9 +22,9 @@
 2. 用 Godot 打开 **`game/project.godot`**
 3. 按 **F5** 运行；主场景为 `scenes/menu/main_menu.tscn`
 
-### 直接试玩（无需 Godot）
+### 导出可执行文件（可选）
 
-运行 [`终末旅行-0622.exe`](./终末旅行-0622.exe)（Windows 导出包，位于仓库根目录）。
+Windows 导出包不在 Git 仓库中（根目录 `.gitignore` 忽略了 `*.exe` / `*.pck` / `*.mp4`）。可用 Godot 4.6 打开 `game/project.godot`，按 `game/export_presets.cfg` 导出后再本地试玩。
 
 ### 基本操作
 
@@ -64,11 +64,9 @@
 ## 仓库结构
 
 ```
-GirlsLastTour/
+LastTour/
 ├── README.md                          # 本文件
 ├── 最终游戏报告.md                     # 课程交付：玩法与关键技术说明
-├── 终末旅行-0622.exe                  # Windows 导出包（根目录，可独立运行）
-├── 终末旅行.exe                        # 最新导出包（根目录）
 ├── game/                              # ★ Godot 可玩原型（工程根目录）
 │   ├── project.godot
 │   ├── scenes/                        # 场景（菜单、主玩法、塔防、UI）
@@ -144,7 +142,7 @@ GirlsLastTour/
 | 技术设计说明书 | ✅ |
 | 可玩原型 | ✅ `game/` 可运行、可导出 |
 | 游戏报告 | ✅ |
-| 演示视频 | ✅ `release/游戏演示.mp4` |
+| 演示视频 | ✅ 已制作；`*.mp4` 被 `.gitignore` 忽略，不在本仓库中 |
 
 ---
 
