@@ -47,9 +47,18 @@ func set_active(active: bool) -> void:
 	visible = active
 	set_physics_process(active)
 	set_process(active)
-	if is_instance_valid(camera):
-		if active:
-			camera.make_current()
+	if active:
+		_try_make_camera_current()
+
+
+func _try_make_camera_current() -> void:
+	if not is_instance_valid(camera):
+		return
+	# Daytime foot interiors keep this camera disabled on purpose
+	# (_sync_view_cameras). Godot errors if make_current() is called
+	# while the camera is disabled or not in the tree.
+	if camera.enabled and camera.is_inside_tree():
+		camera.make_current()
 
 func set_hud_callback(callback: Callable) -> void:
 	_hud_callback = callback

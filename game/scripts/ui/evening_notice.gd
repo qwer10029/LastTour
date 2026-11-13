@@ -1,7 +1,7 @@
 extends PanelContainer
 
-@onready var title_label: Label = %TitleLabel
-@onready var body_label: Label = %BodyLabel
+@onready var title_label: Label = $MarginContainer/VBox/TitleLabel
+@onready var body_label: Label = $MarginContainer/VBox/BodyLabel
 
 var _visible_timer: float = 0.0
 var _message_mode := false
@@ -26,7 +26,7 @@ func show_message(title: String, body: String, duration_sec: float = 5.0) -> voi
 	visible = true
 	modulate = Color.WHITE
 	_visible_timer = 0.0
-	if is_instance_valid(_message_timer):
+	if is_instance_valid(_message_timer) and _message_timer.timeout.is_connected(_on_message_timeout):
 		_message_timer.timeout.disconnect(_on_message_timeout)
 	_message_timer = get_tree().create_timer(maxf(duration_sec, 1.0))
 	_message_timer.timeout.connect(_on_message_timeout, CONNECT_ONE_SHOT)
