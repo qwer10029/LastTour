@@ -178,7 +178,6 @@ func _ready() -> void:
 	_base_fuel_max = fuel_max
 	_base_elevator_repair_cost = base_elevator_repair_cost
 	_apply_run_config_from_manager()
-	war_fog_enabled = war_fog_enabled and bool(GameManager.war_fog_enabled)
 	if road_render_settings == null:
 		road_render_settings = RoadRenderSettings.new()
 	DayTopdownRender.apply_settings(road_render_settings)
@@ -2139,6 +2138,9 @@ func _on_war_fog_toggled(enabled: bool) -> void:
 	queue_redraw()
 
 func _setup_pause_ui() -> void:
+	# 白天场景（DayExploration）重写了 _ready 且不调用 super，所以会话内的黑雾开关
+	# 必须在两条启动路径都会走的地方应用；此处还在复选框与小地图初始化之前。
+	war_fog_enabled = war_fog_enabled and bool(GameManager.war_fog_enabled)
 	_pause_layer = CanvasLayer.new()
 	_pause_layer.layer = 120
 	_pause_layer.process_mode = Node.PROCESS_MODE_ALWAYS
