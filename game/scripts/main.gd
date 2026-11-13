@@ -1441,6 +1441,10 @@ func _halt_at_node(node_index: int) -> void:
 	_drive_exit_locked = true
 	_building_pick_index = 0
 	for district_index in _map.get_roadside_districts(node_index):
+		# 未揭示的隐藏物资点不能进入、街景里也不画，停在门口时不要把它标成已探索，
+		# 否则 M 地图会画出一个没有名字、进不去的绿色格子。
+		if _map.is_tactical_dormant(district_index):
+			continue
 		_map.mark_explored(district_index)
 	if is_instance_valid(_vehicle):
 		_vehicle.set_active(true)
