@@ -13,6 +13,7 @@ var _root: Control
 var _panel: PanelContainer
 var _item_list: ItemList
 var _detail_label: Label
+var _detail_scroll: ScrollContainer
 var _use_btn: Button
 var _discard_btn: Button
 var _craft_hint_label: Label
@@ -22,6 +23,9 @@ var _craft_pulse_tween: Tween
 var _vehicle_repair_hint_label: Label
 var _vehicle_repair_btn: Button
 var _selected_id: String = ""
+## 两步丢弃：可使用的物品（补给、燃料桶、升级道具等）第一次点「丢弃」只进入确认状态。
+var _discard_armed_id: String = ""
+var _discard_arm_token := 0
 var _inventory: InventoryData
 var _run_journal: RunJournal
 var _tab_bar: TabBar
@@ -37,6 +41,11 @@ var _craft_button_visual_highlighted := false
 var _title_label: Label
 
 const TITLE_TEXT := "背包 — 点击物品，再选择使用或丢弃（B 关闭）"
+const DISCARD_TEXT := "丢弃 1 个"
+const DISCARD_CONFIRM_TEXT := "再次点击确认丢弃"
+const DISCARD_CONFIRM_SECONDS := 2.5
+## 物品说明区固定高度（超出滚动），使「使用 / 丢弃」按钮位置不随选中物品变化。
+const DETAIL_HEIGHT := 160.0
 
 
 func _ready() -> void:
@@ -123,13 +132,20 @@ func _build_ui() -> void:
 	side.add_theme_constant_override("separation", 10)
 	body.add_child(side)
 
+	# 说明文字放进固定高度的滚动区：以前说明标签会随文字长短伸缩，
+	# 把下面的「使用 / 丢弃」按钮上下推动，按记忆位置点击容易误点到「丢弃」。
+	_detail_scroll = ScrollContainer.new()
+	_detail_scroll.custom_minimum_size = Vector2(228, DETAIL_HEIGHT)
+	_detail_scroll.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	_detail_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_detail_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	side.add_child(_detail_scroll)
 	_detail_label = Label.new()
 	_detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_detail_label.custom_minimum_size = Vector2(228, 120)
-	_detail_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_detail_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_detail_label.text = "← 选择左侧物品"
 	_detail_label.add_theme_color_override("font_color", Color("#d8e4f0"))
-	side.add_child(_detail_label)
+	_detail_scroll.add_child(_detail_label)
 
 	_use_btn = Button.new()
 	_use_btn.text = "使用"
@@ -138,7 +154,7 @@ func _build_ui() -> void:
 	side.add_child(_use_btn)
 
 	_discard_btn = Button.new()
-	_discard_btn.text = "丢弃 1 个"
+	_discard_btn.text = DISCARD_TEXT
 	_discard_btn.disabled = true
 	_discard_btn.pressed.connect(_on_discard_pressed)
 	side.add_child(_discard_btn)
@@ -174,6 +190,11 @@ func _build_ui() -> void:
 	_vehicle_repair_btn.text = "修复车辆"
 	_vehicle_repair_btn.pressed.connect(func(): vehicle_repair_requested.emit())
 	side.add_child(_vehicle_repair_btn)
+
+	# 剩余空间留在底部，上方各按钮位置保持固定。
+	var side_spacer := Control.new()
+	side_spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	side.add_child(side_spacer)
 
 	var close_btn := Button.new()
 	close_btn.text = "关闭 (B / Esc)"
@@ -241,6 +262,7 @@ func show_backpack(
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	visible = true
 	_selected_id = ""
+	_disarm_discard()
 	_update_detail()
 	_update_action_buttons()
 
@@ -252,6 +274,7 @@ func hide_backpack(emit_closed_signal: bool = true) -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	visible = false
 	_selected_id = ""
+	_disarm_discard()
 	if emit_closed_signal:
 		closed.emit()
 
@@ -289,6 +312,8 @@ func _on_item_selected(index: int) -> void:
 		_selected_id = ""
 	else:
 		_selected_id = str(meta)
+	if _discard_armed_id != _selected_id:
+		_disarm_discard()
 	_update_detail()
 	_update_action_buttons()
 
@@ -389,7 +414,34 @@ func _on_use_pressed() -> void:
 func _on_discard_pressed() -> void:
 	if _selected_id == "":
 		return
+	# 可使用的物品需要在 DISCARD_CONFIRM_SECONDS 内再点一次才真正丢弃。
+	if ItemDefs.is_usable(_selected_id) and _discard_armed_id != _selected_id:
+		_arm_discard(_selected_id)
+		return
+	_disarm_discard()
 	item_discard_requested.emit(_selected_id)
+
+
+func _arm_discard(item_id: String) -> void:
+	_discard_armed_id = item_id
+	_discard_arm_token += 1
+	var token := _discard_arm_token
+	if is_instance_valid(_discard_btn):
+		_discard_btn.text = DISCARD_CONFIRM_TEXT
+		_discard_btn.add_theme_color_override("font_color", Color("#ff8a7a"))
+	if is_inside_tree():
+		get_tree().create_timer(DISCARD_CONFIRM_SECONDS).timeout.connect(func():
+			if token == _discard_arm_token:
+				_disarm_discard()
+		)
+
+
+func _disarm_discard() -> void:
+	_discard_armed_id = ""
+	_discard_arm_token += 1
+	if is_instance_valid(_discard_btn):
+		_discard_btn.text = DISCARD_TEXT
+		_discard_btn.remove_theme_color_override("font_color")
 
 
 func _on_vehicle_repair_pressed() -> void:
