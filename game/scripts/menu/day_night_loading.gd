@@ -11,6 +11,9 @@ const INTRO_FADE_SEC := 0.85
 const INTRO_SWEEP_SEC := 0.72
 const MIN_DISPLAY_SEC := 1.35
 const BOOT_HANDOFF_RATIO := 0.98
+## 入夜时场景加载只占进度条到这里，剩余部分用于逐帧预处理塔防贴图（见 _warm_night_td_sprites）。
+const NIGHT_SPRITE_WARMUP_START := 0.62
+const NightTdSpritesScript := preload("res://scripts/night_td/night_td_sprites.gd")
 
 const DAY_TO_NIGHT_STATUS := [
 	"加载场景资源…",
@@ -213,6 +216,7 @@ func _preload_and_enter() -> void:
 			var packed := ResourceLoader.load_threaded_get(_target_scene_path)
 			if packed is PackedScene:
 				_store_preloaded_scene(packed)
+			await _warm_night_td_sprites()
 			await _finish_loading_and_enter()
 			return
 		if load_status == ResourceLoader.THREAD_LOAD_FAILED:
@@ -222,8 +226,40 @@ func _preload_and_enter() -> void:
 			return
 		if not progress.is_empty():
 			var load_ratio := float(progress[0])
-			_set_progress(0.12 + load_ratio * (BOOT_HANDOFF_RATIO - 0.12), _status_for_load_ratio(load_ratio))
+			var load_end := NIGHT_SPRITE_WARMUP_START if _needs_night_sprite_warmup() else BOOT_HANDOFF_RATIO
+			_set_progress(0.12 + load_ratio * (load_end - 0.12), _status_for_load_ratio(load_ratio))
 		await get_tree().process_frame
+
+
+## 塔防场景 _ready 会同步对 7 张塔贴图做逐像素抠图（GDScript，每张 1.5–3.5 秒），
+## 每个进程第一次入夜时整个主线程被卡住约 20 秒：遮罩停在 98%、窗口不响应
+## （Alt+F4 / 12 秒保底关闭都无法执行），看起来像「卡住直到按 Esc」。
+## 这里在加载页上逐帧预热同一份静态缓存：进度条持续前进，窗口保持响应，进入夜战时直接命中缓存。
+func _needs_night_sprite_warmup() -> bool:
+	if _direction != TransitionDirection.DAY_TO_NIGHT:
+		return false
+	for type_id in NightTdSpritesScript.PRELOAD_TOWER_IDS:
+		if not NightTdSpritesScript.is_tower_texture_cached(type_id):
+			return true
+	return false
+
+
+func _warm_night_td_sprites() -> void:
+	if not _needs_night_sprite_warmup():
+		return
+	var ids: Array[String] = NightTdSpritesScript.PRELOAD_TOWER_IDS
+	var total := ids.size()
+	for i in range(total):
+		var type_id: String = ids[i]
+		if NightTdSpritesScript.is_tower_texture_cached(type_id):
+			continue
+		var ratio := lerpf(NIGHT_SPRITE_WARMUP_START, BOOT_HANDOFF_RATIO, float(i) / float(total))
+		_set_progress(ratio, "处理塔防贴图 %d/%d…" % [i + 1, total])
+		# 先让这一帧画出来，再做耗时的抠图，避免进度条长时间不动。
+		await get_tree().process_frame
+		if not is_inside_tree():
+			return
+		NightTdSpritesScript.tower_texture(type_id)
 
 
 func _status_for_load_ratio(ratio: float) -> String:
