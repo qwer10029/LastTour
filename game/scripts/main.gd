@@ -447,6 +447,8 @@ func _open_world_map() -> void:
 		return
 	if _is_night_phase():
 		return
+	if _backpack_open:
+		_close_backpack()
 	_sync_minimap_navigation()
 	var segment_axis := ""
 	if _segment_target_index >= 0 and _map.is_valid_index(_segment_from_index):
@@ -2263,6 +2265,10 @@ func _toggle_backpack() -> void:
 func _open_backpack(open_journal_tab: bool = false) -> void:
 	if not is_instance_valid(_backpack_ui):
 		return
+	# 地图与背包同在 HUD 里，叠开时地图的全屏控件会吃掉背包的点击（「勘探日记」页签点不动）。
+	# 两者互斥：打开背包先关地图。
+	if is_instance_valid(_world_map_overlay) and _world_map_overlay.is_open():
+		_close_world_map()
 	_backpack_open = true
 	_backpack_ui.show_backpack(
 		_backpack,
