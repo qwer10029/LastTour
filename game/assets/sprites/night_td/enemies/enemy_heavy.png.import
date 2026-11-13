@@ -3,11 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b3hxpar2unbbp"
-valid=false
+path="res://.godot/imported/enemy_heavy.png-29c5a62a99d01b99ba825b37603483ab.ctex"
+metadata={
+"vram_texture": false
+}
 
 [deps]
 
 source_file="res://assets/sprites/night_td/enemies/enemy_heavy.png"
+dest_files=["res://.godot/imported/enemy_heavy.png-29c5a62a99d01b99ba825b37603483ab.ctex"]
 
 [params]
 
