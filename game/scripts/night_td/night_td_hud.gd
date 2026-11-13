@@ -505,6 +505,15 @@ func _apply_holo_shell_styles() -> void:
 		result_panel.add_theme_stylebox_override("panel", NightTdUiTheme.panel_style(NightTdUiTheme.PANEL_DIALOG_LOG, 18))
 
 
+func _move_child_to(node: Node, new_parent: Node) -> void:
+	if node == null or new_parent == null or node.get_parent() == new_parent:
+		return
+	var parent := node.get_parent()
+	if parent != null:
+		parent.remove_child(node)
+	new_parent.add_child(node)
+
+
 func _reorganize_top_status_bar() -> void:
 	var hbox := get_node_or_null("Shell/TopStatusPanel/Margin/StatusHBox") as HBoxContainer
 	if hbox == null:
@@ -529,7 +538,7 @@ func _reorganize_top_status_bar() -> void:
 	center_host.add_child(cluster)
 
 	if is_instance_valid(phase_label):
-		cluster.add_child(phase_label)
+		_move_child_to(phase_label, cluster)
 
 	var center_box := CenterContainer.new()
 	center_box.name = "CountdownCenter"
@@ -539,9 +548,7 @@ func _reorganize_top_status_bar() -> void:
 	_countdown_ring = _create_countdown_ring_control()
 	center_box.add_child(_countdown_ring)
 	if is_instance_valid(timer_label):
-		if timer_label.get_parent() != null:
-			timer_label.get_parent().remove_child(timer_label)
-		_countdown_ring.add_child(timer_label)
+		_move_child_to(timer_label, _countdown_ring)
 		timer_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_set_center_placement_mode(true)
 
@@ -551,7 +558,7 @@ func _reorganize_top_status_bar() -> void:
 		if child.name == "ResourceLabel":
 			child.visible = false
 			continue
-		cluster.add_child(child)
+		_move_child_to(child, cluster)
 
 	cluster.add_child(_make_resource_badge("parts"))
 	cluster.add_child(_make_resource_badge("scrap"))
@@ -624,8 +631,7 @@ func _set_center_placement_mode(active: bool) -> void:
 	if active:
 		if is_instance_valid(_countdown_ring):
 			_countdown_ring.show()
-			if timer_label.get_parent() != _countdown_ring:
-				_countdown_ring.add_child(timer_label)
+			_move_child_to(timer_label, _countdown_ring)
 			timer_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 			timer_label.custom_minimum_size = Vector2(0, 0)
 			timer_label.clip_text = false
@@ -636,8 +642,7 @@ func _set_center_placement_mode(active: bool) -> void:
 			_countdown_ring.hide()
 		if is_instance_valid(_center_box):
 			_center_box.custom_minimum_size = Vector2(0, 52)
-			if timer_label.get_parent() != _center_box:
-				_center_box.add_child(timer_label)
+			_move_child_to(timer_label, _center_box)
 		timer_label.set_anchors_preset(Control.PRESET_CENTER)
 		timer_label.custom_minimum_size = Vector2(0, 0)
 		timer_label.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
