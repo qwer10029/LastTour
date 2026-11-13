@@ -34,6 +34,9 @@ var _vehicle_repair_allowed := false
 var _vehicle_hp: float = -1.0
 var _vehicle_hp_max: float = -1.0
 var _craft_button_visual_highlighted := false
+var _title_label: Label
+
+const TITLE_TEXT := "背包 — 点击物品，再选择使用或丢弃（B 关闭）"
 
 
 func _ready() -> void:
@@ -91,7 +94,8 @@ func _build_ui() -> void:
 	margin.add_child(outer)
 
 	var title := Label.new()
-	title.text = "背包 — 点击物品，再选择使用或丢弃（B 关闭）"
+	_title_label = title
+	title.text = TITLE_TEXT
 	title.add_theme_font_size_override("font_size", 16)
 	title.add_theme_color_override("font_color", Color("#eef8ff"))
 	outer.add_child(title)
@@ -325,6 +329,19 @@ func _update_action_buttons() -> void:
 		else:
 			_vehicle_repair_hint_label.modulate = Color(1, 1, 1, 0.45)
 	_update_craft_button()
+
+
+## 教学提示写进标题行（不新增行，避免小窗口下背包底栏被挤出）；
+## 底部教学浮层在背包打开时会压住底栏与关闭按钮。
+func set_tutorial_hint(text: String) -> void:
+	if not is_instance_valid(_title_label):
+		return
+	if text == "":
+		_title_label.text = TITLE_TEXT
+		_title_label.add_theme_color_override("font_color", Color("#eef8ff"))
+	else:
+		_title_label.text = "教学：" + text
+		_title_label.add_theme_color_override("font_color", Color("#ffb070"))
 
 
 func set_craft_highlight(enabled: bool) -> void:
