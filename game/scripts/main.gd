@@ -1033,6 +1033,8 @@ func _physics_process(delta: float) -> void:
 	if is_instance_valid(_story_controller):
 		_story_controller.tick_prop_dig_fx(delta)
 
+	if not is_inside_tree():
+		return  # 本帧的交互触发了场景切换（已被移出场景树），不再做相机/界面同步。
 	_sync_view_cameras()
 	_refresh_focus()
 	if _mode == TravelMode.FOOT:
@@ -1102,6 +1104,11 @@ func _setup_world_camera() -> void:
 
 
 func _sync_view_cameras() -> void:
+	# Godot 4 的 change_scene_to_* 会立即把当前场景移出场景树。同一帧里切场景
+	# （如雷霆首领战 request_night_defense、死亡结算换场景）之后再走到这里时，
+	# 相机已不在树中，make_current() 会报 "!enabled || !is_inside_tree()"。
+	if not is_inside_tree():
+		return
 	if is_instance_valid(night_td) and night_td.visible:
 		if is_instance_valid(_world_camera):
 			_world_camera.enabled = false
