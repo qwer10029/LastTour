@@ -907,6 +907,7 @@ func _seed_final_layer_evidence_spawns() -> void:
 	return
 
 func _process(_delta: float) -> void:
+	_sync_story_dialogue_menu_suppression()
 	if _run_ended or _game_paused or _backpack_open:
 		return
 	if Input.is_action_just_pressed("enter_defense_mode"):
@@ -914,6 +915,15 @@ func _process(_delta: float) -> void:
 			_try_foot_console_interact()
 		else:
 			_try_enter_defense_mode()
+
+
+func _sync_story_dialogue_menu_suppression() -> void:
+	if not is_instance_valid(_story_dialogue_ui):
+		return
+	var menu_open := _game_paused or _backpack_open or (
+		is_instance_valid(_world_map_overlay) and _world_map_overlay.is_open()
+	)
+	_story_dialogue_ui.set_menu_suppressed(menu_open)
 
 
 func _physics_process(delta: float) -> void:

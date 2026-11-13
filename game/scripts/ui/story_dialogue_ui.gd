@@ -55,6 +55,14 @@ func hide_dialogue() -> void:
 	_clear_choices()
 
 
+## 暂停菜单 / 背包 / 地图打开时临时隐藏对话框（不改变对话状态），
+## 防止对话框画在菜单上方并抢走「保存」「使用」等按钮的点击。
+func set_menu_suppressed(suppressed: bool) -> void:
+	var root := get_node_or_null("Root") as Control
+	if root != null and root.visible == suppressed:
+		root.visible = not suppressed
+
+
 func is_choice_mode() -> bool:
 	return _choice_mode
 
