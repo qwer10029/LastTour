@@ -282,6 +282,10 @@ func _resolve_journal_encounter(entry_key: String) -> String:
 	if typeof(journal_map_var) != TYPE_DICTIONARY:
 		return entry_key
 	var journal_map: Dictionary = journal_map_var as Dictionary
+	# Keys absent from journal_map (e.g. furnace_scavenge / furnace_truth)
+	# are already the encounter_id in journal_encounters.json.
+	if not journal_map.has(entry_key):
+		return entry_key
 	var mapping_var: Variant = journal_map.get(entry_key, {})
 	if typeof(mapping_var) != TYPE_DICTIONARY:
 		return entry_key
