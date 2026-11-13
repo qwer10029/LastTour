@@ -1,7 +1,7 @@
 extends PanelContainer
 
-@onready var title_label: Label = %TitleLabel
-@onready var body_label: Label = %BodyLabel
+@onready var title_label: Label = $MarginContainer/VBox/TitleLabel
+@onready var body_label: Label = $MarginContainer/VBox/BodyLabel
 
 var _visible_timer: float = 0.0
 var _message_mode := false

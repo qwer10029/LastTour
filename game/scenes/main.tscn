@@ -134,13 +134,11 @@ layout_mode = 2
 theme_override_constants/separation = 6
 
 [node name="TitleLabel" type="Label" parent="HUD/EveningNotice/MarginContainer/VBox"]
-unique_name_in_owner = true
 layout_mode = 2
 text = "傍晚 · 即将入夜"
 horizontal_alignment = 1
 
 [node name="BodyLabel" type="Label" parent="HUD/EveningNotice/MarginContainer/VBox"]
-unique_name_in_owner = true
 layout_mode = 2
 text = "请返回车辆并开始设防"
 horizontal_alignment = 1
@@ -169,13 +167,11 @@ layout_mode = 2
 theme_override_constants/separation = 6
 
 [node name="TitleLabel" type="Label" parent="HUD/LowStaminaWarning/MarginContainer/VBox"]
-unique_name_in_owner = true
 layout_mode = 2
 text = "⚠ 体力不足"
 horizontal_alignment = 1
 
 [node name="BodyLabel" type="Label" parent="HUD/LowStaminaWarning/MarginContainer/VBox"]
-unique_name_in_owner = true
 layout_mode = 2
 text = "体力已低于 20，请及时使用补给（按 B 打开背包）恢复体力"
 horizontal_alignment = 1
