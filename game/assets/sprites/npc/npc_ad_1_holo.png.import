@@ -3,11 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dn2nica4vkyvp"
-valid=false
+path="res://.godot/imported/npc_ad_1_holo.png-3f4559401dbf889a66e80f4205609e14.ctex"
+metadata={
+"vram_texture": false
+}
 
 [deps]
 
 source_file="res://assets/sprites/npc/npc_ad_1_holo.png"
+dest_files=["res://.godot/imported/npc_ad_1_holo.png-3f4559401dbf889a66e80f4205609e14.ctex"]
 
 [params]
 

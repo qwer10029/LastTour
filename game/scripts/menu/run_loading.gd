@@ -32,6 +32,8 @@ func _ready() -> void:
 	_prepare_intro_state()
 	_play_entrance_animation()
 	await get_tree().create_timer(0.18).timeout
+	if not is_inside_tree():
+		return
 	await _run_bootstrap_pipeline()
 
 
@@ -185,9 +187,17 @@ func _run_bootstrap_pipeline() -> void:
 	var progress_cb := func(ratio: float, label: String) -> void:
 		_set_progress(ratio, label)
 
+	if not is_inside_tree():
+		return
 	await get_tree().process_frame
+	if not is_inside_tree():
+		return
 	RunBootstrapScript.preload_render_assets(progress_cb)
+	if not is_inside_tree():
+		return
 	await get_tree().process_frame
+	if not is_inside_tree():
+		return
 
 	var manager := _game_manager()
 	var map: WorldMapData
@@ -195,7 +205,11 @@ func _run_bootstrap_pipeline() -> void:
 		map = RunBootstrapScript.build_tutorial_run_map(progress_cb)
 	else:
 		map = RunBootstrapScript.build_new_run_map(progress_cb)
+	if not is_inside_tree():
+		return
 	await get_tree().process_frame
+	if not is_inside_tree():
+		return
 
 	if manager != null and manager.has_method("store_run_bootstrap"):
 		manager.store_run_bootstrap(RunBootstrapScript.pack_bootstrap(map))
@@ -228,6 +242,8 @@ func _preload_game_scene() -> void:
 		if not progress.is_empty():
 			var local := 0.94 + float(progress[0]) * (BOOT_HANDOFF_RATIO - 0.94)
 			_set_progress(local, "加载游戏场景…")
+		if not is_inside_tree():
+			return
 		await get_tree().process_frame
 
 
@@ -239,11 +255,13 @@ func _set_progress(ratio: float, label: String) -> void:
 
 
 func _enter_game_scene() -> void:
+	if not is_inside_tree() or get_tree() == null:
+		return
 	var manager := _game_manager()
 	if manager != null and manager.has_method("enter_game_after_bootstrap"):
 		call_deferred("_invoke_enter_game_after_bootstrap", manager)
 		return
-	get_tree().change_scene_to_file("res://scenes/main.tscn")
+	get_tree().change_scene_to_file(GameManager.SCENE_GAME)
 
 
 func _invoke_enter_game_after_bootstrap(manager: Node) -> void:

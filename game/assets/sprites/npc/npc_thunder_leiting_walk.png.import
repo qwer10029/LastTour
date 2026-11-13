@@ -3,11 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://ma5ia2xjer88"
-valid=false
+path="res://.godot/imported/npc_thunder_leiting_walk.png-e7ea89e56530e03db1039b37d2015c6e.ctex"
+metadata={
+"vram_texture": false
+}
 
 [deps]
 
 source_file="res://assets/sprites/npc/npc_thunder_leiting_walk.png"
+dest_files=["res://.godot/imported/npc_thunder_leiting_walk.png-e7ea89e56530e03db1039b37d2015c6e.ctex"]
 
 [params]
 

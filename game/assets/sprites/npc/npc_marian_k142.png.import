@@ -3,11 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dxnfr42vcumw1"
-valid=false
+path="res://.godot/imported/npc_marian_k142.png-b6dfb56197af4ce516eeaa39d4f66967.ctex"
+metadata={
+"vram_texture": false
+}
 
 [deps]
 
 source_file="res://assets/sprites/npc/npc_marian_k142.png"
+dest_files=["res://.godot/imported/npc_marian_k142.png-b6dfb56197af4ce516eeaa39d4f66967.ctex"]
 
 [params]
 

@@ -31,6 +31,13 @@ func _check_terminal_audit() -> void:
 	var terminal: CanvasLayer = terminal_script.new()
 	root.add_child(terminal)
 	await process_frame
+	var meta := root.get_node_or_null("MetaManager")
+	var saved_unlocked: Array = []
+	# Persistent user://meta.json from earlier playthroughs would otherwise
+	# make the empty-journal cases pass. Isolate, then restore at the end.
+	if meta != null:
+		saved_unlocked = (meta.encounters_unlocked as Array).duplicate()
+		meta.encounters_unlocked.clear()
 	terminal.start_flow([], 3, 1, {})
 	var fail_report: Dictionary = terminal._evidence_audit_report()
 	_expect(not bool(fail_report.get("passed", true)), "terminal audit should fail without truth encounters")
@@ -45,10 +52,7 @@ func _check_terminal_audit() -> void:
 	var pass_report: Dictionary = terminal._evidence_audit_report()
 	_expect(bool(pass_report.get("passed", false)), "terminal audit should pass with all required truth encounters in current run")
 
-	var meta := root.get_node_or_null("MetaManager")
-	var saved_unlocked: Array = []
 	if meta != null:
-		saved_unlocked = (meta.encounters_unlocked as Array).duplicate()
 		meta.encounters_unlocked.clear()
 		for encounter_id in [
 			"furnace_truth",
@@ -80,6 +84,9 @@ func _check_terminal_audit() -> void:
 	_expect(terminal._phase == terminal.Phase.RESULT_PASS, "captcha close should pass when truth audit passes")
 	_expect(terminal._audit_passed, "evidence audit should mark audit passed when truth complete")
 
+	# Isolate this negative case from earlier unlocks written into MetaManager.
+	if meta != null:
+		meta.encounters_unlocked.clear()
 	terminal.start_flow([], 3, 1, {})
 	terminal._enter_phase(terminal.Phase.CAPTCHA)
 	terminal._on_captcha_close_pressed()

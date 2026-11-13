@@ -3,11 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bbm0odkdbdj51"
-valid=false
+path="res://.godot/imported/tower_trap.png-c15bd49c3e917a8f44de2e974ac161bb.ctex"
+metadata={
+"vram_texture": false
+}
 
 [deps]
 
 source_file="res://assets/sprites/night_td/towers/tower_trap.png"
+dest_files=["res://.godot/imported/tower_trap.png-c15bd49c3e917a8f44de2e974ac161bb.ctex"]
 
 [params]
 
