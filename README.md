@@ -22,6 +22,14 @@
 2. 用 Godot 打开 **`game/project.godot`**
 3. 按 **F5** 运行；主场景为 `scenes/menu/main_menu.tscn`
 
+> **拉取新资源后先重新导入 / After pulling new assets, re-import first：** 若不经编辑器直接用命令行运行（`godot --path game`），新增的图片/音频不会自动导入，运行时会报 `res://.godot/imported/*.ctex` 找不到（例如夜间塔防的烘焙贴图）。先执行一次：
+>
+> ```bash
+> godot --headless --path game --import
+> ```
+>
+> 用编辑器打开工程时会自动导入，无需此步。
+
 ### 导出可执行文件（可选）
 
 Windows 导出包不在 Git 仓库中（根目录 `.gitignore` 忽略了 `*.exe` / `*.pck` / `*.mp4`）。可用 Godot 4.6 打开 `game/project.godot`，按 `game/export_presets.cfg` 导出后再本地试玩。
