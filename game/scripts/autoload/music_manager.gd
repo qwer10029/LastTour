@@ -99,6 +99,29 @@ func _ready() -> void:
 	add_child(_stinger_player)
 
 
+## 退出时先停掉并解除所有音乐流：AudioStreamPlayer 在播放中随场景树一起销毁时，
+## AudioServer 仍持有 AudioStreamPlaybackMP3，引擎退出会报
+## 「ObjectDB instances leaked at exit」（AudioStreamMP3 / AudioStreamPlaybackMP3）。
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_EXIT_TREE:
+		_release_streams()
+
+
+func _release_streams() -> void:
+	if _fade_tween != null and _fade_tween.is_valid():
+		_fade_tween.kill()
+	_fade_tween = null
+	var all_players: Array[AudioStreamPlayer] = _players.duplicate()
+	if is_instance_valid(_stinger_player):
+		all_players.append(_stinger_player)
+	for player in all_players:
+		if is_instance_valid(player):
+			player.stop()
+			player.stream = null
+	_stream_cache.clear()
+	_current_cue = ""
+
+
 func play_cue(cue_id: String, fade_sec: float = -1.0, restart: bool = false) -> void:
 	if not CUES.has(cue_id):
 		push_warning("MusicManager: unknown cue '%s'." % cue_id)
