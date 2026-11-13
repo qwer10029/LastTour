@@ -63,6 +63,9 @@ var _segment_from_index: int = -1
 var _segment_target_index: int = -1
 var _segment_progress: float = 0.0
 var _segment_length: float = 1.0
+## 当前路段的行驶方向：1 = 驶向 target，-1 = 掉头驶回 from。
+## 路段一旦开始就会自动走完，不再要求玩家一直按住方向键。
+var _segment_drive_sign: float = 1.0
 var _drive_travel_distance: float = 0.0
 var _current_district_index: int = -1
 var _exit_options: Dictionary = {}
@@ -1478,21 +1481,40 @@ func _choose_exit_direction(direction: String, from_ui: bool = false) -> void:
 	_begin_drive_segment(_current_node_index, int(_exit_options[direction]))
 
 
+## 路段行驶方向。旧逻辑只在「本物理帧仍按住」沿路方向键时才前进：
+## 短按（按下/松开落在同一帧）只会开启路段而不前进，且路段中途方向提示消失、
+## 垂直方向键与新的选路输入都被忽略，车辆就永久卡在半路（读档也恢复同样状态）。
+## 现在路段一旦开始就自动驶完；按（或短按）反方向可掉头回到起点，垂直方向键不影响。
 func _get_segment_drive_axis() -> float:
 	if _segment_target_index < 0 or not _map.is_valid_index(_segment_from_index):
 		return 0.0
 	var forward_dir := _map.direction_between(_segment_from_index, _segment_target_index)
-	var input_dir := _pressed_drive_direction()
-	if input_dir == "":
+	if forward_dir == "":
 		return 0.0
-	var allowed := _map.allowed_input_directions_for_segment(_segment_from_index, _segment_target_index)
-	if input_dir not in allowed:
-		return 0.0
-	if input_dir == forward_dir:
-		return 1.0
-	if input_dir == _map.opposite_direction(forward_dir):
-		return -1.0
-	return 0.0
+	var back_dir := _map.opposite_direction(forward_dir)
+	var forward_active := _is_drive_direction_active(forward_dir)
+	var back_active := _is_drive_direction_active(back_dir)
+	if forward_active and not back_active:
+		_segment_drive_sign = 1.0
+	elif back_active and not forward_active:
+		_segment_drive_sign = -1.0
+	return _segment_drive_sign
+
+
+func _is_drive_direction_active(direction: String) -> bool:
+	var action := ""
+	match direction:
+		"up":
+			action = "move_up"
+		"down":
+			action = "move_down"
+		"left":
+			action = "move_left"
+		"right":
+			action = "move_right"
+	if action == "" or not InputMap.has_action(action):
+		return false
+	return Input.is_action_pressed(action) or Input.is_action_just_pressed(action)
 
 
 func _try_begin_drive_from_input() -> void:
@@ -1554,6 +1576,7 @@ func _begin_drive_segment(from_index: int, to_index: int) -> void:
 	_segment_from_index = from_index
 	_segment_target_index = to_index
 	_segment_progress = 0.0
+	_segment_drive_sign = 1.0
 	_segment_length = maxf(_road_center(from_index).distance_to(_road_center(to_index)), 1.0)
 	_drive_exit_locked = false
 	if is_instance_valid(_vehicle):
@@ -3200,7 +3223,22 @@ func _restore_foot_mode_from_save(foot: Dictionary) -> void:
 
 
 func _restore_drive_state_after_load() -> void:
+	# 旧存档可能停在「半路且无法前进」的状态；路段方向重置为驶向 target，载入后自动走完。
+	# 若存档中的路段不合法（非相邻格 / 非可行驶格），直接吸附到最近的路口。
+	_segment_drive_sign = 1.0
+	if _segment_target_index >= 0 and not _is_valid_saved_segment():
+		var snap_index := _segment_from_index
+		if _segment_progress >= 0.5 and _map.is_valid_index(_segment_target_index) and _map.is_drive_node(_segment_target_index):
+			snap_index = _segment_target_index
+		if not (_map.is_valid_index(snap_index) and _map.is_drive_node(snap_index)):
+			snap_index = _current_node_index
+		_segment_target_index = -1
+		_segment_from_index = -1
+		_segment_progress = 0.0
+		if _map.is_valid_index(snap_index):
+			_current_node_index = snap_index
 	if _segment_target_index >= 0 and _map.is_valid_index(_segment_from_index) and _map.is_valid_index(_segment_target_index):
+		_segment_progress = clampf(_segment_progress, 0.0, 1.0)
 		_mode = TravelMode.DRIVE
 		_segment_length = maxf(
 			_map.cell_center(_segment_from_index).distance_to(_map.cell_center(_segment_target_index)),
@@ -3216,6 +3254,14 @@ func _restore_drive_state_after_load() -> void:
 		_halt_at_node(_current_node_index)
 	else:
 		_exit_options.clear()
+
+
+func _is_valid_saved_segment() -> bool:
+	if not _map.is_valid_index(_segment_from_index) or not _map.is_valid_index(_segment_target_index):
+		return false
+	if not _map.is_drive_node(_segment_from_index) or not _map.is_drive_node(_segment_target_index):
+		return false
+	return _map.direction_between(_segment_from_index, _segment_target_index) != ""
 
 
 func _restore_time_phase_after_load(keep_terminal_music: bool = false) -> void:

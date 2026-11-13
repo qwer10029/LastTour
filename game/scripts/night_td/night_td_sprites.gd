@@ -39,11 +39,18 @@ static func clear_cache() -> void:
 	ArtAssetLoader.clear_alpha_cache()
 
 
+const PRELOAD_TOWER_IDS: Array[String] = [
+	"jammer", "barrier", "trap", "cryo_beacon", "hacker", "sniper", "splash",
+]
+
+
 static func preload_all_towers() -> void:
-	for type_id in [
-		"jammer", "barrier", "trap", "cryo_beacon", "hacker", "sniper", "splash",
-	]:
+	for type_id in PRELOAD_TOWER_IDS:
 		tower_texture(type_id)
+
+
+static func is_tower_texture_cached(type_id: String) -> bool:
+	return _cache.has("tower|%s" % type_id)
 
 
 static func _tower_file_id(type_id: String) -> String:
