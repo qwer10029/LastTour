@@ -1003,6 +1003,8 @@ func _physics_process(delta: float) -> void:
 					_story_controller.try_enter_district(district_index)
 				else:
 					_enter_selected_building()
+			elif _show_wrong_side_entrance_notice():
+				pass
 			else:
 				_take_back_at_node()
 	_update_drive_exit_lock()
@@ -1346,6 +1348,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.is_action_pressed("toggle_world_map") or event.is_action_pressed("pause"):
 			_close_world_map()
 			get_viewport().set_input_as_handled()
+		elif event.is_action_pressed("interact"):
+			# 地图打开时 _physics_process 整体跳过，E 会被静默吞掉（看起来像「入口没反应」）。
+			# 关掉地图后同一帧的物理处理仍能读到 just_pressed，照常进入/交互。
+			_close_world_map()
 		return
 	if event.is_action_pressed("toggle_backpack"):
 		_toggle_backpack()
@@ -1452,6 +1458,64 @@ func _ensure_back_exit_option() -> void:
 	var back_dir := _map.direction_between(_current_node_index, back_index)
 	if back_dir != "":
 		_exit_options[back_dir] = back_index
+
+
+const _SIDE_NAMES := {"up": "北侧", "down": "南侧", "left": "西侧", "right": "东侧"}
+var _drive_notice_label: Label
+var _drive_notice_tween: Tween
+
+
+## 建筑只有一个入口（朝向 approach_road 的那一侧）。车停在建筑背面/侧面的路口按 E 时，
+## 旧逻辑会走到 _take_back_at_node，把车倒回上一个路口，看起来像「进不去还被弹开」。
+## 现在改为原地提示入口在哪一侧。
+func _show_wrong_side_entrance_notice() -> bool:
+	if not _map.is_valid_index(_current_node_index):
+		return false
+	var here := _map.coord_from_index(_current_node_index)
+	for dir in WorldMapData.DIRECTIONS.keys():
+		var idx := _map.index_from_coord(here + (WorldMapData.DIRECTIONS[dir] as Vector2i))
+		if not _map.is_valid_index(idx) or not _map.is_district(idx) or _map.is_tactical_dormant(idx):
+			continue
+		var approach := int(_map.get_cell(idx).get("approach_road_index", -1))
+		if approach < 0 or approach == _current_node_index:
+			continue
+		var side := _map.direction_between(idx, approach)
+		if not _SIDE_NAMES.has(side):
+			continue
+		_show_drive_notice("%s 的入口在%s，请绕到那一侧的路口按 E 进入。" % [_map.building_label(idx), _SIDE_NAMES[side]])
+		return true
+	return false
+
+
+func _show_drive_notice(text: String) -> void:
+	var hud := get_node_or_null("HUD")
+	if hud == null:
+		return
+	if not is_instance_valid(_drive_notice_label):
+		_drive_notice_label = Label.new()
+		_drive_notice_label.name = "DriveNotice"
+		_drive_notice_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_drive_notice_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_drive_notice_label.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+		_drive_notice_label.offset_left = -360.0
+		_drive_notice_label.offset_right = 360.0
+		_drive_notice_label.offset_top = -170.0
+		_drive_notice_label.offset_bottom = -140.0
+		_drive_notice_label.add_theme_font_size_override("font_size", 18)
+		_drive_notice_label.add_theme_color_override("font_color", Color("#ffd890"))
+		_drive_notice_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+		_drive_notice_label.add_theme_constant_override("outline_size", 6)
+		_drive_notice_label.z_index = 90
+		hud.add_child(_drive_notice_label)
+	_drive_notice_label.text = text
+	_drive_notice_label.modulate = Color.WHITE
+	_drive_notice_label.visible = true
+	if _drive_notice_tween != null and _drive_notice_tween.is_valid():
+		_drive_notice_tween.kill()
+	_drive_notice_tween = _drive_notice_label.create_tween()
+	_drive_notice_tween.tween_interval(2.6)
+	_drive_notice_tween.tween_property(_drive_notice_label, "modulate:a", 0.0, 0.6)
+	_drive_notice_tween.tween_callback(_drive_notice_label.hide)
 
 
 func _take_back_at_node() -> void:
