@@ -32,6 +32,7 @@ var _tab_bar: TabBar
 var _items_view: Control
 var _journal_view: Control
 var _journal_list: ItemList
+var _journal_intel_label: Label
 var _journal_detail_scroll: ScrollContainer
 var _journal_detail: Label
 var _vehicle_repair_allowed := false
@@ -209,11 +210,24 @@ func _build_ui() -> void:
 	_journal_view.visible = false
 	outer.add_child(_journal_view)
 
+	var journal_left := VBoxContainer.new()
+	journal_left.add_theme_constant_override("separation", 6)
+	journal_left.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_journal_view.add_child(journal_left)
+
+	# 本局关键情报计数（与「关键情报已记录」提示、顶层终端使用同一组 required_for_truth）
+	_journal_intel_label = Label.new()
+	_journal_intel_label.add_theme_font_size_override("font_size", 13)
+	_journal_intel_label.add_theme_color_override("font_color", Color("#e8d27a"))
+	_journal_intel_label.tooltip_text = "★ 标记的日记为关键情报；集齐 4 条可在顶层终端解锁权限移交。"
+	_journal_intel_label.mouse_filter = Control.MOUSE_FILTER_PASS
+	journal_left.add_child(_journal_intel_label)
+
 	_journal_list = ItemList.new()
-	_journal_list.custom_minimum_size = Vector2(280, 320)
+	_journal_list.custom_minimum_size = Vector2(280, 300)
 	_journal_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_journal_list.item_selected.connect(_on_journal_selected)
-	_journal_view.add_child(_journal_list)
+	journal_left.add_child(_journal_list)
 
 	var journal_side := VBoxContainer.new()
 	journal_side.custom_minimum_size = Vector2(240, 320)
@@ -447,8 +461,25 @@ func _disarm_discard() -> void:
 func _on_vehicle_repair_pressed() -> void:
 	vehicle_repair_requested.emit()
 
+## 本局日记里属于关键情报（required_for_truth）的条数。
+func run_truth_count() -> int:
+	if _run_journal == null:
+		return 0
+	var ids: Array = []
+	for entry in _run_journal.get_entries():
+		ids.append(str(entry.get("encounter_id", "")))
+	return JournalData.collected_required_truth_count(ids)
+
+
+func _refresh_journal_intel_label() -> void:
+	if not is_instance_valid(_journal_intel_label):
+		return
+	_journal_intel_label.text = "本局关键情报 %d / %d" % [run_truth_count(), JournalData.required_story_count()]
+
+
 func _refresh_journal_list() -> void:
 	_journal_list.clear()
+	_refresh_journal_intel_label()
 	if _run_journal == null or _run_journal.get_entries().is_empty():
 		var idx := _journal_list.add_item("（本局尚无日记）")
 		_journal_list.set_item_disabled(idx, true)
@@ -462,6 +493,8 @@ func _refresh_journal_list() -> void:
 			layer,
 			day,
 		]
+		if JournalData.is_required_truth_encounter(str(entry.get("encounter_id", ""))):
+			label_text = "★ " + label_text
 		var idx := _journal_list.add_item(label_text)
 		_journal_list.set_item_metadata(idx, entry.duplicate(true))
 
