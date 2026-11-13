@@ -55,6 +55,9 @@ var tutorial_step: String = ""
 var run_ended: bool = false
 var run_end_reason: String = ""
 var final_choice_id: String = ""
+## 存档 "layer" 段中 RunState 没有单独建字段的条目（tower_upgrades、blueprint_state、
+## explored_prior_layers 等）。昼夜切场景时整段原样带过去，否则会在每个夜晚后丢失。
+var layer_extra: Dictionary = {}
 
 # -- 剧情/日记状态（用于场景切换恢复）--
 var journal_array: Array = []
@@ -195,6 +198,7 @@ func _load_from_save_dict(data: Dictionary) -> void:
 	}
 
 	var layer_raw = data.get("layer", {})
+	layer_extra = (layer_raw as Dictionary).duplicate(true) if typeof(layer_raw) == TYPE_DICTIONARY else {}
 	current_layer = int(layer_raw.get("current_layer", 1))
 	total_layers = int(data.get("total_layers", 3))
 	elevator_repair_progress = int(layer_raw.get("elevator_repair_progress", 0))
@@ -374,6 +378,13 @@ func _item_name(item_id: String) -> String:
 	return item_id
 
 
+func _layer_dict_with_extras(known: Dictionary) -> Dictionary:
+	var out := layer_extra.duplicate(true)
+	for key in known.keys():
+		out[key] = known[key]
+	return out
+
+
 ## 完整的序列化字典（可用于持久化存储，与 SaveManager 兼容）。
 func to_full_dict() -> Dictionary:
 	return {
@@ -400,7 +411,7 @@ func to_full_dict() -> Dictionary:
 			"drive_travel_distance": float(travel_dict.get("drive_travel_distance", 0.0)),
 			"current_district_index": int(travel_dict.get("current_district_index", -1)),
 		},
-		"layer": {
+		"layer": _layer_dict_with_extras({
 			"current_layer": current_layer,
 			"elevator_repair_progress": elevator_repair_progress,
 			"final_defense_cleared": final_defense_cleared,
@@ -409,7 +420,7 @@ func to_full_dict() -> Dictionary:
 			"run_ended": run_ended,
 			"run_end_reason": run_end_reason,
 			"final_choice_id": final_choice_id,
-		},
+		}),
 		"time": time_dict,
 		"foot": foot_dict,
 		"journal": journal_array,
@@ -464,6 +475,7 @@ func duplicate_state():  # -> RunState
 	rs.run_ended = run_ended
 	rs.run_end_reason = run_end_reason
 	rs.final_choice_id = final_choice_id
+	rs.layer_extra = layer_extra.duplicate(true)
 	rs.journal_array = journal_array.duplicate(true)
 	rs.stories_dict = stories_dict.duplicate(true)
 	rs.last_night_losses = last_night_losses.duplicate()

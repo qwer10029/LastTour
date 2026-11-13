@@ -135,8 +135,8 @@ func _enter_node(node_id: String) -> void:
 	if _execute_actions(node.get("actions", {})):
 		return
 	var speaker := str(node.get("speaker", ""))
-	var bubble := str(node.get("bubble", node.get("text", "")))
-	var full_text := str(node.get("text", bubble))
+	var bubble := _fill_placeholders(str(node.get("bubble", node.get("text", ""))))
+	var full_text := _fill_placeholders(str(node.get("text", bubble)))
 	panel_text = full_text
 	current_speaker = ""
 	if speaker.to_lower() in ["player", "我"]:
@@ -275,6 +275,14 @@ func _execute_actions(actions: Variant) -> bool:
 		_close_session()
 		return true
 	return false
+
+
+## 替换对话文本中的运行时占位符：{layer} → 当前楼层号。
+func _fill_placeholders(text: String) -> String:
+	if not text.contains("{layer}"):
+		return text
+	var layer := int(_context.get("current_layer", 0))
+	return text.replace("{layer}", str(layer) if layer > 0 else "?")
 
 
 func _resolve_journal_encounter(entry_key: String) -> String:

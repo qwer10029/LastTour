@@ -1284,6 +1284,8 @@ func _normalize_dialogue_entry(story_id: String, entry: String) -> String:
 func _dialogue_context(story_id: String) -> Dictionary:
 	return {
 		"backpack": _backpack(),
+		# 对话文本里的 {layer} 占位符替换成当前楼层（与 HUD「第 N / M 层」一致）。
+		"current_layer": int(_host.get("_current_layer")) if _host != null and _host.get("_current_layer") != null else 0,
 		"get_variable": func(key: String) -> Variant: return run_state.get_variable(story_id, key),
 		"set_variable": func(key: String, value: Variant) -> void: run_state.set_variable(story_id, key, value),
 		"get_checkpoint": func() -> String: return run_state.get_dialogue_node(story_id),
