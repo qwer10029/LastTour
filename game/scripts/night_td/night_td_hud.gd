@@ -48,6 +48,7 @@ var _continue_locked := false
 var _breach_count := 0
 var _tower_cards: Dictionary = {}
 var _cards_vbox: VBoxContainer = null
+var _cards_scroll: ScrollContainer = null
 var _overlay_active := false
 var _intro_played := false
 var _heatmap_hover_tween: Tween
@@ -299,16 +300,35 @@ func _build_cards_in_sidebar() -> void:
 	var vbox := side_panel.get_node_or_null("Margin/VBox")
 	if vbox == null: return
 
+	# 防御卡片放进滚动容器：教学/后期全部解锁后，卡片 + 电力调度超出侧栏高度，
+	# PanelContainer 会向上撑出屏幕，顶部的卡片（干扰信标等）被裁掉、并压住顶栏。
+	_cards_scroll = ScrollContainer.new()
+	_cards_scroll.name = "TowerCardsScroll"
+	_cards_scroll.custom_minimum_size = Vector2(0, 136)
+	_cards_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_cards_scroll.size_flags_stretch_ratio = 2.0
+	_cards_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_cards_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	vbox.add_child(_cards_scroll)
+	vbox.move_child(_cards_scroll, 0)
+
 	_cards_vbox = VBoxContainer.new()
 	_cards_vbox.name = "TowerCards"
+	_cards_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_cards_vbox.add_theme_constant_override("separation", 5)
-	vbox.add_child(_cards_vbox)
-	vbox.move_child(_cards_vbox, 0)
+	_cards_scroll.add_child(_cards_vbox)
 
 	for type_id in ["jammer","barrier","trap","cryo_beacon","hacker","sniper","splash"]:
 		var data: Dictionary = _tower_card_data.get(type_id, {})
 		var card := _make_card_row(type_id, data)
 		_cards_vbox.add_child(card)
+
+
+func _set_cards_visible(visible_flag: bool) -> void:
+	if is_instance_valid(_cards_vbox):
+		_cards_vbox.visible = visible_flag
+	if is_instance_valid(_cards_scroll):
+		_cards_scroll.visible = visible_flag
 
 
 func _make_card_row(type_id: String, data: Dictionary) -> PanelContainer:
@@ -1462,7 +1482,7 @@ func set_place_mode(active: bool) -> void:
 			start_btn.hide()
 		_set_start_btn_pulse(active)
 	hide_result_dialog()
-	if is_instance_valid(_cards_vbox): _cards_vbox.visible = active
+	_set_cards_visible(active)
 	show_power_panel(false)
 	_update_card_states(active)
 	if is_instance_valid(heatmap_switch):
@@ -1477,7 +1497,7 @@ func set_combat_mode() -> void:
 	if is_instance_valid(start_btn): start_btn.hide()
 	_set_start_btn_pulse(false)
 	hide_result_dialog()
-	if is_instance_valid(_cards_vbox): _cards_vbox.visible = false
+	_set_cards_visible(false)
 	_update_card_states(false)
 	show_power_panel(true)
 	if is_instance_valid(heatmap_switch):
@@ -1504,7 +1524,7 @@ func show_result(text: String, button_text: String = "确认结算，进入下�
 	show_power_panel(false)
 	clear_power_highlight()
 	if is_instance_valid(start_btn): start_btn.hide()
-	if is_instance_valid(_cards_vbox): _cards_vbox.visible = false
+	_set_cards_visible(false)
 
 
 # -- Power Panel ---------------------------------------------------
@@ -1514,6 +1534,8 @@ func _build_power_panel() -> void:
 	_power_panel.name = "PowerPanel"
 	_power_panel.custom_minimum_size = Vector2(0, 0)
 	_power_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# 纵向填充：与防御卡片滚动区分享侧栏剩余高度，接敌后卡片隐藏时耗电列表可占满侧栏。
+	_power_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_power_panel.add_theme_constant_override("separation", 5)
 	_power_panel.visible = false
 	_power_panel.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -1567,7 +1589,8 @@ func _build_power_panel() -> void:
 
 	_power_scroll = ScrollContainer.new()
 	_power_scroll.name = "PowerListScroll"
-	_power_scroll.custom_minimum_size = Vector2(0, 170)
+	# 最小高度收小，避免卡片 + 电力面板的最小高度之和超过小窗口侧栏而把面板撑出屏幕。
+	_power_scroll.custom_minimum_size = Vector2(0, 96)
 	_power_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_power_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_power_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
