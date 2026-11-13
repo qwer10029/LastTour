@@ -231,6 +231,9 @@ func _draw_exit_hint_arrows(node_index: int, map_rect: Rect2, origin: Vector2, s
 
 
 func _cell_visible(index: int) -> bool:
+	# 未揭示的隐藏物资点在揭示前视为空地：不画建筑，也不画通往它的路段。
+	if world_map != null and world_map.is_valid_index(index) and world_map.is_tactical_dormant(index):
+		return false
 	if not war_fog_enabled:
 		return true
 	if world_map == null or not world_map.is_valid_index(index):
@@ -238,6 +241,13 @@ func _cell_visible(index: int) -> bool:
 	if world_map.is_tactical_revealed(index):
 		return true
 	return bool(world_map.get_cell(index)["explored"])
+
+
+## 两格之间的路段是否绘制：两端都可见才画；未揭示的隐藏物资点按空地处理，不画通往它的路。
+func _road_link_drawn(index: int, other: int) -> bool:
+	if world_map == null or not world_map.is_valid_index(index) or not world_map.is_valid_index(other):
+		return false
+	return _cell_visible(index) and _cell_visible(other)
 
 
 func _draw_map_content(map_rect: Rect2, origin: Vector2, span: Vector2) -> void:
@@ -261,6 +271,11 @@ func _draw_map_content(map_rect: Rect2, origin: Vector2, span: Vector2) -> void:
 		if not _inside_clip(cell_center, map_rect):
 			continue
 		if cell.is_empty():
+			continue
+		if world_map.is_tactical_dormant(index):
+			# 与周围空地一致：开雾时同未探索格，关雾时不画任何东西。
+			if war_fog_enabled:
+				draw_rect(cell_rect, Color(0.02, 0.03, 0.05, 0.35), true)
 			continue
 		if not _cell_visible(index):
 			draw_rect(cell_rect, Color(0.02, 0.03, 0.05, 0.35), true)
@@ -288,7 +303,7 @@ func _draw_map_content(map_rect: Rect2, origin: Vector2, span: Vector2) -> void:
 			var other := world_map.get_neighbor_index(index, direction)
 			if other < 0 or other < index:
 				continue
-			if not _cell_visible(other):
+			if not _road_link_drawn(index, other):
 				continue
 			var other_coord := world_map.coord_from_index(other)
 			if not _coord_in_view(other_coord, origin, span):
