@@ -40,6 +40,7 @@ func setup(host: Node) -> void:
 	add_child(npc_dialogue)
 	npc_dialogue.quest_accepted.connect(_on_quest_accepted)
 	npc_dialogue.story_completed.connect(_on_npc_story_completed)
+	npc_dialogue.journal_entry_unlocked.connect(_on_npc_journal_entry_unlocked)
 	npc_dialogue.dialogue_updated.connect(_on_npc_dialogue_updated)
 
 
@@ -1211,19 +1212,7 @@ func _on_npc_story_completed(story_id: String, result: Dictionary) -> void:
 		return
 	run_state.clear_dialogue_node(story_id)
 	var encounter_id := str(result.get("encounter_id", ""))
-	var layer := int(_host.get("_current_layer")) if _host else 1
-	var day_index := 1
-	if _host and _host.get("time_system"):
-		var ts = _host.time_system
-		if is_instance_valid(ts):
-			day_index = ts.day_index
-	var journal: RunJournal = _journal()
-	if journal != null and encounter_id != "":
-		if journal.add_story_outcome(encounter_id, int(layer), day_index):
-			print("[Journal] 记录：%s" % JournalData.title_of(encounter_id))
-			_notify_journal_added(encounter_id)
-		else:
-			push_warning("[Story] 日记未写入: %s (body=%s)" % [encounter_id, JournalData.body_of(encounter_id)])
+	_record_npc_journal_entry(encounter_id)
 	var loot_key := str(result.get("reward_loot_key", ""))
 	var district := run_state.get_district(story_id)
 	if loot_key == "tactical_map" or encounter_id == "staff_officer_07_calibrate":
@@ -1243,6 +1232,31 @@ func _on_npc_story_completed(story_id: String, result: Dictionary) -> void:
 	run_state.mark_done(story_id)
 	_ui_locked = false
 	ui_refresh_requested.emit()
+
+
+## 结局节点一执行就写日记（计数、★、「关键情报已记录」横幅随之生效）。
+## 之前要等到「对话结束。勘探日记已更新。」之后再按一次 E 的 end_dialogue 才写；
+## 玩家停在那句话上走出建筑或入夜，本局日记就是空的，只有再找 NPC 对话一次才补上。
+func _on_npc_journal_entry_unlocked(_story_id: String, encounter_id: String) -> void:
+	_record_npc_journal_entry(encounter_id)
+
+
+## 写入本局日记；已写过（结局节点先写、end_dialogue 再到达）时静默跳过，不重复弹横幅。
+func _record_npc_journal_entry(encounter_id: String) -> void:
+	var journal: RunJournal = _journal()
+	if journal == null or encounter_id == "" or journal.has_encounter(encounter_id):
+		return
+	var layer := int(_host.get("_current_layer")) if _host else 1
+	var day_index := 1
+	if _host and _host.get("time_system"):
+		var ts = _host.time_system
+		if is_instance_valid(ts):
+			day_index = ts.day_index
+	if journal.add_story_outcome(encounter_id, layer, day_index):
+		print("[Journal] 记录：%s" % JournalData.title_of(encounter_id))
+		_notify_journal_added(encounter_id)
+	else:
+		push_warning("[Story] 日记未写入: %s (body=%s)" % [encounter_id, JournalData.body_of(encounter_id)])
 
 
 func _on_npc_dialogue_updated() -> void:

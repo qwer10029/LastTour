@@ -6,6 +6,9 @@ class_name NpcDialogueRunner
 signal quest_accepted(story_id: String)
 signal dialogue_updated
 signal story_completed(story_id: String, result: Dictionary)
+## 走到带 unlock_journal_entry 的结局节点时立即发出：日记在玩家看到
+## 「对话结束。勘探日记已更新。」之前就写入，不必等最后的 end_dialogue。
+signal journal_entry_unlocked(story_id: String, encounter_id: String)
 
 enum Phase { IDLE, LINE, OPTIONS }
 
@@ -253,6 +256,8 @@ func _execute_actions(actions: Variant) -> bool:
 		_give_item(give_id, give_count)
 	if act.has("unlock_journal_entry"):
 		_pending_encounter_id = _resolve_journal_encounter(str(act.get("unlock_journal_entry", "")))
+		if _pending_encounter_id != "":
+			journal_entry_unlocked.emit(story_id, _pending_encounter_id)
 	if act.has("spawn_reward_loot"):
 		_pending_reward_loot_key = str(act.get("spawn_reward_loot", ""))
 	if bool(act.get("clear_checkpoint", false)):
