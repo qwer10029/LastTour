@@ -212,6 +212,7 @@ func _ready() -> void:
 			_start_new_run()
 		else:
 			_apply_save_data(save_data)
+			_hold_paused_after_continue()
 	else:
 		_start_new_run()
 	_sync_view_cameras()
@@ -2287,6 +2288,11 @@ func _open_backpack(open_journal_tab: bool = false) -> void:
 	# 两者互斥：打开背包先关地图。
 	if is_instance_valid(_world_map_overlay) and _world_map_overlay.is_open():
 		_close_world_map()
+	# 暂停菜单开着时按 B：收起暂停菜单再开背包（背包自己会停住白天计时），否则背包被暂停层盖住。
+	if _game_paused:
+		_game_paused = false
+		if is_instance_valid(_pause_layer):
+			_pause_layer.visible = false
 	_backpack_open = true
 	_backpack_ui.show_backpack(
 		_backpack,
@@ -3100,6 +3106,15 @@ func _pause_game() -> void:
 	# 不受 time_system 暂停影响，必须显式冻结，否则按 ESC 后夜晚仍在流逝。
 	if is_instance_valid(night_td):
 		night_td.set_session_paused(true)
+
+
+## 「继续游戏」读档后停在暂停菜单：存档总是从暂停菜单「保存并退出」写下的，
+## 读档完成后若直接恢复计时，玩家看到画面、按下按键之前的这几秒（慢机器/截图操作时可达十几秒）
+## 都在真实扣体力和白天时间，看起来就像「读档掉体力」。停在暂停菜单，按 Esc / P 或「继续游戏」再开始计时。
+func _hold_paused_after_continue() -> void:
+	if _run_ended or not _is_exploration_allowed():
+		return
+	_pause_game()
 
 
 func _resume_from_pause() -> void:
