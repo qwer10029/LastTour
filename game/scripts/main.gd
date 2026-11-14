@@ -5023,6 +5023,11 @@ func _try_foot_console_interact() -> bool:
 	if _is_near_elevator_console():
 		_attempt_repair_elevator()
 		return true
+	# 碎石/任务道具的提示写的是「F 挖掘碎石」，F 也要能挖（E/空格原本就可以）。
+	if is_instance_valid(_story_controller):
+		if _story_controller.try_interact_foot_loot(_current_district_index, _foot_local_pos):
+			queue_redraw()
+			return true
 	return false
 
 
