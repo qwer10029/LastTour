@@ -359,6 +359,26 @@ const _POST_HANDOVER_RESUME := {
 		# story_done 之前的 repair_done 负责登记日记条目，需重新经过一次。
 		"story_done": "repair_done",
 	},
+	# 电机在 repair_01 被扣除；报酬三选一之前入夜/离开，回来要能接着选报酬。
+	# path_*_02 已发放报酬并写日记，续接到 story_done，避免重复发放。
+	"ad_1_radar": {
+		"repair_01": "repair_01",
+		"path_a_01": "path_a_01",
+		"path_b_01": "path_b_01",
+		"path_c_01": "path_c_01",
+		"path_a_02": "story_done",
+		"path_b_02": "story_done",
+		"path_c_02": "story_done",
+		"story_done": "story_done",
+	},
+	# 电池在 give_two / give_one_b 被扣除，同样的问题。
+	"sentinel_s09": {
+		"give_two": "give_two",
+		"give_one_b": "give_one_b",
+		"reward_parts": "story_done",
+		"reward_blueprint": "story_done",
+		"story_done": "story_done",
+	},
 }
 
 
@@ -1212,6 +1232,8 @@ func _on_npc_story_completed(story_id: String, result: Dictionary) -> void:
 		return
 	run_state.clear_dialogue_node(story_id)
 	var encounter_id := str(result.get("encounter_id", ""))
+	if encounter_id == "":
+		encounter_id = str(run_state.get_variable(story_id, "_journal_encounter", ""))
 	_record_npc_journal_entry(encounter_id)
 	var loot_key := str(result.get("reward_loot_key", ""))
 	var district := run_state.get_district(story_id)
@@ -1237,7 +1259,10 @@ func _on_npc_story_completed(story_id: String, result: Dictionary) -> void:
 ## 结局节点一执行就写日记（计数、★、「关键情报已记录」横幅随之生效）。
 ## 之前要等到「对话结束。勘探日记已更新。」之后再按一次 E 的 end_dialogue 才写；
 ## 玩家停在那句话上走出建筑或入夜，本局日记就是空的，只有再找 NPC 对话一次才补上。
-func _on_npc_journal_entry_unlocked(_story_id: String, encounter_id: String) -> void:
+func _on_npc_journal_entry_unlocked(story_id: String, encounter_id: String) -> void:
+	# 记下结局 id：若在结局句后被打断、从 story_done 续接，完成时仍能按结局揭示地图等。
+	if story_id != "" and encounter_id != "":
+		run_state.set_variable(story_id, "_journal_encounter", encounter_id)
 	_record_npc_journal_entry(encounter_id)
 
 
