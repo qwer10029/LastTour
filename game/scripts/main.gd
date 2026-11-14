@@ -123,6 +123,14 @@ var _tower_upgrade_dialog: AcceptDialog
 var _night_tutorial: NightTutorialOverlay
 var _fuel_empty_prompt_open := false
 var _war_fog_checkbox: CheckBox
+var _pause_resume_btn: Button
+var _pause_save_btn: Button
+var _pause_menu_btn: Button
+## 主菜单「继续游戏」读档后的输入守卫：在 1000×560 窗口下，该按钮与暂停菜单的
+## 「继续游戏」位置重叠。加载期间按住或残留的鼠标松开不能点到暂停按钮。
+## 鼠标松开后再保持一小段时间。
+var _continue_input_guard_left := 0.0
+const CONTINUE_INPUT_GUARD_SEC := 0.35
 var _repair_choice_panel: PanelContainer
 var _repair_progress_label: Label
 var _repair_progress_bar: ProgressBar
@@ -936,6 +944,7 @@ func _seed_final_layer_evidence_spawns() -> void:
 	return
 
 func _process(_delta: float) -> void:
+	_tick_continue_input_guard(_delta)
 	_sync_story_dialogue_menu_suppression()
 	if _run_ended or _game_paused or _backpack_open:
 		return
@@ -1279,6 +1288,8 @@ func _apply_foot_world_position() -> void:
 	_player.global_position = _map.get_foot_origin(_current_district_index) + _foot_local_pos
 
 func _input(event: InputEvent) -> void:
+	if _consume_continue_input_guard_event(event):
+		return
 	if _run_ended:
 		return
 	# 调试快捷键（仅 debug 构建）：F10 直达通信终端，便于验证终端/CAPTCHA 拼图流程，
@@ -1355,6 +1366,8 @@ func _input(event: InputEvent) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if _consume_continue_input_guard_event(event):
+		return
 	if _run_ended:
 		return
 	if is_instance_valid(_world_map_overlay) and _world_map_overlay.is_open():
@@ -2202,20 +2215,20 @@ func _setup_pause_ui() -> void:
 	_war_fog_checkbox.toggled.connect(_on_war_fog_toggled)
 	box.add_child(_war_fog_checkbox)
 
-	var resume_btn := Button.new()
-	resume_btn.text = "继续游戏"
-	resume_btn.pressed.connect(_resume_from_pause)
-	box.add_child(resume_btn)
+	_pause_resume_btn = Button.new()
+	_pause_resume_btn.text = "继续游戏"
+	_pause_resume_btn.pressed.connect(_resume_from_pause)
+	box.add_child(_pause_resume_btn)
 
-	var save_btn := Button.new()
-	save_btn.text = "保存并退出"
-	save_btn.pressed.connect(_save_and_exit_to_menu)
-	box.add_child(save_btn)
+	_pause_save_btn = Button.new()
+	_pause_save_btn.text = "保存并退出"
+	_pause_save_btn.pressed.connect(_save_and_exit_to_menu)
+	box.add_child(_pause_save_btn)
 
-	var menu_btn := Button.new()
-	menu_btn.text = "返回主菜单"
-	menu_btn.pressed.connect(_confirm_return_to_menu)
-	box.add_child(menu_btn)
+	_pause_menu_btn = Button.new()
+	_pause_menu_btn.text = "返回主菜单"
+	_pause_menu_btn.pressed.connect(_confirm_return_to_menu)
+	box.add_child(_pause_menu_btn)
 
 	_pause_confirm = ConfirmationDialog.new()
 	_pause_confirm.title = "返回主菜单"
@@ -3086,6 +3099,8 @@ func _on_run_summary_closed() -> void:
 func _toggle_pause() -> void:
 	if _run_ended:
 		return
+	if _continue_input_guard_left > 0.0:
+		return
 	if _pause_confirm != null and _pause_confirm.visible:
 		return
 	if _game_paused:
@@ -3111,13 +3126,69 @@ func _pause_game() -> void:
 ## 「继续游戏」读档后停在暂停菜单：存档总是从暂停菜单「保存并退出」写下的，
 ## 读档完成后若直接恢复计时，玩家看到画面、按下按键之前的这几秒（慢机器/截图操作时可达十几秒）
 ## 都在真实扣体力和白天时间，看起来就像「读档掉体力」。停在暂停菜单，按 Esc / P 或「继续游戏」再开始计时。
+##
+## 主菜单「继续游戏」按钮与暂停菜单「继续游戏」在 1000×560 窗口下位置重叠。
+## 从主菜单点下去、场景加载卡在主线程时，松开的那次鼠标松开（或仍按住的一次松开）
+## 会被新场景里的「继续游戏」吃掉，暂停菜单刚出现就立刻被关掉。所以读档后要吞掉
+## 仍按着的鼠标和随后一小段输入，再让暂停按钮生效。
 func _hold_paused_after_continue() -> void:
-	if _run_ended or not _is_exploration_allowed():
+	if _run_ended:
+		return
+	# 夜晚布防另有界面；白天/黄昏（以及尚未允许探索的过渡）都停在暂停菜单。
+	if _is_night_phase():
 		return
 	_pause_game()
+	_begin_continue_input_guard()
+
+
+func _begin_continue_input_guard() -> void:
+	_continue_input_guard_left = CONTINUE_INPUT_GUARD_SEC
+	_set_pause_menu_buttons_interactive(false)
+	var viewport := get_viewport()
+	if viewport != null:
+		viewport.gui_release_focus()
+	if Input.is_action_pressed("ui_accept"):
+		Input.action_release("ui_accept")
+
+
+func _set_pause_menu_buttons_interactive(enabled: bool) -> void:
+	var filter := Control.MOUSE_FILTER_STOP if enabled else Control.MOUSE_FILTER_IGNORE
+	for node in [_pause_resume_btn, _pause_save_btn, _pause_menu_btn, _war_fog_checkbox]:
+		if not is_instance_valid(node):
+			continue
+		node.mouse_filter = filter
+		if node is BaseButton:
+			(node as BaseButton).disabled = not enabled
+
+
+func _tick_continue_input_guard(delta: float) -> void:
+	if _continue_input_guard_left <= 0.0:
+		return
+	# 加载期间一直按着鼠标时，要等松开后再计时，否则松开会点到「继续游戏」。
+	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
+		return
+	_continue_input_guard_left = maxf(0.0, _continue_input_guard_left - maxf(delta, 0.0))
+	if _continue_input_guard_left <= 0.0:
+		_set_pause_menu_buttons_interactive(true)
+		var viewport := get_viewport()
+		if viewport != null:
+			viewport.gui_release_focus()
+
+
+func _consume_continue_input_guard_event(event: InputEvent) -> bool:
+	if _continue_input_guard_left <= 0.0:
+		return false
+	if event is InputEventMouseButton or event.is_action("ui_accept") or event.is_action("pause") or event.is_action("ui_cancel"):
+		var viewport := get_viewport()
+		if viewport != null:
+			viewport.set_input_as_handled()
+		return true
+	return false
 
 
 func _resume_from_pause() -> void:
+	if _continue_input_guard_left > 0.0:
+		return
 	_game_paused = false
 	if is_instance_valid(_pause_layer):
 		_pause_layer.visible = false
@@ -3505,12 +3576,16 @@ func _should_show_loot_label_at(local_pos: Vector2) -> bool:
 
 
 func _save_and_exit_to_menu() -> void:
+	if _continue_input_guard_left > 0.0:
+		return
 	if SaveManager.save_game(capture_save_data()):
 		_game_paused = false
 		GameManager.go_to_main_menu()
 
 
 func _confirm_return_to_menu() -> void:
+	if _continue_input_guard_left > 0.0:
+		return
 	if _pause_confirm != null:
 		_pause_confirm.popup_centered()
 	else:
