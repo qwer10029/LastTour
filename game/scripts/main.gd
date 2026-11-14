@@ -2510,7 +2510,20 @@ func _repair_button_label() -> String:
 func _tick_survival(delta: float) -> void:
 	if not _is_exploration_allowed() or _is_night_phase():
 		return
+	# 读档 / 黎明切场景时白天场景已在遮罩后面跑物理帧：遮罩还盖着（含淡出）时玩家看不到也操作不了，
+	# 不应扣体力。体力只在玩家真正在白天/黄昏探索时下降。
+	if _is_scene_transition_covering():
+		return
 	_survival.tick(delta)
+
+
+func _is_scene_transition_covering() -> bool:
+	var transition := get_node_or_null("/root/RunTransition")
+	return (
+		transition != null
+		and transition.has_method("is_covering")
+		and bool(transition.is_covering())
+	)
 
 
 func _check_player_vitals_failure() -> void:
@@ -5134,14 +5147,11 @@ func _interior_panel_rect(district_index: int) -> Rect2:
 	var cell := _map.get_cell(district_index)
 	var cols: int = maxi(int(cell.get("foot_grid_cols", 1)), 1)
 	var rows: int = maxi(int(cell.get("foot_grid_rows", 1)), 1)
-	var tile_px := float(WorldMapData.FOOT_TILE_SIZE) * interior_tile_scale
-	var panel_size := Vector2(float(cols) * tile_px, float(rows) * tile_px)
 	var view_size := get_viewport_rect().size
 	if view_size == Vector2.ZERO:
 		view_size = Vector2(1280.0, 720.0)
-	return Rect2(
-		(view_size - panel_size) * 0.5 + Vector2(0.0, 36.0),
-		panel_size,
+	return HudTheme.interior_panel_rect_for_view(
+		view_size, cols, rows, float(WorldMapData.FOOT_TILE_SIZE) * interior_tile_scale
 	)
 
 
