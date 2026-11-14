@@ -63,6 +63,7 @@ func _boot_exploration_scene(overlay_flags: Dictionary) -> void:
 			_start_new_run()
 		else:
 			_apply_save_data(save_data)
+			_hold_paused_after_continue()
 	elif GameManager.run_state != null and not GameManager.run_state.to_full_dict().is_empty():
 		init_from_run_state(GameManager.run_state)
 	else:
