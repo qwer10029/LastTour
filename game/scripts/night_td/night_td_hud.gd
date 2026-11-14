@@ -439,7 +439,10 @@ func set_unlocked_towers(tower_ids: Array) -> void:
 	for tid in _tower_cards.keys():
 		var card: PanelContainer = _tower_cards[tid]["panel"]
 		card.visible = allowed.has(tid)
-	if not allowed.is_empty() and not allowed.has(_selected):
+	if _selected == "":
+		# 夜战开始时已清空选择：不自动选第一张卡，等玩家自己点。
+		_refresh_card_highlights()
+	elif not allowed.is_empty() and not allowed.has(_selected):
 		_select(allowed[0])
 	elif not allowed.is_empty() and allowed.has(_selected):
 		tower_selected.emit(_selected)
@@ -447,6 +450,16 @@ func set_unlocked_towers(tower_ids: Array) -> void:
 
 func get_selected_tower() -> String:
 	return _selected
+
+
+## 清空当前选中的设施卡（不发 tower_selected）；控制器同时把 _selected_tower 置空。
+func clear_tower_selection() -> void:
+	_selected = ""
+	_refresh_card_highlights()
+
+
+func select_tower(type_id: String) -> void:
+	_select(type_id)
 
 
 func _refresh_card_highlights() -> void:

@@ -450,3 +450,26 @@ static func draw_string(
 		Color(0.0, 0.0, 0.0, 0.74),
 	)
 	canvas.draw_string(font, pos, text, alignment, width, font_size, color)
+
+
+## 室内俯视面板固定画在屏幕坐标（步行时没有跟随相机）。窗口较小时（如 1000x560 → 视口 1157x648）
+## 固定 2.15 倍的 14×10 面板会超出视口底边、顶行压在顶部 HUD 下，玩家走到边缘就出屏。
+## 这里把格子缩到能完整放进「顶部 HUD 以下、底边以上」的区域，大窗口下保持原尺寸与位置。
+## max_tile_px = FOOT_TILE_SIZE × interior_tile_scale（放得下时的格子边长）。
+static func interior_panel_rect_for_view(view_size: Vector2, cols: int, rows: int, max_tile_px: float) -> Rect2:
+	cols = maxi(cols, 1)
+	rows = maxi(rows, 1)
+	var top_limit := TOP_HUD_Y + TOP_BAR_HEIGHT + 6.0
+	var bottom_margin := 6.0
+	var avail := Vector2(
+		maxf(view_size.x - 2.0 * bottom_margin, 1.0),
+		maxf(view_size.y - top_limit - bottom_margin, 1.0),
+	)
+	var tile_px := minf(
+		max_tile_px,
+		minf(avail.x / float(cols), avail.y / float(rows)),
+	)
+	var panel_size := Vector2(float(cols) * tile_px, float(rows) * tile_px)
+	var pos := (view_size - panel_size) * 0.5 + Vector2(0.0, 36.0)
+	pos.y = clampf(pos.y, top_limit, maxf(view_size.y - bottom_margin - panel_size.y, top_limit))
+	return Rect2(pos, panel_size)

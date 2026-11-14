@@ -38,6 +38,10 @@ var day_index: int = 1
 var placement_remaining: float = 0.0
 var base_hp: float = 100.0
 var _selected_tower := "jammer"
+## 布防开始后这段时间内落在网格上的左键一律忽略：黄昏强制入夜时，玩家还在点对话/背包，
+## 那几下残留点击不应直接在网格上放设施。
+const PLACE_INPUT_GRACE_MSEC := 450
+var _place_input_ready_msec: int = 0
 var _towers: Array[Dictionary] = []
 var _enemies: Array[Dictionary] = []
 var _wave_queue: Array[String] = []
@@ -240,7 +244,10 @@ func start_session(
 	_fuel_boost_spent = 0.0
 	_healer_aura_accum = 0.0
 	placement_remaining = placement_time_sec if allow_placement else 0.0
-	_selected_tower = _default_unlocked_tower()
+	# 正式夜战不预选任何设施：必须先在右侧列表点一次，避免黄昏强制入夜时残留点击直接放下「干扰信标」。
+	# 教程夜仍沿用 HUD 当前选中的塔（见下方 tutorial 分支）。
+	_selected_tower = ""
+	_place_input_ready_msec = Time.get_ticks_msec() + PLACE_INPUT_GRACE_MSEC
 	_towers.clear()
 	_occupied_cells.clear()
 	_enemies.clear()
@@ -339,10 +346,16 @@ func start_session(
 					hud.heatmap_switch.hide()
 				hud.set_unlocked_towers(tutorial_towers)
 				_selected_tower = hud.get_selected_tower() if hud.has_method("get_selected_tower") else "sniper"
+				if _selected_tower == "":
+					_selected_tower = "sniper"
+					if hud.has_method("select_tower"):
+						hud.select_tower(_selected_tower)
 				hud.set_hint("")
 				_restore_tutorial_night_progress()
 				_sync_tutorial_start_wave_btn()
 		if hud.has_method("set_unlocked_towers") and _session_kind != "tutorial":
+			if hud.has_method("clear_tower_selection"):
+				hud.clear_tower_selection()
 			hud.set_unlocked_towers(_blueprint_state.get("unlocked_towers", []))
 		_refresh_fuel_boost_hud()
 	_update_hud_tools()
@@ -524,6 +537,16 @@ func _compute_deploy_budget() -> int:
 		2:
 			pts -= 2
 	return maxi(pts, 10)
+
+
+## 入夜加载遮罩（RunTransition）不拦截鼠标；遮罩还在时落到网格上的点击是白天残留的，不放设施。
+func _is_scene_transition_covering() -> bool:
+	var transition := get_node_or_null("/root/RunTransition")
+	return (
+		transition != null
+		and transition.has_method("is_covering")
+		and bool(transition.is_covering())
+	)
 
 
 func _default_unlocked_tower() -> String:
@@ -2046,6 +2069,12 @@ func _rebuild_separation_buckets() -> void:
 
 func _on_cell_clicked(cell: Vector2i) -> void:
 	if phase != Phase.PLACE:
+		return
+	if Time.get_ticks_msec() < _place_input_ready_msec or _is_scene_transition_covering():
+		return
+	if _selected_tower == "":
+		if is_instance_valid(hud):
+			hud.append_log("请先在右侧列表选择要部署的设施")
 		return
 	if not _is_tower_unlocked(_selected_tower):
 		if is_instance_valid(hud):
