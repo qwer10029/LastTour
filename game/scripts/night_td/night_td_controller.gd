@@ -112,6 +112,7 @@ var _session_options: Dictionary = {}
 var _session_kind: String = "normal"
 var _phase_title_override: String = ""
 var _no_day_advance := false
+var _boss_killed := false   # 本局是否击毁了首领（雷霆）；首领战胜负以此为准，与突破数无关
 var _tower_upgrades: Dictionary = NightTdUpgrades.default_state()
 var _blueprint_state: Dictionary = BlueprintCatalog.default_run_state()
 var _screen_camera: Camera2D = null
@@ -217,6 +218,7 @@ func start_session(
 		_local_backpack.load_from_dictionary(backpack_snapshot)
 	_salvage_pending = {}
 	_breach_losses = {}
+	_boss_killed = false
 	_enemy_index_by_eid.clear()
 	_active_slow_towers.clear()
 	_cell_tower_map.clear()
@@ -1204,6 +1206,8 @@ func _update_enemies(delta: float) -> void:
 			if bool(enemy.get("is_shepherd", false)):
 				_trigger_shepherd_degrade("被击毁")
 			_enemies_killed += 1
+			if str(enemy.get("type", "")) == "thunder_leiting" and str(enemy.get("faction", "enemy")) != "ally":
+				_boss_killed = true
 			var scrap_val := 2 if str(enemy.get("type","")) in ["heavy","shepherd"] else 1
 			_add_salvage_drop(enemy)
 			_add_event_log("enemy_killed", str(enemy.get("type", "")), {"scrap": scrap_val})
@@ -2465,6 +2469,7 @@ func _build_result() -> Dictionary:
 		"kind": _session_kind,
 		"no_day_advance": _no_day_advance,
 		"outcome": outcome,
+		"boss_defeated": _boss_killed,
 		"message": msg,
 		"inventory_remaining": maxi(_exploration_inventory - inv_loss, 0),
 		"inventory_loss": inv_loss,

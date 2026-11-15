@@ -3233,6 +3233,8 @@ func init_from_run_state(rs) -> void:
 	_final_defense_cleared = rs.final_defense_cleared
 	_thunder_leiting_defeated = rs.thunder_leiting_defeated
 	_thunder_terminal_sequence_active = rs.thunder_terminal_sequence_active
+	var apply_thunder_victory_rewards := bool(rs.pending_thunder_victory_rewards)
+	rs.pending_thunder_victory_rewards = false
 	GameManager.difficulty = rs.difficulty
 	GameManager.squad_id = rs.squad_id
 	_apply_run_config_from_manager()
@@ -3246,6 +3248,8 @@ func init_from_run_state(rs) -> void:
 	if is_instance_valid(time_system) and not rs.time_dict.is_empty():
 		time_system.load_from_dictionary(rs.time_dict)
 		_restore_time_phase_after_load(should_open_terminal)
+	if apply_thunder_victory_rewards and _thunder_leiting_defeated:
+		_apply_thunder_leiting_victory()
 	_sync_minimap_navigation()
 	_refresh_ui()
 	if should_open_terminal:
@@ -3738,8 +3742,7 @@ func _on_night_td_finished(result: Dictionary) -> void:
 		return
 	var kind := str(result.get("kind", "normal"))
 	if kind == "thunder_leiting_boss":
-		var outcome := str(result.get("outcome", "success"))
-		if outcome == "success":
+		if GameManager.is_thunder_boss_victory(result):
 			_apply_thunder_leiting_victory()
 			_pause_day_night_for_terminal_sequence()
 			var district := _pending_thunder_district

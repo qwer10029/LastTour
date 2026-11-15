@@ -29,6 +29,8 @@ var base_elevator_repair_cost: int = 3
 var final_defense_cleared: bool = false
 var thunder_leiting_defeated: bool = false
 var thunder_terminal_sequence_active: bool = false
+## 场景切换路径打赢雷霆后置位：白天场景加载时补发胜利奖励/日志，随后清除（不存档）。
+var pending_thunder_victory_rewards: bool = false
 
 # -- 运行配置 --
 var difficulty: int = 1
