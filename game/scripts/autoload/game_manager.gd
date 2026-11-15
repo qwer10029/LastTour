@@ -101,6 +101,18 @@ func request_night_defense(rs, session_options: Dictionary = {}) -> void:
 	get_tree().change_scene_to_file(SCENE_NIGHT_TD)
 
 
+## 雷霆首领战是否获胜：击毁雷霆且车辆未损毁即算胜利。
+## 有敌人突破（outcome=partial）或车辆受损较重（fail）并不改变"雷霆已被击毁"这一事实；
+## 旧结果没有 boss_defeated 字段时退回到 outcome == "success"。
+static func is_thunder_boss_victory(result: Dictionary) -> bool:
+	var outcome := str(result.get("outcome", ""))
+	if outcome == "vehicle_destroyed":
+		return false
+	if result.has("boss_defeated"):
+		return bool(result.get("boss_defeated", false))
+	return outcome == "success"
+
+
 ## 夜间结束后切回白天场景。
 func apply_night_result_and_continue(result: Dictionary) -> void:
 	if run_state == null:
@@ -114,10 +126,12 @@ func apply_night_result_and_continue(result: Dictionary) -> void:
 		if context == "tutorial" or run_state.run_context == "tutorial":
 			return_to_tutorial_hub_after_night()
 			return
-		if context == "thunder_leiting_boss" and str(result.get("outcome", "")) == "success":
+		if context == "thunder_leiting_boss" and is_thunder_boss_victory(result):
 			run_state.thunder_leiting_defeated = true
 			run_state.final_defense_cleared = true
 			run_state.thunder_terminal_sequence_active = true
+			# 场景切换路径：奖励与日志条目由白天场景加载后补发（与内嵌路径一致）。
+			run_state.pending_thunder_victory_rewards = true
 		elif not no_day_advance:
 			run_state.advance_after_normal_night()
 	start_day_via_loading(run_state)
